@@ -3,8 +3,8 @@
 from sam3_vlm.scene.node import Node
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.state import SceneState, DiscoveryState, CoverageSummary
-from sam3_vlm.scene.association import AssociationPolicy
-from sam3_vlm.scene.belief import SemanticRecord, SemanticMemory
+from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy, AssociationResult
+from sam3_vlm.scene.belief import SemanticRecord, SemanticMemory, BeliefUpdater
 
 __all__ = [
     "Node",
@@ -13,6 +13,9 @@ __all__ = [
     "DiscoveryState",
     "CoverageSummary",
     "AssociationPolicy",
+    "IoUAssociationPolicy",
+    "AssociationResult",
     "SemanticRecord",
     "SemanticMemory",
+    "BeliefUpdater",
 ]
