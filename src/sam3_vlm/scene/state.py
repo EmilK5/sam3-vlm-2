@@ -40,6 +40,24 @@ class CountEstimate:
     std_dev: float = 0.0
 
 
+class CountEstimator:
+    """Computes soft counts and variances from node belief probabilities (M5)."""
+
+    @staticmethod
+    def estimate(graph: SceneGraph, target_class: str) -> CountEstimate:
+        mean_count = 0.0
+        variance = 0.0
+        for node in graph.active_nodes():
+            p = node.class_belief.probabilities.get(target_class, 0.0)
+            mean_count += p
+            variance += p * (1.0 - p)
+        return CountEstimate(
+            mean_count=mean_count,
+            variance=variance,
+            std_dev=variance ** 0.5
+        )
+
+
 @dataclass
 class SceneState:
     """Primary operational state object B_t = (G_t, rho_t, U_t, S_t, A_t, C_t) (V4 Design Spec §3.2)."""

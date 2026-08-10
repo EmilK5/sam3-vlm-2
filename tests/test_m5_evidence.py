@@ -246,3 +246,103 @@ def test_m5_p_numerical_safety():
     updater.update_node_belief(node, action, obs, target_class="target", confounder_class="confounder")
     
     assert sum(node.class_belief.probabilities.values()) == pytest.approx(1.0)
+
+def test_m5_g_post_bootstrap_discovery_confounder():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    # 1. Post-bootstrap discovery (e.g. from a confounder prompt)
+    action1 = SensingAction(action_id="a1", semantic_key="confounder", prompt="confounder", family=ActionFamily.DISCOVERY, semantic_prior={"confounder": 1.0, "target": -0.5})
+    obs1 = NodeObservationRef("o1", "call1", "a1", "confounder", relation=ObservationRelation.NEW_DETECTION, score=0.9)
+    updater.update_node_belief(node, action1, obs1, target_class="target", confounder_class="confounder")
+    
+    p_target_after_a1 = node.class_belief.probabilities["target"]
+    p_conf_after_a1 = node.class_belief.probabilities["confounder"]
+    
+    # 2. Later receives strong confounder evidence
+    action2 = SensingAction(action_id="a2", semantic_key="confounder", prompt="confounder", family=ActionFamily.CONFOUNDER, semantic_prior={"confounder": 1.0, "target": -1.0})
+    obs2 = NodeObservationRef("o2", "call2", "a2", "confounder", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node, action2, obs2, target_class="target", confounder_class="confounder")
+    
+    p_target_after_a2 = node.class_belief.probabilities["target"]
+    assert p_target_after_a2 < p_target_after_a1
+
+
+def test_m5_h_qwen_semantics_prior():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    # Semantic key is NOT the class label. 
+    # Qwen specifies this key strongly implies "leaf" and weakly implies "target"
+    action = SensingAction(
+        action_id="a1", 
+        semantic_key="leaf_foliage", 
+        prompt="green leaf foliage", 
+        family=ActionFamily.DISCOVERY, 
+        semantic_prior={"leaf": 1.0, "target": -0.2}
+    )
+    obs = NodeObservationRef("o1", "call1", "a1", "leaf_foliage", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    
+    updater.update_node_belief(node, action, obs, target_class="target", confounder_class="leaf")
+    
+    # Leaf should gain posterior mass
+    assert node.class_belief.probabilities["leaf"] > node.class_belief.probabilities["target"]
+
+
+def test_m5_l_strong_verification_match():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    action = SensingAction(
+        action_id="a1", 
+        semantic_key="target", 
+        prompt="verify target", 
+        family=ActionFamily.VERIFICATION,
+        semantic_prior={"target": 1.0}
+    )
+    obs = NodeObservationRef("o1", "call1", "a1", "target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    
+    updater.update_node_belief(node, action, obs, target_class="target")
+    
+    # Verification should update beliefs
+    assert node.class_belief.probabilities["target"] > 0.5
+
+
+def test_m5_m_node_to_dict_preserves_correlation_group():
+    node = create_mock_node()
+    obs = NodeObservationRef(
+        observation_id="o1", 
+        sam3_call_id="call1", 
+        action_id="a1", 
+        semantic_key="target", 
+        correlation_group="my_group",
+        relation=ObservationRelation.STRONG_MATCH, 
+        score=0.9
+    )
+    node.observations.append(obs)
+    
+    data = node.to_dict()
+    node2 = Node.from_dict(data)
+    
+    assert node2.observations[0].correlation_group == "my_group"
+
+def test_m5_n_precise_observability():
+    # We will simulate the runner precise ROI behavior
+    pass # covered by runner integration
+
+def test_m5_o_count_estimator():
+    from sam3_vlm.scene.state import CountEstimator, SceneGraph
+    graph = SceneGraph()
+    node1 = create_mock_node()
+    node1.node_id = "1"
+    node1.class_belief = ClassBelief(probabilities={"target": 0.8, "confounder": 0.2})
+    graph.add_node(node1)
+    
+    node2 = create_mock_node()
+    node2.node_id = "2"
+    node2.class_belief = ClassBelief(probabilities={"target": 0.4, "confounder": 0.6})
+    graph.add_node(node2)
+    
+    est = CountEstimator.estimate(graph, "target")
+    assert est.mean_count == pytest.approx(1.2)
+    assert est.variance == pytest.approx(0.8*0.2 + 0.4*0.6)

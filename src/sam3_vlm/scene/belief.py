@@ -26,6 +26,10 @@ class SemanticRecord:
     total_cost: float = 0.0
     new_nodes_by_execution: List[int] = field(default_factory=list)
     predicted_utility_by_execution: List[float] = field(default_factory=list)
+    affected_nodes_by_execution: List[int] = field(default_factory=list)
+    entropy_change_by_execution: List[float] = field(default_factory=list)
+    variance_change_by_execution: List[float] = field(default_factory=list)
+    realized_discrimination_proxy_by_execution: List[float] = field(default_factory=list)
 
 @dataclass
 class SemanticMemory:
@@ -40,6 +44,10 @@ class SemanticMemory:
         new_nodes: int = 0,
         runtime_ms: float = 0.0,
         predicted_utility: float = 0.0,
+        affected_nodes: int = 0,
+        entropy_change: float = 0.0,
+        variance_change: float = 0.0,
+        realized_discrimination_proxy: float = 0.0,
     ) -> SemanticRecord:
         if action.semantic_key not in self.records:
             self.records[action.semantic_key] = SemanticRecord(
@@ -54,11 +62,94 @@ class SemanticMemory:
         rec.total_cost += runtime_ms
         rec.new_nodes_by_execution.append(new_nodes)
         rec.predicted_utility_by_execution.append(predicted_utility)
+        rec.affected_nodes_by_execution.append(affected_nodes)
+        rec.entropy_change_by_execution.append(entropy_change)
+        rec.variance_change_by_execution.append(variance_change)
+        rec.realized_discrimination_proxy_by_execution.append(realized_discrimination_proxy)
         return rec
+
+
+@dataclass
+class ProxyEvidenceConfig:
+    """Configurable coefficients for uncalibrated sensor likelihood proxy (V4 Design Spec §11)."""
+    strong_target_multiplier: float = 1.5
+    strong_confounder_multiplier: float = 3.0
+    strong_confounder_target_penalty: float = 0.75
+    weak_confounder_multiplier: float = 0.8
+    weak_confounder_target_penalty: float = 0.4
+    weak_target_multiplier: float = 0.4
+    not_retrieved_penalty: float = 0.15
+    prior_pseudocount: float = 1.0
+
+
+class ProxyEvidenceModel:
+    """Explicitly uncalibrated proxy for sensor likelihoods (V4 Design Spec §11)."""
+
+    def __init__(self, config: ProxyEvidenceConfig = ProxyEvidenceConfig()):
+        self.config = config
+
+    def compute_likelihoods(
+        self,
+        action: SensingAction,
+        relation: ObservationRelation,
+        score: float,
+        weight: float,
+        vocabulary: List[str],
+        target_class: Optional[str] = None,
+        confounder_class: Optional[str] = None,
+    ) -> Dict[str, float]:
+        """Compute uncalibrated likelihood multipliers based on observation and semantic prior."""
+        likelihoods = {cls: 1.0 for cls in vocabulary}
+        
+        # Determine target vs confounder nature from the action
+        semantic_weights = action.semantic_prior if action.semantic_prior else {}
+        
+        # Default behavior if no semantic prior is provided by Qwen
+        if not semantic_weights:
+            if action.family in (ActionFamily.DISCOVERY, ActionFamily.VERIFICATION):
+                if target_class:
+                    semantic_weights = {target_class: 1.0}
+                else:
+                    semantic_weights = {action.semantic_key: 1.0}
+            elif action.family == ActionFamily.CONFOUNDER:
+                key = confounder_class if confounder_class else action.semantic_key
+                semantic_weights = {key: 1.0}
+                if target_class:
+                    semantic_weights[target_class] = -1.0
+
+        is_confounder = action.family == ActionFamily.CONFOUNDER
+
+        for cls_name in vocabulary:
+            sem_w = semantic_weights.get(cls_name, 0.0)
+            
+            if relation in (ObservationRelation.STRONG_MATCH, ObservationRelation.NEW_DETECTION):
+                if sem_w > 0:
+                    mult = self.config.strong_confounder_multiplier if is_confounder else self.config.strong_target_multiplier
+                    likelihoods[cls_name] = 1.0 + (mult * score * weight * sem_w)
+                elif sem_w < 0:
+                    # It's a negative prior, meaning a strong match is BAD for this class
+                    likelihoods[cls_name] = max(0.1, 1.0 - (self.config.strong_confounder_target_penalty * score * weight * abs(sem_w)))
+            
+            elif relation == ObservationRelation.WEAK_MATCH:
+                if sem_w > 0:
+                    mult = self.config.weak_confounder_multiplier if is_confounder else self.config.weak_target_multiplier
+                    likelihoods[cls_name] = 1.0 + (mult * score * weight * sem_w)
+                elif sem_w < 0:
+                    likelihoods[cls_name] = max(0.1, 1.0 - (self.config.weak_confounder_target_penalty * score * weight * abs(sem_w)))
+            
+            elif relation == ObservationRelation.NOT_RETRIEVED:
+                # Mild negative evidence for classes this action was searching for (sem_w > 0)
+                if sem_w > 0:
+                    likelihoods[cls_name] = max(0.1, likelihoods.get(cls_name, 1.0) - (self.config.not_retrieved_penalty * weight * sem_w))
+
+        return likelihoods
 
 
 class BeliefUpdater:
     """Dataset-agnostic class belief distribution updater enforcing presence/absence asymmetry (V4 Design Spec §11)."""
+    
+    def __init__(self, proxy_config: ProxyEvidenceConfig = ProxyEvidenceConfig()):
+        self.evidence_model = ProxyEvidenceModel(proxy_config)
 
     @staticmethod
     def calculate_entropy(probabilities: Dict[str, float]) -> float:
@@ -80,73 +171,77 @@ class BeliefUpdater:
         config: BeliefConfig = BeliefConfig(),
     ) -> None:
         """Update node class belief distribution based on observation relation and action family."""
-        target_cls = target_class or (
-            action.semantic_key if action.family == ActionFamily.DISCOVERY else None
-        )
-        confounder_cls = confounder_class or (
-            action.semantic_key if action.family == ActionFamily.CONFOUNDER else None
-        )
+        
+        # NOT_OBSERVABLE invariant (Spec §34.6): leave belief unchanged
+        if obs_ref.relation == ObservationRelation.NOT_OBSERVABLE:
+            return
 
-        # Initialize probabilities if node has empty beliefs
-        if not node.class_belief.probabilities:
-            vocabulary = []
-            if target_cls:
-                vocabulary.append(target_cls)
-            if confounder_cls and confounder_cls not in vocabulary:
-                vocabulary.append(confounder_cls)
-            if not vocabulary:
-                vocabulary = [action.semantic_key]
+        # Determine vocabulary from action semantic prior or fallbacks
+        vocabulary_set = set(node.class_belief.probabilities.keys()) if node.class_belief.probabilities else set()
+        
+        if action.semantic_prior:
+            vocabulary_set.update(action.semantic_prior.keys())
+        
+        if target_class:
+            vocabulary_set.add(target_class)
+        if confounder_class:
+            vocabulary_set.add(confounder_class)
+        if not vocabulary_set:
+            vocabulary_set.add(action.semantic_key)
             
+        vocabulary = list(vocabulary_set)
+
+        # Initialize probabilities with nonzero prior mass when new hypotheses are introduced
+        if not node.class_belief.probabilities:
             equal_p = 1.0 / len(vocabulary)
             probs = {cls_name: equal_p for cls_name in vocabulary}
         else:
             probs = dict(node.class_belief.probabilities)
-            # Ensure target_cls and confounder_cls exist in distribution if provided
-            if target_cls and target_cls not in probs:
-                probs[target_cls] = 0.0
-            if confounder_cls and confounder_cls not in probs:
-                probs[confounder_cls] = 0.0
+            
+            # Incorporate new classes with prior pseudocount
+            new_classes = [c for c in vocabulary if c not in probs]
+            if new_classes:
+                # Add pseudocount mass to new classes
+                total_existing_mass = sum(probs.values())
+                pseudocount_mass = config.prior_pseudocount / (node.class_belief.update_count + config.prior_pseudocount * len(vocabulary))
+                
+                # Scale existing down
+                scale = 1.0 - (pseudocount_mass * len(new_classes))
+                scale = max(0.01, scale)  # ensure we don't totally wipe out existing
+                
+                for k in probs:
+                    probs[k] *= scale
+                for new_cls in new_classes:
+                    probs[new_cls] = pseudocount_mass
+                
+                # Renormalize to be perfectly 1.0
+                total = sum(probs.values())
+                if total > 0:
+                    probs = {k: v / total for k, v in probs.items()}
 
-        relation = obs_ref.relation
         score = obs_ref.score if obs_ref.score is not None else 0.5
-
-        # NOT_OBSERVABLE invariant (Spec §34.6): leave belief unchanged
-        if relation == ObservationRelation.NOT_OBSERVABLE:
-            return
 
         # Discount repeat weight if same correlation group was already executed on this node
         corr_group = action.correlation_group or action.semantic_key
+        # Exclude the current observation from the history count, and exclude NOT_OBSERVABLEs
         same_key_count = sum(
-            1 for o in node.observations if (getattr(o, 'correlation_group', None) or o.semantic_key) == corr_group
+            1 for o in node.observations 
+            if (getattr(o, 'correlation_group', None) or o.semantic_key) == corr_group
+            and o.observation_id != obs_ref.observation_id
+            and o.relation != ObservationRelation.NOT_OBSERVABLE
         )
         weight = config.discount_repeat_weight ** same_key_count
 
-        # Build likelihood multiplier per class
-        likelihoods: Dict[str, float] = {cls_name: 1.0 for cls_name in probs}
-
-        if relation in (ObservationRelation.STRONG_MATCH, ObservationRelation.NEW_DETECTION):
-            if action.family == ActionFamily.DISCOVERY or (target_cls and action.semantic_key == target_cls):
-                if target_cls:
-                    likelihoods[target_cls] = 1.0 + (1.5 * score * weight)
-            elif action.family == ActionFamily.CONFOUNDER or (confounder_cls and action.semantic_key == confounder_cls):
-                if confounder_cls:
-                    likelihoods[confounder_cls] = 1.0 + (3.0 * score * weight)
-                if target_cls:
-                    # Gentle penalty for target on confounder match
-                    likelihoods[target_cls] = max(0.1, 1.0 - (0.75 * score * weight))
-        elif relation == ObservationRelation.WEAK_MATCH:
-            if action.family == ActionFamily.CONFOUNDER or (confounder_cls and action.semantic_key == confounder_cls):
-                if confounder_cls:
-                    likelihoods[confounder_cls] = 1.0 + (0.8 * score * weight)
-                if target_cls:
-                    likelihoods[target_cls] = max(0.1, 1.0 - (0.4 * score * weight))
-            elif target_cls:
-                likelihoods[target_cls] = 1.0 + (0.4 * score * weight)
-        elif relation == ObservationRelation.NOT_RETRIEVED:
-            # Presence/absence asymmetry: NOT_RETRIEVED is mild negative evidence
-            if target_cls and (action.family == ActionFamily.DISCOVERY or action.semantic_key == target_cls):
-                # We need effect(NOT_RETRIEVED) < effect(strong contradictory match)
-                likelihoods[target_cls] = max(0.1, 1.0 - (0.15 * weight))
+        # Get proxy likelihoods
+        likelihoods = self.evidence_model.compute_likelihoods(
+            action=action,
+            relation=obs_ref.relation,
+            score=score,
+            weight=weight,
+            vocabulary=vocabulary,
+            target_class=target_class,
+            confounder_class=confounder_class,
+        )
 
         # Apply likelihood update and normalize
         unnormalized = {cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0) for cls_name in probs}

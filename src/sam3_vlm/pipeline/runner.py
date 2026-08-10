@@ -20,7 +20,7 @@ from sam3_vlm.planning.utility import DefaultUtilityEvaluator
 from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy
 from sam3_vlm.scene.belief import SemanticMemory, BeliefUpdater
 from sam3_vlm.scene.graph import SceneGraph
-from sam3_vlm.scene.state import SceneState
+from sam3_vlm.scene.state import SceneState, CountEstimator
 from sam3_vlm.pipeline.bootstrap import BootstrapPipeline
 from sam3_vlm.sensing.tiling import TilingPolicy
 
@@ -52,6 +52,7 @@ class Runner:
         self.state = RunnerState.INITIALIZE
         self.scene_state: Optional[SceneState] = None
         self.id_gen = IDGenerator()
+        self.target_class = "target"
         
         # Sub-components
         self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen)
@@ -146,11 +147,16 @@ class Runner:
             
             new_nodes_count = 0
             
+            # Compute pre-update stats for logging
+            pre_count = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            pre_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
+            
             # 5-8. Associate, Create Nodes, Update Beliefs
             if action.family == ActionFamily.CONTEXT:
                 # Intercept CONTEXT actions to avoid creating countable target nodes
                 # Defer logic to future M5 context handling.
-                pass
+                matched_node_ids = set()
+                new_node_ids = set()
             else:
                 assoc_result = self.association_policy.associate(
                     self.scene_state.graph,
@@ -186,12 +192,20 @@ class Runner:
                 for node in self.scene_state.graph.active_nodes():
                     if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
                         # Determine if node was within search ROI. 
-                        # GLOBAL and TILED (without explicit sub-ROI) cover the entire scene.
-                        # For M4, if action is GLOBAL/TILED, we assign NOT_RETRIEVED. Otherwise NOT_OBSERVABLE.
-                        if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
-                            relation = ObservationRelation.NOT_RETRIEVED
+                        # Use SAM3Observation.searched_regions for precise observability.
+                        relation = ObservationRelation.NOT_OBSERVABLE
+                        
+                        # If the node's center or bounding box intersects any searched region, it was retrievable
+                        if observation.searched_regions:
+                            node_box = node.geometry.bbox()
+                            for region in observation.searched_regions:
+                                if region.bbox().iou(node_box) > 0.0 or region.bbox().contains_box(node_box):
+                                    relation = ObservationRelation.NOT_RETRIEVED
+                                    break
                         else:
-                            relation = ObservationRelation.NOT_OBSERVABLE
+                            # Fallback for old tests that don't populate searched_regions
+                            if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
+                                relation = ObservationRelation.NOT_RETRIEVED
                             
                         # Append observation
                         obs_ref = NodeObservationRef(
@@ -209,15 +223,12 @@ class Runner:
                         )
 
             # Recompute soft count and variance
-            mean_count = 0.0
-            variance = 0.0
-            for node in self.scene_state.graph.active_nodes():
-                p = node.class_belief.probabilities.get(self.target_class, 0.0)
-                mean_count += p
-                variance += p * (1.0 - p)
-            self.scene_state.count_estimate.mean_count = mean_count
-            self.scene_state.count_estimate.variance = variance
-            self.scene_state.count_estimate.std_dev = variance ** 0.5
+            self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            
+            post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
+            
+            # Simple discrimination proxy for logging
+            discrimination_proxy = max(0.0, pre_entropy - post_entropy)
                     
             # 10. Update semantic memory
             self.scene_state.semantic_memory.record_execution(
@@ -226,6 +237,10 @@ class Runner:
                 new_nodes=new_nodes_count,
                 runtime_ms=observation.runtime_ms,
                 predicted_utility=best_entry.total_utility if best_entry.total_utility else 0.0,
+                affected_nodes=len(matched_node_ids) + len(new_node_ids),
+                entropy_change=post_entropy - pre_entropy,
+                variance_change=self.scene_state.count_estimate.variance - pre_count.variance if 'pre_count' in locals() else 0.0,
+                realized_discrimination_proxy=discrimination_proxy,
             )
             
             # 11. Update discovery state
@@ -296,12 +311,5 @@ class Runner:
         if not self.scene_state:
             return 0.0
             
-        total = 0.0
-        for node in self.scene_state.graph.active_nodes():
-            # For M4, use simple sum of target class probabilities if it exists, else 0
-            if self.target_class in node.class_belief.probabilities:
-                total += node.class_belief.probabilities[self.target_class]
-            else:
-                # Fallback naive assumption if belief hasn't been updated properly
-                total += 1.0 if node.diagnostics.support_count > 0 else 0.0
-        return total
+        self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+        return self.scene_state.count_estimate.mean_count
