@@ -1,8 +1,8 @@
-"""Graph Node schema representing a sensor-grounded object hypothesis (V4 Design Spec §3.3)."""
+"""Graph Node schema representing a sensor-grounded object hypothesis (V4 Design Spec §3.3 / §25.3)."""
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
-from sam3_vlm.core.geometry import Box, BoxGeometry, Geometry, GeometryRef
+from sam3_vlm.core.geometry import Box, BoxGeometry, Geometry
 from sam3_vlm.core.types import (
     ClassBelief,
     NodeObservationRef,
@@ -23,6 +23,7 @@ class Node:
     observations: List[NodeObservationRef] = field(default_factory=list)
     created_by_call_id: str = ""
     status: NodeStatus = NodeStatus.ACTIVE
+    merged_from: List[str] = field(default_factory=list)
 
     @property
     def existence_score(self) -> float:
@@ -65,6 +66,7 @@ class Node:
                 "existence_score": self.diagnostics.existence_score,
                 "duplicate_risk": self.diagnostics.duplicate_risk,
                 "merge_risk": self.diagnostics.merge_risk,
+                "split_risk": self.diagnostics.split_risk,
                 "ambiguous_with": list(self.diagnostics.ambiguous_with),
                 "support_count": self.diagnostics.support_count,
                 "independent_semantic_support_count": self.diagnostics.independent_semantic_support_count,
@@ -84,6 +86,7 @@ class Node:
             ],
             "created_by_call_id": self.created_by_call_id,
             "status": self.status.value,
+            "merged_from": list(self.merged_from),
         }
 
     @classmethod
@@ -107,6 +110,7 @@ class Node:
             existence_score=diag_data.get("existence_score", 1.0),
             duplicate_risk=diag_data.get("duplicate_risk", 0.0),
             merge_risk=diag_data.get("merge_risk", 0.0),
+            split_risk=diag_data.get("split_risk", 0.0),
             ambiguous_with=list(diag_data.get("ambiguous_with", [])),
             support_count=diag_data.get("support_count", 1),
             independent_semantic_support_count=diag_data.get("independent_semantic_support_count", 1),
@@ -135,4 +139,5 @@ class Node:
             observations=obs_list,
             created_by_call_id=data.get("created_by_call_id", ""),
             status=NodeStatus(data.get("status", "ACTIVE")),
+            merged_from=list(data.get("merged_from", [])),
         )

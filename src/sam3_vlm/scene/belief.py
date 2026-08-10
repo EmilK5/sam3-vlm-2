@@ -1,8 +1,8 @@
-"""Semantic memory and Bayesian belief updating primitives (V4 Design Spec §3.5 / §11)."""
+"""Semantic memory and Bayesian belief updating primitives (V4 Design Spec §3.5 / §11 / §35.6)."""
 
 from dataclasses import dataclass, field
 import math
-from typing import Dict, List
+from typing import Dict, List, Optional
 from sam3_vlm.core.config import BeliefConfig
 from sam3_vlm.core.types import (
     ActionFamily,
@@ -49,7 +49,7 @@ class SemanticMemory:
 
 
 class BeliefUpdater:
-    """Class belief distribution updater enforcing presence/absence asymmetry (V4 Design Spec §11)."""
+    """Dataset-agnostic class belief distribution updater enforcing presence/absence asymmetry (V4 Design Spec §11)."""
 
     @staticmethod
     def calculate_entropy(probabilities: Dict[str, float]) -> float:
@@ -65,59 +65,81 @@ class BeliefUpdater:
         node: Node,
         action: SensingAction,
         obs_ref: NodeObservationRef,
-        target_class: str = "target",
-        confounder_class: str = "leaf",
-        background_class: str = "background",
-        event_id: str | None = None,
+        target_class: Optional[str] = None,
+        confounder_class: Optional[str] = None,
+        event_id: Optional[str] = None,
         config: BeliefConfig = BeliefConfig(),
     ) -> None:
         """Update node class belief distribution based on observation relation and action family."""
-        # Initialize default probabilities if empty
+        target_cls = target_class or (
+            action.semantic_key if action.family == ActionFamily.DISCOVERY else None
+        )
+        confounder_cls = confounder_class or (
+            action.semantic_key if action.family == ActionFamily.CONFOUNDER else None
+        )
+
+        # Initialize probabilities if node has empty beliefs
         if not node.class_belief.probabilities:
-            probs = {target_class: 0.5, confounder_class: 0.4, background_class: 0.1}
+            vocabulary = []
+            if target_cls:
+                vocabulary.append(target_cls)
+            if confounder_cls and confounder_cls not in vocabulary:
+                vocabulary.append(confounder_cls)
+            if not vocabulary:
+                vocabulary = [action.semantic_key]
+            
+            equal_p = 1.0 / len(vocabulary)
+            probs = {cls_name: equal_p for cls_name in vocabulary}
         else:
             probs = dict(node.class_belief.probabilities)
+            # Ensure target_cls and confounder_cls exist in distribution if provided
+            if target_cls and target_cls not in probs:
+                probs[target_cls] = 0.0
+            if confounder_cls and confounder_cls not in probs:
+                probs[confounder_cls] = 0.0
 
-        score = obs_ref.score if obs_ref.score is not None else 0.5
         relation = obs_ref.relation
+        score = obs_ref.score if obs_ref.score is not None else 0.5
 
-        # Discount repeat weight if same semantic key was already used
+        # NOT_OBSERVABLE invariant (Spec §34.6): leave belief unchanged
+        if relation == ObservationRelation.NOT_OBSERVABLE:
+            return
+
+        # Discount repeat weight if same semantic key was already executed on this node
         same_key_count = sum(
             1 for o in node.observations if o.semantic_key == action.semantic_key
         )
-        weight = (config.discount_repeat_weight ** max(0, same_key_count - 1))
+        weight = config.discount_repeat_weight ** max(0, same_key_count - 1)
 
-        # Presence / absence asymmetric likelihood update
+        # Build likelihood multiplier per class
+        likelihoods: Dict[str, float] = {cls_name: 1.0 for cls_name in probs}
+
         if relation in (ObservationRelation.STRONG_MATCH, ObservationRelation.NEW_DETECTION):
-            if action.family == ActionFamily.DISCOVERY or action.semantic_key == target_class:
-                # Strong presence under target prompt -> increase target probability
-                likelihoods = {target_class: 2.5 * score * weight, confounder_class: 0.8, background_class: 0.3}
-            elif action.family == ActionFamily.CONFOUNDER:
-                # Strong presence under confounder prompt -> increase confounder probability & reduce target probability
-                likelihoods = {target_class: 0.25, confounder_class: 4.0 * score * weight, background_class: 0.5}
-            else:
-                likelihoods = {target_class: 1.2, confounder_class: 1.0, background_class: 0.8}
+            if action.family == ActionFamily.DISCOVERY or (target_cls and action.semantic_key == target_cls):
+                if target_cls:
+                    likelihoods[target_cls] = 2.5 * score * weight
+            elif action.family == ActionFamily.CONFOUNDER or (confounder_cls and action.semantic_key == confounder_cls):
+                if confounder_cls:
+                    likelihoods[confounder_cls] = 4.0 * score * weight
+                if target_cls:
+                    likelihoods[target_cls] = 0.25
         elif relation == ObservationRelation.WEAK_MATCH:
-            if action.family == ActionFamily.CONFOUNDER:
-                likelihoods = {target_class: 0.8, confounder_class: 1.5 * score * weight, background_class: 0.8}
-            else:
-                likelihoods = {target_class: 1.3 * score * weight, confounder_class: 1.0, background_class: 0.8}
+            if action.family == ActionFamily.CONFOUNDER or (confounder_cls and action.semantic_key == confounder_cls):
+                if confounder_cls:
+                    likelihoods[confounder_cls] = 1.8 * score * weight
+                if target_cls:
+                    likelihoods[target_cls] = 0.6
+            elif target_cls:
+                likelihoods[target_cls] = 1.4 * score * weight
         elif relation == ObservationRelation.NOT_RETRIEVED:
-            # Presence/absence asymmetry: NOT_RETRIEVED is weak evidence (imperfect SAM3 recall)
-            if action.family == ActionFamily.DISCOVERY:
-                likelihoods = {target_class: 0.85, confounder_class: 1.1, background_class: 1.1}
-            else:
-                likelihoods = {target_class: 1.0, confounder_class: 1.0, background_class: 1.0}
-        else:
-            likelihoods = {target_class: 1.0, confounder_class: 1.0, background_class: 1.0}
+            # Presence/absence asymmetry: NOT_RETRIEVED is mild negative evidence
+            if target_cls and (action.family == ActionFamily.DISCOVERY or action.semantic_key == target_cls):
+                likelihoods[target_cls] = 0.85
 
         # Apply likelihood update and normalize
-        unnormalized = {}
-        for cls_name, p in probs.items():
-            l_val = likelihoods.get(cls_name, 1.0)
-            unnormalized[cls_name] = p * l_val
-
+        unnormalized = {cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0) for cls_name in probs}
         total = sum(unnormalized.values())
+
         if total > 0:
             updated_probs = {k: v / total for k, v in unnormalized.items()}
         else:

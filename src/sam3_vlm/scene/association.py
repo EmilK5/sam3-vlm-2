@@ -126,7 +126,7 @@ class IoUAssociationPolicy:
                 detection_id=det.detection_id,
                 relation=ObservationRelation.NEW_DETECTION,
                 score=det.score,
-                association_score=1.0,
+                association_score=None,
             )
 
             new_node = Node(

@@ -62,7 +62,6 @@ def test_iou_association_unmatched_creates_new_node():
     graph = SceneGraph()
     id_gen = IDGenerator()
 
-    # Initial node at (0, 0, 10, 10)
     node1 = Node(
         node_id=id_gen.next_node_id(),
         geometry=BoxGeometry(Box(0.0, 0.0, 10.0, 10.0)),
@@ -90,7 +89,43 @@ def test_iou_association_unmatched_creates_new_node():
     assert len(graph.active_nodes()) == 2
 
     new_node = res.new_nodes[0]
-    assert new_node.observations[0].relation == ObservationRelation.NEW_DETECTION
+    obs_ref = new_node.observations[0]
+    assert obs_ref.relation == ObservationRelation.NEW_DETECTION
+    # asociación_score must be None for NEW_DETECTION (Spec §21.4)
+    assert obs_ref.association_score is None
+
+
+def test_tile_duplicate_detection_matches_existing_node():
+    """Verify a tile duplicate detection overlapping an existing global node matches it instead of duplicating (Spec §34.7)."""
+    policy = IoUAssociationPolicy()
+    graph = SceneGraph()
+    id_gen = IDGenerator()
+
+    # Existing node from global pass
+    global_node = Node(node_id="n1", geometry=BoxGeometry(Box(100.0, 100.0, 200.0, 200.0)))
+    graph.add_node(global_node)
+
+    # Tile detection covering same object in tile coordinates converted to image coords
+    tile_det = Detection(
+        detection_id="det_tile_1",
+        geometry=GeometryRef(Box(102.0, 101.0, 198.0, 199.0)),
+        score=0.92,
+        source_tile_id="tile_01",
+    )
+
+    res = policy.associate(
+        graph=graph,
+        detections=[tile_det],
+        sam3_call_id="sam3_tiled_1",
+        action_id="act_tiled_1",
+        semantic_key="target",
+        id_gen=id_gen,
+    )
+
+    # Must match existing global node, creating 0 new nodes
+    assert len(res.matched_observations) == 1
+    assert len(res.new_nodes) == 0
+    assert global_node.diagnostics.support_count == 2
 
 
 def test_ambiguous_association_and_diagnostics():
@@ -120,7 +155,6 @@ def test_ambiguous_association_and_diagnostics():
         id_gen=id_gen,
     )
 
-    # Should flag ambiguous association and record merge_risk
     assert len(res.matched_observations) == 1
     matched_node_id, obs_ref = res.matched_observations[0]
     assert obs_ref.relation == ObservationRelation.AMBIGUOUS_ASSOCIATION

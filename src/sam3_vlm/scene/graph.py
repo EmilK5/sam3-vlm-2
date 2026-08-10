@@ -1,10 +1,12 @@
-"""Scene Graph container interface, lifecycle management, and serialization (V4 Design Spec §3.2 / §16.1)."""
+"""Scene Graph container interface, lifecycle management, and serialization (V4 Design Spec §3.2 / §16.1 / §34.1)."""
 
 from dataclasses import dataclass, field
 import json
 from typing import Any, Dict, List, Optional
 from sam3_vlm.core.types import NodeStatus
 from sam3_vlm.scene.node import Node
+
+SCHEMA_VERSION = 1
 
 
 @dataclass
@@ -38,10 +40,10 @@ class SceneGraph:
             node.status = NodeStatus.REJECTED
 
     def merge_nodes(self, primary_id: str, secondary_ids: List[str]) -> Node:
-        """Merge secondary node hypotheses into primary node.
+        """Merge secondary node hypotheses into primary node (Spec §25.3).
 
-        Secondary nodes are marked REJECTED and their observations/support count
-        are accumulated into the primary node.
+        Secondary nodes are marked REJECTED, their observations and support count
+        are accumulated into the primary node, and their IDs are appended to merged_from.
         """
         primary = self.get_node(primary_id)
         if not primary:
@@ -51,7 +53,9 @@ class SceneGraph:
             secondary = self.get_node(sec_id)
             if secondary and secondary.status == NodeStatus.ACTIVE:
                 secondary.status = NodeStatus.REJECTED
-                # Accumulate observations
+                # Accumulate lineage and observations
+                if sec_id not in primary.merged_from:
+                    primary.merged_from.append(sec_id)
                 primary.observations.extend(secondary.observations)
                 primary.diagnostics.support_count += secondary.diagnostics.support_count
                 primary.diagnostics.merge_risk = max(
@@ -61,14 +65,21 @@ class SceneGraph:
         return primary
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize scene graph state to a dictionary."""
+        """Serialize scene graph state to a dictionary with schema_version."""
         return {
-            "nodes": {node_id: node.to_dict() for node_id, node in self.nodes.items()}
+            "schema_version": SCHEMA_VERSION,
+            "nodes": {node_id: node.to_dict() for node_id, node in self.nodes.items()},
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SceneGraph":
-        """Deserialize scene graph state from a dictionary."""
+        """Deserialize scene graph state from a dictionary with schema validation."""
+        version = data.get("schema_version")
+        if version is not None and version != SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported graph schema_version {version}, expected {SCHEMA_VERSION}"
+            )
+
         graph = cls()
         nodes_dict = data.get("nodes", {})
         for node_id, node_data in nodes_dict.items():

@@ -25,6 +25,9 @@ def test_synthetic_multipass_scene_graph_evolution():
     belief_updater = BeliefUpdater()
     semantic_memory = SemanticMemory()
 
+    target_cls = "target"
+    confounder_cls = "leaf"
+
     # Pass 1: Bootstrap sensing (detections at d1=(10,10,50,50), d2=(100,100,140,140))
     bootstrap_action = SensingAction(
         action_id=id_gen.next_action_id(),
@@ -55,13 +58,10 @@ def test_synthetic_multipass_scene_graph_evolution():
     n2_id = res1.new_nodes[1].node_id
 
     # Update beliefs for Pass 1
-    for node_id, obs_ref in res1.matched_observations:
-        node = graph.get_node(node_id)
-        if node:
-            belief_updater.update_node_belief(node, bootstrap_action, obs_ref)
-
     for new_node in res1.new_nodes:
-        belief_updater.update_node_belief(new_node, bootstrap_action, new_node.observations[0])
+        belief_updater.update_node_belief(
+            new_node, bootstrap_action, new_node.observations[0], target_class=target_cls, confounder_class=confounder_cls
+        )
 
     # Pass 2: Follow-up target discovery pass
     pass2_action = SensingAction(
@@ -93,7 +93,9 @@ def test_synthetic_multipass_scene_graph_evolution():
     for node_id, obs_ref in res2.matched_observations:
         node = graph.get_node(node_id)
         if node:
-            belief_updater.update_node_belief(node, pass2_action, obs_ref)
+            belief_updater.update_node_belief(
+                node, pass2_action, obs_ref, target_class=target_cls, confounder_class=confounder_cls
+            )
 
     # Both nodes should have high target belief after Pass 2
     n1 = graph.get_node(n1_id)
@@ -129,7 +131,9 @@ def test_synthetic_multipass_scene_graph_evolution():
     for node_id, obs_ref in res3.matched_observations:
         node = graph.get_node(node_id)
         if node:
-            belief_updater.update_node_belief(node, pass3_action, obs_ref)
+            belief_updater.update_node_belief(
+                node, pass3_action, obs_ref, target_class=target_cls, confounder_class=confounder_cls
+            )
 
     # Result: n2 should now be identified as leaf confounder (leaf > target)
     # n1 remains high target probability

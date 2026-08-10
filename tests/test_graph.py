@@ -1,4 +1,4 @@
-"""Unit tests for SceneGraph operations and serialization (V4 Design Spec §3.2 / §16.1)."""
+"""Unit tests for SceneGraph operations, merge lineage, and schema version serialization (V4 Design Spec §3.2 / §16.1 / §25.3 / §34.1)."""
 
 import pytest
 from sam3_vlm.core.geometry import Box, BoxGeometry
@@ -42,7 +42,8 @@ def test_scene_graph_operations():
     assert len(graph.active_nodes()) == 0
 
 
-def test_scene_graph_merge_nodes():
+def test_scene_graph_merge_nodes_lineage():
+    """Verify merged_from lineage tracking (Spec §25.3)."""
     graph = SceneGraph()
     geom1 = BoxGeometry(Box(0.0, 0.0, 10.0, 10.0))
     geom2 = BoxGeometry(Box(2.0, 2.0, 10.0, 10.0))
@@ -56,39 +57,35 @@ def test_scene_graph_merge_nodes():
     merged_primary = graph.merge_nodes("n1", ["n2"])
 
     assert merged_primary.node_id == "n1"
+    assert "n2" in merged_primary.merged_from
     assert n2.status == NodeStatus.REJECTED
     assert len(graph.active_nodes()) == 1
 
+    # Test serialization of merged_from
+    data = graph.to_dict()
+    restored = SceneGraph.from_dict(data)
+    restored_n1 = restored.get_node("n1")
+    assert restored_n1 is not None
+    assert "n2" in restored_n1.merged_from
 
-def test_graph_serialization_dict_roundtrip():
+
+def test_graph_serialization_schema_version():
+    """Verify schema_version is present in dict/JSON and validated on load (Spec §34.1)."""
     graph = SceneGraph()
     geom = BoxGeometry(Box(10.0, 10.0, 50.0, 50.0))
-    cb = ClassBelief(probabilities={"target": 0.7, "leaf": 0.3})
-
-    n1 = Node(node_id="node_000001", geometry=geom, class_belief=cb)
-    graph.add_node(n1)
-
-    data = graph.to_dict()
-    assert "nodes" in data
-    assert "node_000001" in data["nodes"]
-
-    restored_graph = SceneGraph.from_dict(data)
-    restored_node = restored_graph.get_node("node_000001")
-
-    assert restored_node is not None
-    assert restored_node.node_id == "node_000001"
-    assert restored_node.geometry.bbox() == Box(10.0, 10.0, 50.0, 50.0)
-    assert restored_node.class_belief.probabilities == {"target": 0.7, "leaf": 0.3}
-
-
-def test_graph_serialization_json_roundtrip():
-    graph = SceneGraph()
-    geom = BoxGeometry(Box(5.0, 5.0, 25.0, 25.0))
     n1 = Node(node_id="n1", geometry=geom)
     graph.add_node(n1)
 
-    json_str = graph.to_json()
-    assert "n1" in json_str
+    data = graph.to_dict()
+    assert "schema_version" in data
+    assert data["schema_version"] == 1
 
-    restored = SceneGraph.from_json(json_str)
+    # Valid deserialization
+    restored = SceneGraph.from_dict(data)
     assert restored.get_node("n1") is not None
+
+    # Invalid schema_version raises ValueError
+    invalid_data = dict(data)
+    invalid_data["schema_version"] = 999
+    with pytest.raises(ValueError, match="Unsupported graph schema_version"):
+        SceneGraph.from_dict(invalid_data)

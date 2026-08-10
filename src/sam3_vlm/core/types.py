@@ -88,11 +88,12 @@ class ClassBelief:
 
 @dataclass
 class RegistrationDiagnostics:
-    """Graph node registration & association state (V4 Design Spec §21.6)."""
+    """Graph node registration & association state (V4 Design Spec §21.6 / §25.4)."""
 
     existence_score: float = 1.0
     duplicate_risk: float = 0.0
     merge_risk: float = 0.0
+    split_risk: float = 0.0
     ambiguous_with: List[str] = field(default_factory=list)
     support_count: int = 1
     independent_semantic_support_count: int = 1
