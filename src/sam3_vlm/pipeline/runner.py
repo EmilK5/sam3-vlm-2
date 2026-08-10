@@ -159,7 +159,8 @@ class Runner:
                     action.action_id,
                     action.semantic_key,
                     self.id_gen,
-                    self.config.association
+                    correlation_group=action.correlation_group,
+                    config=self.config.association
                 )
                 
                 new_nodes_count = len(assoc_result.new_nodes)
@@ -198,6 +199,7 @@ class Runner:
                             sam3_call_id=observation.call_id,
                             action_id=action.action_id,
                             semantic_key=action.semantic_key,
+                            correlation_group=action.correlation_group,
                             relation=relation,
                             score=0.0
                         )
@@ -205,6 +207,17 @@ class Runner:
                         self.belief_updater.update_node_belief(
                             node, action, obs_ref, target_class=self.target_class
                         )
+
+            # Recompute soft count and variance
+            mean_count = 0.0
+            variance = 0.0
+            for node in self.scene_state.graph.active_nodes():
+                p = node.class_belief.probabilities.get(self.target_class, 0.0)
+                mean_count += p
+                variance += p * (1.0 - p)
+            self.scene_state.count_estimate.mean_count = mean_count
+            self.scene_state.count_estimate.variance = variance
+            self.scene_state.count_estimate.std_dev = variance ** 0.5
                     
             # 10. Update semantic memory
             self.scene_state.semantic_memory.record_execution(
@@ -212,7 +225,7 @@ class Runner:
                 sam3_call_id=observation.call_id,
                 new_nodes=new_nodes_count,
                 runtime_ms=observation.runtime_ms,
-                predicted_utility=best_entry.total_utility if best_entry.total_utility else 0.0
+                predicted_utility=best_entry.total_utility if best_entry.total_utility else 0.0,
             )
             
             # 11. Update discovery state

@@ -1,7 +1,7 @@
 """Cross-pass detection association and node registration policy (V4 Design Spec §10)."""
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Protocol, Set, Tuple
+from typing import Dict, List, Protocol, Set, Tuple, Optional
 from sam3_vlm.core.config import AssociationConfig
 from sam3_vlm.core.geometry import BoxGeometry
 from sam3_vlm.core.id_generator import IDGenerator
@@ -34,6 +34,7 @@ class AssociationPolicy(Protocol):
         action_id: str,
         semantic_key: str,
         id_gen: IDGenerator,
+        correlation_group: Optional[str] = None,
         config: AssociationConfig = AssociationConfig(),
     ) -> AssociationResult:
         ...
@@ -50,6 +51,7 @@ class IoUAssociationPolicy:
         action_id: str,
         semantic_key: str,
         id_gen: IDGenerator,
+        correlation_group: Optional[str] = None,
         config: AssociationConfig = AssociationConfig(),
     ) -> AssociationResult:
         result = AssociationResult()
@@ -89,6 +91,7 @@ class IoUAssociationPolicy:
                     sam3_call_id=sam3_call_id,
                     action_id=action_id,
                     semantic_key=semantic_key,
+                    correlation_group=correlation_group,
                     detection_id=det.detection_id,
                     relation=relation,
                     score=det.score,
@@ -141,6 +144,7 @@ class IoUAssociationPolicy:
                 sam3_call_id=sam3_call_id,
                 action_id=action_id,
                 semantic_key=semantic_key,
+                correlation_group=correlation_group,
                 detection_id=det.detection_id,
                 relation=ObservationRelation.NEW_DETECTION,
                 score=det.score,

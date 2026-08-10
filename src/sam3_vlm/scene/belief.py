@@ -114,11 +114,12 @@ class BeliefUpdater:
         if relation == ObservationRelation.NOT_OBSERVABLE:
             return
 
-        # Discount repeat weight if same semantic key was already executed on this node
+        # Discount repeat weight if same correlation group was already executed on this node
+        corr_group = action.correlation_group or action.semantic_key
         same_key_count = sum(
-            1 for o in node.observations if o.semantic_key == action.semantic_key
+            1 for o in node.observations if (getattr(o, 'correlation_group', None) or o.semantic_key) == corr_group
         )
-        weight = config.discount_repeat_weight ** max(0, same_key_count - 1)
+        weight = config.discount_repeat_weight ** same_key_count
 
         # Build likelihood multiplier per class
         likelihoods: Dict[str, float] = {cls_name: 1.0 for cls_name in probs}
@@ -126,24 +127,26 @@ class BeliefUpdater:
         if relation in (ObservationRelation.STRONG_MATCH, ObservationRelation.NEW_DETECTION):
             if action.family == ActionFamily.DISCOVERY or (target_cls and action.semantic_key == target_cls):
                 if target_cls:
-                    likelihoods[target_cls] = 2.5 * score * weight
+                    likelihoods[target_cls] = 1.0 + (1.5 * score * weight)
             elif action.family == ActionFamily.CONFOUNDER or (confounder_cls and action.semantic_key == confounder_cls):
                 if confounder_cls:
-                    likelihoods[confounder_cls] = 4.0 * score * weight
+                    likelihoods[confounder_cls] = 1.0 + (3.0 * score * weight)
                 if target_cls:
-                    likelihoods[target_cls] = 0.25
+                    # Gentle penalty for target on confounder match
+                    likelihoods[target_cls] = max(0.1, 1.0 - (0.75 * score * weight))
         elif relation == ObservationRelation.WEAK_MATCH:
             if action.family == ActionFamily.CONFOUNDER or (confounder_cls and action.semantic_key == confounder_cls):
                 if confounder_cls:
-                    likelihoods[confounder_cls] = 1.8 * score * weight
+                    likelihoods[confounder_cls] = 1.0 + (0.8 * score * weight)
                 if target_cls:
-                    likelihoods[target_cls] = 0.6
+                    likelihoods[target_cls] = max(0.1, 1.0 - (0.4 * score * weight))
             elif target_cls:
-                likelihoods[target_cls] = 1.4 * score * weight
+                likelihoods[target_cls] = 1.0 + (0.4 * score * weight)
         elif relation == ObservationRelation.NOT_RETRIEVED:
             # Presence/absence asymmetry: NOT_RETRIEVED is mild negative evidence
             if target_cls and (action.family == ActionFamily.DISCOVERY or action.semantic_key == target_cls):
-                likelihoods[target_cls] = 0.85
+                # We need effect(NOT_RETRIEVED) < effect(strong contradictory match)
+                likelihoods[target_cls] = max(0.1, 1.0 - (0.15 * weight))
 
         # Apply likelihood update and normalize
         unnormalized = {cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0) for cls_name in probs}

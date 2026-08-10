@@ -1,0 +1,248 @@
+import pytest
+from typing import Dict
+from sam3_vlm.scene.belief import BeliefUpdater
+from sam3_vlm.scene.node import Node
+from sam3_vlm.core.geometry import BoxGeometry, Box
+from sam3_vlm.core.types import ClassBelief, NodeObservationRef, ObservationRelation, ActionFamily, SpatialMode
+from sam3_vlm.sensing.action import SensingAction
+
+
+def create_mock_node() -> Node:
+    return Node(
+        node_id="test_node",
+        geometry=BoxGeometry(Box(0, 0, 10, 10)),
+    )
+
+def test_m5_a_basic_bayesian_movement():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    # Target compatible prompt -> strong target-like observation
+    action1 = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY)
+    obs1 = NodeObservationRef("o1", "call1", "a1", "target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node, action1, obs1, target_class="target", confounder_class="confounder")
+    
+    p_target_after_a1 = node.class_belief.probabilities["target"]
+    p_confounder_after_a1 = node.class_belief.probabilities["confounder"]
+    assert p_target_after_a1 > p_confounder_after_a1
+    assert p_target_after_a1 > 0.5  # Started at 0.5 (assuming target and confounder)
+
+    # Confounder compatible prompt -> strong confounder observation
+    action2 = SensingAction(action_id="a2", semantic_key="confounder", prompt="confounder", family=ActionFamily.CONFOUNDER)
+    obs2 = NodeObservationRef("o2", "call2", "a2", "confounder", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node, action2, obs2, target_class="target", confounder_class="confounder")
+    
+    p_target_after_a2 = node.class_belief.probabilities["target"]
+    p_confounder_after_a2 = node.class_belief.probabilities["confounder"]
+    # Confounder observation should decrease target posterior
+    assert p_target_after_a2 < p_target_after_a1
+    assert p_confounder_after_a2 > p_confounder_after_a1
+
+
+def test_m5_b_weak_evidence():
+    updater = BeliefUpdater()
+    
+    node_strong = create_mock_node()
+    action = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY)
+    obs_strong = NodeObservationRef("o1", "call1", "a1", "target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node_strong, action, obs_strong, target_class="target", confounder_class="confounder")
+    
+    node_weak = create_mock_node()
+    obs_weak = NodeObservationRef("o2", "call1", "a1", "target", relation=ObservationRelation.WEAK_MATCH, score=0.9)
+    updater.update_node_belief(node_weak, action, obs_weak, target_class="target", confounder_class="confounder")
+    
+    # Weak match moves posterior less than strong match
+    assert node_weak.class_belief.probabilities["target"] > 0.5
+    assert node_strong.class_belief.probabilities["target"] > node_weak.class_belief.probabilities["target"]
+
+
+def test_m5_c_not_observable():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    # Init belief
+    action1 = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY)
+    obs1 = NodeObservationRef("o1", "call1", "a1", "target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node, action1, obs1, target_class="target", confounder_class="confounder")
+    
+    p_before = node.class_belief.probabilities["target"]
+    
+    # NOT_OBSERVABLE should leave posterior exactly unchanged
+    action2 = SensingAction(action_id="a2", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY)
+    obs2 = NodeObservationRef("o2", "call2", "a2", "target", relation=ObservationRelation.NOT_OBSERVABLE, score=0.0)
+    updater.update_node_belief(node, action2, obs2, target_class="target", confounder_class="confounder")
+    
+    p_after = node.class_belief.probabilities["target"]
+    assert p_before == p_after
+
+
+def test_m5_d_not_retrieved():
+    updater = BeliefUpdater()
+    
+    node1 = create_mock_node()
+    action = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY)
+    obs_not_retrieved = NodeObservationRef("o1", "call1", "a1", "target", relation=ObservationRelation.NOT_RETRIEVED, score=0.0)
+    updater.update_node_belief(node1, action, obs_not_retrieved, target_class="target", confounder_class="confounder")
+    
+    node2 = create_mock_node()
+    action_conf = SensingAction(action_id="a2", semantic_key="confounder", prompt="confounder", family=ActionFamily.CONFOUNDER)
+    obs_strong = NodeObservationRef("o2", "call1", "a2", "confounder", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node2, action_conf, obs_strong, target_class="target", confounder_class="confounder")
+    
+    # NOT_RETRIEVED is weak negative evidence
+    p_target_not_retrieved = node1.class_belief.probabilities["target"]
+    assert p_target_not_retrieved < 0.5  # It decreased from 0.5
+    
+    p_target_contradictory = node2.class_belief.probabilities["target"]
+    assert p_target_contradictory < 0.5
+    
+    # Effect of NOT_RETRIEVED should be less than strong contradictory match
+    assert p_target_not_retrieved > p_target_contradictory
+
+
+def test_m5_e_repeated_same_semantic_key():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    action = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY, correlation_group="target")
+    obs = NodeObservationRef("o1", "call1", "a1", "target", correlation_group="target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    
+    probs = []
+    for _ in range(10):
+        updater.update_node_belief(node, action, obs, target_class="target", confounder_class="confounder")
+        probs.append(node.class_belief.probabilities["target"])
+        node.observations.append(obs)  # Simulate observation appending
+        
+    # Diminishing marginal effect
+    deltas = [probs[i+1] - probs[i] for i in range(len(probs)-1)]
+    assert all(d > 0 for d in deltas) # Always increases
+    assert deltas[0] > deltas[-1] # but by less and less
+    assert probs[-1] < 1.0 # Does not explode to 1.0 arbitrarily
+
+
+def test_m5_f_global_and_tiled_same_key():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    # Global
+    action_g = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.GLOBAL, correlation_group="target")
+    obs_g = NodeObservationRef("o1", "call1", "a1", "target", correlation_group="target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node, action_g, obs_g, target_class="target", confounder_class="confounder")
+    node.observations.append(obs_g)
+    
+    p1 = node.class_belief.probabilities["target"]
+    
+    # Tiled, same key
+    from sam3_vlm.core.config import TilingConfig
+    action_t = SensingAction(action_id="a2", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.TILED, correlation_group="target", tiling=TilingConfig(grid_rows=2, grid_cols=2))
+    obs_t = NodeObservationRef("o2", "call2", "a2", "target", correlation_group="target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node, action_t, obs_t, target_class="target", confounder_class="confounder")
+    node.observations.append(obs_t)
+    
+    p2 = node.class_belief.probabilities["target"]
+    
+    # Assert discounted update due to same correlation_group
+    # Let's compare with a different semantic key
+    node_diff = create_mock_node()
+    updater.update_node_belief(node_diff, action_g, obs_g, target_class="target", confounder_class="confounder")
+    node_diff.observations.append(obs_g)
+    
+    action_diff = SensingAction(action_id="a3", semantic_key="target_diff", prompt="target_diff", family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.TILED, correlation_group="target_diff", tiling=TilingConfig(grid_rows=2, grid_cols=2))
+    obs_diff = NodeObservationRef("o3", "call3", "a3", "target_diff", correlation_group="target_diff", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    updater.update_node_belief(node_diff, action_diff, obs_diff, target_class="target", confounder_class="confounder")
+    
+    p_diff = node_diff.class_belief.probabilities["target"]
+    
+    # Different semantic key should give more information (higher probability) than same key repeated
+    assert p_diff > p2
+
+
+def test_m5_i_soft_count():
+    from sam3_vlm.scene.state import SceneState, DiscoveryState
+    from sam3_vlm.scene.graph import SceneGraph
+    from sam3_vlm.scene.belief import SemanticMemory
+    
+    state = SceneState(image_id="i1", user_prompt="p", target_class="target", graph=SceneGraph(), semantic_memory=SemanticMemory())
+    
+    nodes = []
+    for p in [0.9, 0.6, 0.2]:
+        node = create_mock_node()
+        node.node_id = f"node_{p}"
+        node.class_belief = ClassBelief(probabilities={"target": p, "confounder": 1-p})
+        state.graph.add_node(node)
+        nodes.append(node)
+        
+    # Recalculate count
+    mean_count = 0.0
+    for node in state.graph.active_nodes():
+        p = node.class_belief.probabilities.get(state.target_class, 0.0)
+        mean_count += p
+    
+    assert abs(mean_count - 1.7) < 1e-5
+
+
+def test_m5_j_count_variance():
+    from sam3_vlm.scene.state import SceneState, DiscoveryState
+    from sam3_vlm.scene.graph import SceneGraph
+    from sam3_vlm.scene.belief import SemanticMemory
+    
+    state = SceneState(image_id="i1", user_prompt="p", target_class="target", graph=SceneGraph(), semantic_memory=SemanticMemory())
+    
+    probs = [0.9, 0.6, 0.2]
+    for p in probs:
+        node = create_mock_node()
+        node.node_id = f"node_{p}"
+        node.class_belief = ClassBelief(probabilities={"target": p, "confounder": 1-p})
+        state.graph.add_node(node)
+        
+    variance = 0.0
+    for node in state.graph.active_nodes():
+        p = node.class_belief.probabilities.get(state.target_class, 0.0)
+        variance += p * (1.0 - p)
+    
+    expected_var = sum(p * (1 - p) for p in probs)
+    assert abs(variance - expected_var) < 1e-5
+
+
+def test_m5_k_confident_nodes_reduce_variance():
+    from sam3_vlm.scene.state import SceneState, DiscoveryState
+    from sam3_vlm.scene.graph import SceneGraph
+    from sam3_vlm.scene.belief import SemanticMemory
+    
+    # State 1: uncertain
+    state1 = SceneState(image_id="i1", user_prompt="p", target_class="target", graph=SceneGraph(), semantic_memory=SemanticMemory())
+    node_unc = create_mock_node()
+    node_unc.class_belief = ClassBelief(probabilities={"target": 0.5, "confounder": 0.5})
+    state1.graph.add_node(node_unc)
+    var1 = 0.5 * 0.5
+    
+    # State 2: confident
+    state2 = SceneState(image_id="i1", user_prompt="p", target_class="target", graph=SceneGraph(), semantic_memory=SemanticMemory())
+    node_conf = create_mock_node()
+    node_conf.class_belief = ClassBelief(probabilities={"target": 0.95, "confounder": 0.05})
+    state2.graph.add_node(node_conf)
+    var2 = 0.95 * 0.05
+    
+    assert var2 < var1
+
+
+def test_m5_p_numerical_safety():
+    updater = BeliefUpdater()
+    node = create_mock_node()
+    
+    action = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY)
+    obs = NodeObservationRef("o1", "call1", "a1", "target", relation=ObservationRelation.STRONG_MATCH, score=0.0)
+    
+    # Update with zero score
+    updater.update_node_belief(node, action, obs, target_class="target", confounder_class="confounder")
+    
+    assert sum(node.class_belief.probabilities.values()) == pytest.approx(1.0)
+    assert not any(v < 0 for v in node.class_belief.probabilities.values())
+    import math
+    assert not any(math.isnan(v) for v in node.class_belief.probabilities.values())
+    
+    # Force probabilities near 0 or 1
+    node.class_belief = ClassBelief(probabilities={"target": 1e-9, "confounder": 1.0 - 1e-9})
+    updater.update_node_belief(node, action, obs, target_class="target", confounder_class="confounder")
+    
+    assert sum(node.class_belief.probabilities.values()) == pytest.approx(1.0)

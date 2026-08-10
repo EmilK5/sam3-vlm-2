@@ -114,6 +114,7 @@ class NodeObservationRef:
     sam3_call_id: str
     action_id: str
     semantic_key: str
+    correlation_group: Optional[str] = None
     detection_id: Optional[str] = None
     relation: ObservationRelation = ObservationRelation.STRONG_MATCH
     score: Optional[float] = None

@@ -33,6 +33,14 @@ class DiscoveryState:
 
 
 @dataclass
+class CountEstimate:
+    """Soft count and uncertainty estimation (V4 Design Spec §14.2)."""
+    mean_count: float = 0.0
+    variance: float = 0.0
+    std_dev: float = 0.0
+
+
+@dataclass
 class SceneState:
     """Primary operational state object B_t = (G_t, rho_t, U_t, S_t, A_t, C_t) (V4 Design Spec §3.2)."""
 
@@ -42,6 +50,7 @@ class SceneState:
     graph: SceneGraph
     semantic_memory: SemanticMemory
     discovery_state: DiscoveryState = field(default_factory=DiscoveryState)
+    count_estimate: CountEstimate = field(default_factory=CountEstimate)
     action_bank: Optional["ActionBank"] = None
     budget: BudgetState = field(default_factory=BudgetState)
     iteration: int = 0
