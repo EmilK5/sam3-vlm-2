@@ -1,0 +1,115 @@
+"""Core enums, dataclasses, and domain schemas for SAM3-VLM V4.
+
+Invariants (V4 Design Spec §21 / §23):
+- Structured schemas for all state, actions, observations, and belief primitives.
+- No model instances or GPU tensors allowed in core serializable types.
+"""
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from sam3_vlm.core.geometry import GeometryRef, BoxGeometry
+
+
+class NodeStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    RESOLVED = "RESOLVED"
+    REJECTED = "REJECTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class ObservationRelation(str, Enum):
+    STRONG_MATCH = "STRONG_MATCH"
+    WEAK_MATCH = "WEAK_MATCH"
+    NOT_RETRIEVED = "NOT_RETRIEVED"
+    NOT_OBSERVABLE = "NOT_OBSERVABLE"
+    NEW_DETECTION = "NEW_DETECTION"
+    AMBIGUOUS_ASSOCIATION = "AMBIGUOUS_ASSOCIATION"
+
+
+class ActionFamily(str, Enum):
+    DISCOVERY = "DISCOVERY"
+    CONFOUNDER = "CONFOUNDER"
+    CONTEXT = "CONTEXT"
+    VERIFICATION = "VERIFICATION"
+
+
+class SpatialMode(str, Enum):
+    GLOBAL = "GLOBAL"
+    TILED = "TILED"
+    ROI_BATCH = "ROI_BATCH"
+    LOCAL = "LOCAL"
+
+
+class ActionSource(str, Enum):
+    USER_BOOTSTRAP = "USER_BOOTSTRAP"
+    TILED_BOOTSTRAP = "TILED_BOOTSTRAP"
+    QWEN_PROPOSAL = "QWEN_PROPOSAL"
+    REPLANNING = "REPLANNING"
+    CLEANUP = "CLEANUP"
+
+
+@dataclass
+class BudgetState:
+    """Computational resource accounting (V4 Design Spec §15)."""
+
+    qwen_calls: int = 0
+    sam3_calls: int = 0
+    sam3_tiles: int = 0
+    model_runtime_ms: float = 0.0
+    total_runtime_ms: float = 0.0
+
+
+@dataclass
+class ClassBelief:
+    """Generic class belief state container (V4 Design Spec §21.5)."""
+
+    probabilities: Dict[str, float] = field(default_factory=dict)
+    update_count: int = 0
+    entropy: float = 0.0
+    last_update_event_id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.probabilities:
+            for k, v in self.probabilities.items():
+                if v < 0.0:
+                    raise ValueError(f"Probability for class '{k}' cannot be negative: {v}")
+
+
+@dataclass
+class RegistrationDiagnostics:
+    """Graph node registration & association state (V4 Design Spec §21.6)."""
+
+    existence_score: float = 1.0
+    duplicate_risk: float = 0.0
+    merge_risk: float = 0.0
+    ambiguous_with: List[str] = field(default_factory=list)
+    support_count: int = 1
+    independent_semantic_support_count: int = 1
+
+
+@dataclass
+class NodeObservationRef:
+    """Pointer from a graph node to the observation update (V4 Design Spec §21.4)."""
+
+    observation_id: str
+    sam3_call_id: str
+    action_id: str
+    semantic_key: str
+    detection_id: Optional[str] = None
+    relation: ObservationRelation = ObservationRelation.STRONG_MATCH
+    score: Optional[float] = None
+    association_score: Optional[float] = None
+
+
+@dataclass
+class Detection:
+    """Raw sensor detection output from SAM3 (V4 Design Spec §21.3)."""
+
+    detection_id: str
+    geometry: GeometryRef
+    score: float
+    source_tile_id: Optional[str] = None
+    local_geometry: Optional[GeometryRef] = None
+    mask_artifact: Optional[str] = None
+    raw_metadata: Dict[str, Any] = field(default_factory=dict)
