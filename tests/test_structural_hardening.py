@@ -84,4 +84,4 @@ def test_spatial_contact_sheet_sampling():
 
     assert cs.total_candidates == 4
     assert len(cs.crops) == 4
-    assert cs.contact_sheet_image_path is not None
+    assert cs.contact_sheet_image_path is None

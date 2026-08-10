@@ -62,3 +62,45 @@ def test_qwen_unverified_candidate_prompt_instructions():
     assert "UNVERIFIED visual sensor candidates" in prompt_text
     assert "Do NOT label them as ground truth" in prompt_text
     assert "Do NOT attempt to output final object counts" in prompt_text
+
+
+def test_bootstrap_physical_asset_generation(tmp_path):
+    """Verify that bootstrap physically generates crop and contact sheet images (Spec M3.5 Phase 2)."""
+    import numpy as np
+    from pathlib import Path
+    from sam3_vlm.core.config import V4Config
+    from sam3_vlm.pipeline.bootstrap import BootstrapPipeline
+    from sam3_vlm.models.sam3 import MockSAM3Adapter
+    from sam3_vlm.core.types import Detection
+    from sam3_vlm.core.geometry import BoxGeometry
+
+    # Create dummy image array (100x100 RGB)
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    image[10:50, 10:50] = (255, 0, 0)  # Red box
+    image[50:90, 50:90] = (0, 255, 0)  # Green box
+
+    # Mock sensor
+    d1 = Detection("d1", BoxGeometry(Box(10, 10, 50, 50)), score=0.9)
+    d2 = Detection("d2", BoxGeometry(Box(50, 50, 90, 90)), score=0.8)
+    adapter = MockSAM3Adapter(synthetic_detections=[d1, d2])
+
+    config = V4Config(assets_dir=str(tmp_path / "assets"))
+    pipeline = BootstrapPipeline(sensor=adapter, config=config)
+
+    result = pipeline.execute_bootstrap(
+        image_id="test_img",
+        image=image,
+        user_prompt="boxes"
+    )
+
+    pack = result.qwen_evidence_pack
+    assert pack.image_path is not None
+    assert Path(pack.image_path).exists()
+    
+    assert pack.contact_sheet.contact_sheet_image_path is not None
+    assert Path(pack.contact_sheet.contact_sheet_image_path).exists()
+
+    assert len(pack.contact_sheet.crops) == 2
+    for crop in pack.contact_sheet.crops:
+        assert crop.crop_image_path is not None
+        assert Path(crop.crop_image_path).exists()

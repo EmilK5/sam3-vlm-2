@@ -130,10 +130,10 @@ class BootstrapPipeline:
         img_w, img_h = 1000, 1000
         if isinstance(image, (tuple, list)) and len(image) == 2:
             img_w, img_h = int(image[0]), int(image[1])
-        elif hasattr(image, "size"):
-            img_w, img_h = image.size[0], image.size[1]
-        elif hasattr(image, "shape"):
+        elif hasattr(image, "shape") and len(image.shape) >= 2:
             img_h, img_w = int(image.shape[0]), int(image.shape[1])
+        elif hasattr(image, "size") and isinstance(image.size, tuple):
+            img_w, img_h = image.size[0], image.size[1]
 
         tiling_decision = self.tiling_policy.evaluate_tiling(
             image_width=img_w,
@@ -185,13 +185,34 @@ class BootstrapPipeline:
             discovery_state.tiled_bootstrap_gain = float(len(assoc_tiled.new_nodes))
 
         # Stage 3: Contact-Sheet & Qwen Evidence Pack Assembly (Spec §5.3 / §6.1)
-        contact_sheet = ContactSheetBuilder().build_contact_sheet(state.graph, max_crops=24)
+        contact_sheet = ContactSheetBuilder().build_contact_sheet(
+            graph=state.graph,
+            max_crops=24,
+            image=image,
+            assets_dir=self.config.assets_dir,
+            image_id=image_id,
+        )
+
+        image_path_str = None
+        if image is not None:
+            # Try to save the full image to assets as well, or just keep original path if it's a string
+            from pathlib import Path
+            if isinstance(image, (str, Path)):
+                image_path_str = str(image)
+            else:
+                from sam3_vlm.sensing.visuals import save_image, to_numpy_image
+                img_arr = to_numpy_image(image)
+                if img_arr is not None:
+                    full_img_path = Path(self.config.assets_dir) / f"{image_id}.jpg"
+                    if save_image(img_arr, str(full_img_path)):
+                        image_path_str = str(full_img_path)
 
         qwen_evidence_pack = QwenEvidencePack(
             original_image_id=image_id,
             user_prompt=user_prompt,
             target_class=target_class,
             contact_sheet=contact_sheet,
+            image_path=image_path_str,
             scene_summary=f"Bootstrap complete. Total candidates: {contact_sheet.total_candidates}.",
             discovery_diagnostics={
                 "sam3_calls": state.budget.sam3_calls,
@@ -204,3 +225,4 @@ class BootstrapPipeline:
             state=state,
             qwen_evidence_pack=qwen_evidence_pack,
         )
+

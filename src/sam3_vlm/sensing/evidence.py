@@ -163,7 +163,12 @@ class ContactSheetBuilder:
     """Stratified and spatially distributed candidate crop sampler (V4 Design Spec §5.3)."""
 
     def build_contact_sheet(
-        self, graph: SceneGraph, max_crops: int = 24
+        self,
+        graph: SceneGraph,
+        max_crops: int = 24,
+        image: Any = None,
+        assets_dir: str = "assets",
+        image_id: str = "bootstrap",
     ) -> ContactSheet:
         """Sample candidate crops across confidence/support strata and spatial quadrants."""
         active_nodes = graph.active_nodes()
@@ -211,11 +216,29 @@ class ContactSheetBuilder:
             remaining_nodes.sort(key=lambda n: (n.geometry.bbox().x1 + n.geometry.bbox().y1))
             sampled_nodes.extend(remaining_nodes[:remaining_budget])
 
+        from sam3_vlm.sensing.visuals import crop_image_region, render_contact_sheet
+        
         crops: List[CropCandidateAnnotation] = []
+        crop_arrays = []
+        
+        from pathlib import Path
+        assets_path = Path(assets_dir)
+        crops_dir = assets_path / "crops"
+
         for node in sampled_nodes:
             latest_obs = node.observations[-1] if node.observations else None
             score = latest_obs.score if latest_obs and latest_obs.score is not None else 0.5
             prov = latest_obs.sam3_call_id if latest_obs else node.created_by_call_id
+
+            crop_path_str = None
+            if image is not None:
+                crop_arr = crop_image_region(image, node.geometry.bbox())
+                if crop_arr is not None:
+                    crop_path = crops_dir / f"{node.node_id}.jpg"
+                    from sam3_vlm.sensing.visuals import save_image
+                    if save_image(crop_arr, str(crop_path)):
+                        crop_path_str = str(crop_path)
+                    crop_arrays.append(crop_arr)
 
             crops.append(
                 CropCandidateAnnotation(
@@ -225,7 +248,7 @@ class ContactSheetBuilder:
                     support_count=node.diagnostics.support_count,
                     provenance=prov,
                     class_belief=dict(node.class_belief.probabilities),
-                    crop_image_path=f"crops/{node.node_id}.jpg",
+                    crop_image_path=crop_path_str,
                 )
             )
 
@@ -236,10 +259,17 @@ class ContactSheetBuilder:
             "outlier": len(outlier_stratum),
             "sampled": len(crops),
         }
+        
+        contact_sheet_path_str = None
+        if crop_arrays:
+            cs_path = assets_path / "contact_sheets" / f"sheet_{image_id}.jpg"
+            if render_contact_sheet(crop_arrays, str(cs_path)):
+                contact_sheet_path_str = str(cs_path)
 
         return ContactSheet(
             crops=crops,
             total_candidates=total_candidates,
             strata_counts=strata_counts,
-            contact_sheet_image_path="contact_sheets/sheet_bootstrap.jpg",
+            contact_sheet_image_path=contact_sheet_path_str,
         )
+

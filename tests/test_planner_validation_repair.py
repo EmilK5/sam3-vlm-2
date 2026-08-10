@@ -61,3 +61,42 @@ def test_planner_defensive_error_fallback():
 
     assert "Model call failed" in output.scene_summary
     assert len(output.proposed_actions) == 0
+
+
+class RepairBackend:
+    def __init__(self):
+        self.call_count = 0
+
+    def plan_scene(self, evidence, budget, config):
+        self.call_count += 1
+        if self.call_count == 1:
+            return "invalid unparseable json [] {"
+        # Second call expects the repair instruction
+        assert "Your previous output was invalid" in evidence.user_prompt
+        return PlannerOutput(
+            scene_summary="Repaired",
+            proposed_actions=[
+                ProposedAction(
+                    semantic_key="repaired",
+                    prompt="repaired",
+                    family=ActionFamily.DISCOVERY,
+                )
+            ]
+        )
+
+
+def test_planner_repair_pass():
+    backend = RepairBackend()
+    service = QwenPlannerService(planner_backend=backend)
+    cs = ContactSheet(crops=[], total_candidates=0)
+    pack = QwenEvidencePack("img1", "citrus", "citrus", cs)
+    budget = BudgetState(qwen_calls=0)
+
+    output = service.plan_scene(pack, budget)
+
+    # Should have called backend twice (initial + 1 repair)
+    assert backend.call_count == 2
+    assert budget.qwen_calls == 2
+    assert output.scene_summary == "Repaired"
+    assert len(output.proposed_actions) == 1
+    assert output.proposed_actions[0].semantic_key == "repaired"

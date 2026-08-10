@@ -127,3 +127,5 @@ class V4Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     device: str = "cuda"
     output_dir: str = "out"
+    assets_dir: str = "assets"
+

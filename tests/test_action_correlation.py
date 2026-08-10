@@ -14,13 +14,11 @@ from sam3_vlm.sensing.action import SensingAction
 
 
 def test_derive_correlation_group():
-    g1 = derive_correlation_group("round_green_citrus", "round green citrus fruit")
-    g2 = derive_correlation_group("spherical_green_citrus", "spherical green fruit")
-    assert g1 == "citrus_target"
-    assert g2 == "citrus_target"
+    g1 = derive_correlation_group("Round Green Citrus", "round green citrus fruit")
+    assert g1 == "round_green_citrus"
 
-    g3 = derive_correlation_group("leaf_foliage", "shiny green leaf")
-    assert g3 == "leaf_confounder"
+    g2 = derive_correlation_group("leaf-foliage!", "shiny green leaf")
+    assert g2 == "leaf_foliage"
 
 
 def test_action_bank_generator_paraphrase_redundancy():
@@ -44,6 +42,7 @@ def test_action_bank_generator_paraphrase_redundancy():
         semantic_key="spherical_green_citrus",
         prompt="spherical green fruit",
         family=ActionFamily.DISCOVERY,
+        correlation_group="green_citrus",
     )
 
     output = PlannerOutput(proposed_actions=[p1])

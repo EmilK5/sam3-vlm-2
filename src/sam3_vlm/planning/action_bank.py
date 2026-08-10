@@ -20,14 +20,8 @@ def canonicalize_semantic_key(key: str) -> str:
 
 def derive_correlation_group(semantic_key: str, prompt: str) -> str:
     """Derive correlation group for near-paraphrase grouping (V4 Design Spec §7.1)."""
-    combined = f"{semantic_key} {prompt}".lower()
-    if "citrus" in combined or "fruit" in combined:
-        return "citrus_target"
-    if "leaf" in combined or "foliage" in combined:
-        return "leaf_confounder"
-    if "branch" in combined or "shadow" in combined:
-        return "branch_shadow_confounder"
     return canonicalize_semantic_key(semantic_key)
+
 
 
 @dataclass
@@ -130,6 +124,16 @@ class ActionBankGenerator:
                 canonical_key, p_action.prompt
             )
 
+            roi_geom = None
+            if p_action.roi and len(p_action.roi) == 4:
+                from sam3_vlm.core.geometry import Box
+                roi_geom = Box(x1=p_action.roi[0], y1=p_action.roi[1], x2=p_action.roi[2], y2=p_action.roi[3])
+
+            tiling_cfg = None
+            if p_action.tiling:
+                from sam3_vlm.core.config import TilingConfig
+                tiling_cfg = TilingConfig(**p_action.tiling)
+
             # Check if near-paraphrase in same correlation group already exists
             is_correlated = corr_group in existing_correlation_groups
 
@@ -144,6 +148,10 @@ class ActionBankGenerator:
                 qwen_priority=p_action.priority,
                 semantic_prior=p_action.semantic_prior,
                 correlation_group=corr_group,
+                roi=roi_geom,
+                positive_exemplar_ids=tuple(p_action.positive_exemplar_ids),
+                negative_exemplar_ids=tuple(p_action.negative_exemplar_ids),
+                tiling=tiling_cfg,
             )
 
             entry = action_bank.add_action(action, qwen_priority=p_action.priority)

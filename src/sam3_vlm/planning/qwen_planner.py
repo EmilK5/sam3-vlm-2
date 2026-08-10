@@ -28,6 +28,10 @@ class ProposedAction:
     exemplar_policy: Optional[str] = None
     rationale: str = ""
     correlation_group: Optional[str] = None
+    roi: Optional[List[float]] = None
+    positive_exemplar_ids: List[str] = field(default_factory=list)
+    negative_exemplar_ids: List[str] = field(default_factory=list)
+    tiling: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -41,6 +45,10 @@ class ProposedAction:
             "exemplar_policy": self.exemplar_policy,
             "rationale": self.rationale,
             "correlation_group": self.correlation_group,
+            "roi": self.roi,
+            "positive_exemplar_ids": self.positive_exemplar_ids,
+            "negative_exemplar_ids": self.negative_exemplar_ids,
+            "tiling": self.tiling,
         }
 
     @classmethod
@@ -56,6 +64,10 @@ class ProposedAction:
             exemplar_policy=data.get("exemplar_policy"),
             rationale=data.get("rationale", ""),
             correlation_group=data.get("correlation_group"),
+            roi=data.get("roi"),
+            positive_exemplar_ids=data.get("positive_exemplar_ids", []),
+            negative_exemplar_ids=data.get("negative_exemplar_ids", []),
+            tiling=data.get("tiling"),
         )
 
 
@@ -140,7 +152,28 @@ class QwenPlannerService:
             )
 
         output = self._coerce_to_planner_output(raw_output)
-        return self._validate_and_normalize_output(output, max_actions=5)
+        
+        # Single repair attempt
+        if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
+            if budget.qwen_calls < config.budget.max_qwen_calls:
+                budget.qwen_calls += 1
+                try:
+                    # Append repair instruction to prompt
+                    import copy
+                    repair_evidence = copy.deepcopy(evidence)
+                    repair_evidence.user_prompt += "\n\nYour previous output was invalid. Return ONLY JSON matching this schema."
+                    
+                    if hasattr(self.planner_backend, "plan_scene"):
+                        raw_output = self.planner_backend.plan_scene(repair_evidence, budget, config)
+                    elif hasattr(self.planner_backend, "plan_actions"):
+                        raw_output = self.planner_backend.plan_actions(repair_evidence)
+                        
+                    output = self._coerce_to_planner_output(raw_output)
+                except Exception:
+                    pass
+        
+        max_actions = config.planner.max_actions_per_prompt
+        return self._validate_and_normalize_output(output, max_actions=max_actions)
 
     def _coerce_to_planner_output(self, raw_output: Any) -> PlannerOutput:
         """Coerce raw backend response (dict, json string, or PlannerOutput) into a typed PlannerOutput."""
@@ -186,6 +219,10 @@ class QwenPlannerService:
                     exemplar_policy=action.exemplar_policy,
                     rationale=action.rationale,
                     correlation_group=action.correlation_group,
+                    roi=action.roi,
+                    positive_exemplar_ids=list(action.positive_exemplar_ids),
+                    negative_exemplar_ids=list(action.negative_exemplar_ids),
+                    tiling=action.tiling,
                 )
             )
 

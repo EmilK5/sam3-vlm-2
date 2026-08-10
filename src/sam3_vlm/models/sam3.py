@@ -63,10 +63,10 @@ class MockSAM3Adapter:
         img_w, img_h = 1000, 1000
         if isinstance(image, (tuple, list)) and len(image) == 2:
             img_w, img_h = int(image[0]), int(image[1])
-        elif hasattr(image, "size"):  # PIL Image
-            img_w, img_h = image.size[0], image.size[1]
-        elif hasattr(image, "shape"):  # Numpy array / Tensor
+        elif hasattr(image, "shape") and len(image.shape) >= 2:  # Numpy
             img_h, img_w = int(image.shape[0]), int(image.shape[1])
+        elif hasattr(image, "size") and isinstance(image.size, tuple):  # PIL Image
+            img_w, img_h = image.size[0], image.size[1]
 
         detections: List[Detection] = []
         searched_regions = []
