@@ -34,7 +34,14 @@ class SemanticMemory:
 
     records: Dict[str, SemanticRecord] = field(default_factory=dict)
 
-    def record_execution(self, action: SensingAction, sam3_call_id: str) -> SemanticRecord:
+    def record_execution(
+        self, 
+        action: SensingAction, 
+        sam3_call_id: str,
+        new_nodes: int = 0,
+        runtime_ms: float = 0.0,
+        realized_utility: float = 0.0,
+    ) -> SemanticRecord:
         if action.semantic_key not in self.records:
             self.records[action.semantic_key] = SemanticRecord(
                 semantic_key=action.semantic_key,
@@ -45,6 +52,9 @@ class SemanticMemory:
             rec.prompts.append(action.prompt)
         rec.execution_count += 1
         rec.sam3_call_ids.append(sam3_call_id)
+        rec.total_cost += runtime_ms
+        rec.new_nodes_by_execution.append(new_nodes)
+        rec.realized_utility_by_execution.append(realized_utility)
         return rec
 
 

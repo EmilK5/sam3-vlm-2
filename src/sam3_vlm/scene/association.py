@@ -113,8 +113,26 @@ class IoUAssociationPolicy:
             else:
                 result.unmatched_detections.append(det)
 
+        # Deduplicate unmatched detections before creating new nodes (prevent duplicates across overlapping tiles)
+        deduplicated_unmatched = []
+        if result.unmatched_detections:
+            # Sort by score descending
+            sorted_dets = sorted(result.unmatched_detections, key=lambda d: d.score, reverse=True)
+            keep_flags = [True] * len(sorted_dets)
+            for i in range(len(sorted_dets)):
+                if not keep_flags[i]:
+                    continue
+                box_i = sorted_dets[i].geometry.box
+                for j in range(i + 1, len(sorted_dets)):
+                    if keep_flags[j]:
+                        box_j = sorted_dets[j].geometry.box
+                        if box_i.iou(box_j) >= config.new_node_iou_threshold:
+                            keep_flags[j] = False
+            
+            deduplicated_unmatched = [d for idx, d in enumerate(sorted_dets) if keep_flags[idx]]
+
         # Unmatched detections create NEW nodes (V4 Invariant §10.4)
-        for det in result.unmatched_detections:
+        for det in deduplicated_unmatched:
             new_node_id = id_gen.next_node_id()
             obs_id = id_gen.next_observation_id()
 

@@ -23,35 +23,39 @@ class UtilityBreakdown:
 class UtilityEvaluator(Protocol):
     """Evaluates expected scene-level utility U_t(x) for candidate actions."""
 
-    def evaluate_utility(self, entry: "ActionBankEntry", iteration: int = 0) -> UtilityBreakdown:
+    def evaluate_utility(self, entry: "ActionBankEntry", state: "SceneState", config: "V4Config") -> UtilityBreakdown:
         ...
 
 
 class DefaultUtilityEvaluator:
-    """Default numerical active perception controller utility (V4 Design Spec §8)."""
+    """State-aware active perception controller utility (V4 Design Spec §8)."""
     
-    def __init__(self, alpha: float = 1.0, beta: float = 1.0, gamma: float = 1.0, lambda_: float = 0.5, eta: float = 1.0):
-        self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
-        self.lambda_ = lambda_
-        self.eta = eta
-
-    def evaluate_utility(self, entry: "ActionBankEntry", iteration: int = 0) -> UtilityBreakdown:
+    def evaluate_utility(self, entry: "ActionBankEntry", state: "SceneState", config: "V4Config") -> UtilityBreakdown:
         from sam3_vlm.core.types import ActionFamily, SpatialMode
         
-        # 1. Discovery value D_t(x) decays slightly over iterations
+        cfg = config.action_selection
+        iteration = state.iteration
+        
+        # Determine empirical penalty from semantic history
+        history_penalty = 0.0
+        rec = state.semantic_memory.records.get(entry.action.semantic_key)
+        if rec and rec.execution_count > 0:
+            if sum(rec.new_nodes_by_execution) == 0:
+                history_penalty = 0.5 * rec.execution_count # Heavy penalty for repeatedly failing to find anything
+                
+        # 1. Discovery value D_t(x) based on novelty and history
         discovery_value = 0.0
         if entry.action.family == ActionFamily.DISCOVERY:
-            # high initial discovery value, decaying
-            discovery_value = max(0.2, 1.0 - (iteration * 0.1))
+            # decays slightly over iterations, but penalized if past executions of this key failed
+            discovery_value = max(0.0, 1.0 - (iteration * 0.1) - history_penalty)
         elif entry.action.family == ActionFamily.CONTEXT:
-            discovery_value = 0.5
+            discovery_value = 0.2
             
-        # 2. Discrimination value I_t(x) increases slightly over iterations
+        # 2. Discrimination value I_t(x) based on uncertainty and iteration
         discrimination_value = 0.0
         if entry.action.family in (ActionFamily.VERIFICATION, ActionFamily.CONFOUNDER):
-            discrimination_value = min(1.0, 0.5 + (iteration * 0.1))
+            # scales with iteration
+            discrimination_value = min(1.0, 0.5 + (iteration * 0.1) - history_penalty)
 
         # 3. Redundancy cost R_t(x)
         redundancy_cost = entry.redundancy
@@ -66,11 +70,11 @@ class DefaultUtilityEvaluator:
         qwen_priority = entry.qwen_priority if entry.qwen_priority is not None else 0.5
 
         total_utility = (
-            self.alpha * discovery_value
-            + self.beta * discrimination_value
-            - self.gamma * redundancy_cost
-            - self.lambda_ * compute_cost
-            + self.eta * qwen_priority
+            cfg.alpha_discovery * discovery_value
+            + cfg.beta_discrimination * discrimination_value
+            - cfg.gamma_redundancy * redundancy_cost
+            - cfg.lambda_cost * compute_cost
+            + cfg.eta_qwen_priority * qwen_priority
         )
 
         return UtilityBreakdown(

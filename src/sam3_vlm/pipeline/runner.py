@@ -49,7 +49,7 @@ class Runner:
         self.id_gen = IDGenerator()
         
         # Sub-components
-        self.bootstrap = BootstrapPipeline(sensor, config=config)
+        self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen)
         self.planner_service = QwenPlannerService(planner)
         self.bank_generator = ActionBankGenerator()
         self.association_policy = IoUAssociationPolicy()
@@ -106,47 +106,104 @@ class Runner:
                 self.state = RunnerState.REPLAN
                 return
                 
-            # 3. Validate budget
-            if self.stopping_condition.should_stop(self.scene_state, self.config):
+            # 3. Validate budget BEFORE execution
+            budget = self.scene_state.budget
+            cfg_budget = self.config.budget
+            if budget.sam3_calls >= cfg_budget.max_sam3_calls:
+                self.state = RunnerState.CLEANUP_DECISION
+                return
+            if cfg_budget.max_runtime_seconds and budget.total_runtime_ms / 1000.0 >= cfg_budget.max_runtime_seconds:
                 self.state = RunnerState.CLEANUP_DECISION
                 return
                 
             action = best_entry.action
+            from sam3_vlm.core.types import SpatialMode, ActionFamily
             
+            # Predict tiles if tiled (approx for budget check)
+            predicted_tiles = 1
+            if action.spatial_mode == SpatialMode.TILED and action.tiling:
+                predicted_tiles = action.tiling.grid_rows * action.tiling.grid_cols
+                if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
+                    best_entry.executed = True
+                    return # skip this action because it exceeds tile budget
+                    
             # 4. Execute SAM3 once
             observation = self.sensor.observe(self.image, action)
-            self.scene_state.budget.sam3_calls += 1
+            best_entry.executed = True  # Now it's executed
             
-            # 5-7. Associate & create new nodes & project
-            assoc_result = self.association_policy.associate(
-                self.scene_state.graph,
-                observation.detections,
-                observation.call_id,
-                action.action_id,
-                action.semantic_key,
-                self.id_gen,
-                self.config.association
-            )
+            # Update budgets
+            budget.sam3_calls += 1
+            if action.spatial_mode == SpatialMode.TILED:
+                budget.sam3_tiles += predicted_tiles
+            budget.model_runtime_ms += observation.runtime_ms
+            budget.total_runtime_ms += observation.runtime_ms
             
-            # 8. Update beliefs
-            for node_id, obs_ref in assoc_result.matched_observations:
-                node = self.scene_state.graph.get_node(node_id)
-                if node:
-                    self.belief_updater.update_node_belief(
-                        node, action, obs_ref, target_class=self.target_class
-                    )
-            for new_node in assoc_result.new_nodes:
-                self.belief_updater.update_node_belief(
-                    new_node, action, new_node.observations[-1], target_class=self.target_class
+            new_nodes_count = 0
+            
+            # 5-8. Associate, Create Nodes, Update Beliefs
+            if action.family == ActionFamily.CONTEXT:
+                # Intercept CONTEXT actions to avoid creating countable target nodes
+                # Defer logic to future M5 context handling.
+                pass
+            else:
+                assoc_result = self.association_policy.associate(
+                    self.scene_state.graph,
+                    observation.detections,
+                    observation.call_id,
+                    action.action_id,
+                    action.semantic_key,
+                    self.id_gen,
+                    self.config.association
                 )
                 
+                new_nodes_count = len(assoc_result.new_nodes)
+                
+                # Scene-wide projection (M4/M5 interface)
+                # First, collect matched node IDs
+                matched_node_ids = {nid for nid, _ in assoc_result.matched_observations}
+                
+                for node_id, obs_ref in assoc_result.matched_observations:
+                    node = self.scene_state.graph.get_node(node_id)
+                    if node:
+                        self.belief_updater.update_node_belief(
+                            node, action, obs_ref, target_class=self.target_class
+                        )
+                for new_node in assoc_result.new_nodes:
+                    self.belief_updater.update_node_belief(
+                        new_node, action, new_node.observations[-1], target_class=self.target_class
+                    )
+                    
+                # Project NOT_RETRIEVED for unmatched active nodes
+                from sam3_vlm.core.types import ObservationRelation, NodeObservationRef
+                for node in self.scene_state.graph.active_nodes():
+                    if node.node_id not in matched_node_ids:
+                        # Append a NOT_RETRIEVED observation
+                        obs_ref = NodeObservationRef(
+                            observation_id=self.id_gen.next_observation_id(),
+                            sam3_call_id=observation.call_id,
+                            action_id=action.action_id,
+                            semantic_key=action.semantic_key,
+                            relation=ObservationRelation.NOT_RETRIEVED,
+                            score=0.0
+                        )
+                        node.observations.append(obs_ref)
+                        self.belief_updater.update_node_belief(
+                            node, action, obs_ref, target_class=self.target_class
+                        )
+                    
             # 10. Update semantic memory
-            self.scene_state.semantic_memory.record_execution(action, observation.call_id)
+            self.scene_state.semantic_memory.record_execution(
+                action=action, 
+                sam3_call_id=observation.call_id,
+                new_nodes=new_nodes_count,
+                runtime_ms=observation.runtime_ms,
+                realized_utility=best_entry.total_utility if best_entry.total_utility else 0.0
+            )
             
             # 11. Update discovery state
-            new_mass = float(len(assoc_result.new_nodes)) # naive mass approx for M4
-            self.scene_state.discovery_state.recent_new_target_mass.append(new_mass)
-            self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
+            self.scene_state.discovery_state.recent_new_node_counts.append(float(new_nodes_count))
+            if new_nodes_count > 0 and not isinstance(action.family, type(ActionFamily.CONTEXT)): # skip context for recent_new_nodes
+                self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
             
             # 13. Evaluate replanning triggers & 14. Global stopping
             self.scene_state.iteration += 1
@@ -183,21 +240,26 @@ class Runner:
 
     def _choose_best_action(self):
         """Recompute utility for all unexecuted actions and return the best."""
+        from sam3_vlm.core.types import SpatialMode
+        
         best_entry = None
         best_score = -9999.0
         
         for entry in self.scene_state.action_bank.unexecuted_entries():
-            utility = self.utility_evaluator.evaluate_utility(entry, iteration=self.scene_state.iteration)
+            # Defer LOCAL actions for global sensing
+            if entry.action.spatial_mode == SpatialMode.LOCAL:
+                continue
+                
+            utility = self.utility_evaluator.evaluate_utility(
+                entry, state=self.scene_state, config=self.config
+            )
+            entry.total_utility = utility.total_utility  # cache for SemanticRecord
             if utility.total_utility > best_score:
                 best_score = utility.total_utility
                 best_entry = entry
                 
         if best_score < self.config.stopping.utility_min_threshold:
             return None
-            
-        if best_entry:
-            # Mark executed
-            best_entry.executed = True
             
         return best_entry
 

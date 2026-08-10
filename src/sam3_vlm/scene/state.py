@@ -23,8 +23,8 @@ class CoverageSummary:
 class DiscoveryState:
     """Discovery state diagnostics and missed target mass approximations (V4 Design Spec §3.4)."""
 
-    recent_new_nodes: List[int] = field(default_factory=list)
-    recent_new_target_mass: List[float] = field(default_factory=list)
+    recent_new_nodes: List[str] = field(default_factory=list)
+    recent_new_node_counts: List[float] = field(default_factory=list)
     spatial_coverage: CoverageSummary = field(default_factory=CoverageSummary)
     tiled_bootstrap_gain: Optional[float] = None
     plateau_score: float = 0.0
