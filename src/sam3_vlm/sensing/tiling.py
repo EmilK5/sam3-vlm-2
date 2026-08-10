@@ -1,8 +1,29 @@
-"""Tiling helper interfaces and spatial decomposition for SAM3-VLM V4."""
+"""Tiling helper interfaces, decision schemas, and spatial decomposition (V4 Design Spec §22.3)."""
 
-from typing import List
+from dataclasses import dataclass, field
+from typing import List, Protocol
 from sam3_vlm.core.config import TilingConfig
 from sam3_vlm.core.geometry import Box, BoxGeometry
+
+
+@dataclass
+class TilingDecision:
+    """Decision output evaluating whether spatial tiling is required."""
+
+    should_tile: bool
+    reason: str
+    grid_rows: int
+    grid_cols: int
+    tiles: List[BoxGeometry] = field(default_factory=list)
+
+
+class TilingPolicy(Protocol):
+    """Protocol for determining when and how an image should be spatially tiled."""
+
+    def evaluate_tiling(
+        self, image_width: int, image_height: int, config: TilingConfig
+    ) -> TilingDecision:
+        ...
 
 
 def compute_tiles(image_width: int, image_height: int, config: TilingConfig) -> List[BoxGeometry]:

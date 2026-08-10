@@ -60,7 +60,7 @@ def test_sensing_imports():
 def test_planning_imports():
     from sam3_vlm.planning import ActionBank, PlannerService, UtilityEvaluator, StoppingCondition
     bank = ActionBank()
-    assert len(bank.actions) == 0
+    assert len(bank.entries) == 0
 
 
 def test_pipeline_imports():

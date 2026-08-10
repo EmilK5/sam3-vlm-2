@@ -14,7 +14,21 @@ from sam3_vlm.core.types import (
 )
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.geometry import Box, Geometry, BoxGeometry, PolygonGeometry, GeometryRef
-from sam3_vlm.core.config import V4Config, TilingConfig, BudgetConfig, StoppingConfig
+from sam3_vlm.core.config import (
+    V4Config,
+    TilingConfig,
+    BudgetConfig,
+    StoppingConfig,
+    BootstrapConfig,
+    PlannerConfig,
+    SAM3Config,
+    ActionSelectionConfig,
+    AssociationConfig,
+    BeliefConfig,
+    ReplanningConfig,
+    CleanupConfig,
+    LoggingConfig,
+)
 
 __all__ = [
     "NodeStatus",
@@ -37,4 +51,13 @@ __all__ = [
     "TilingConfig",
     "BudgetConfig",
     "StoppingConfig",
+    "BootstrapConfig",
+    "PlannerConfig",
+    "SAM3Config",
+    "ActionSelectionConfig",
+    "AssociationConfig",
+    "BeliefConfig",
+    "ReplanningConfig",
+    "CleanupConfig",
+    "LoggingConfig",
 ]

@@ -23,7 +23,7 @@ def test_class_belief_validation():
     assert cb.probabilities["target"] == 0.8
 
     with pytest.raises(ValueError):
-        ClassBelief(probabilities={"target": -0.1})
+        ClassBelief(probabilities={"target": -0.1, "leaf": 1.1})
 
 
 def test_sensing_action_validation():
@@ -33,7 +33,7 @@ def test_sensing_action_validation():
         prompt="green citrus fruit",
         family=ActionFamily.DISCOVERY,
     )
-    assert action.validate() is True
+    action.validate()  # Passes without raising
 
     # Empty prompt raises error
     with pytest.raises(ValueError):

@@ -3,11 +3,13 @@
 from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.sensing.observation import SAM3Observation
 from sam3_vlm.sensing.evidence import EvidencePack
-from sam3_vlm.sensing.tiling import compute_tiles
+from sam3_vlm.sensing.tiling import TilingDecision, TilingPolicy, compute_tiles
 
 __all__ = [
     "SensingAction",
     "SAM3Observation",
     "EvidencePack",
+    "TilingDecision",
+    "TilingPolicy",
     "compute_tiles",
 ]

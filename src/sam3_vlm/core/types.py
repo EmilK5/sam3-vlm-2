@@ -7,8 +7,9 @@ Invariants (V4 Design Spec §21 / §23):
 
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 from typing import Any, Dict, List, Optional
-from sam3_vlm.core.geometry import GeometryRef, BoxGeometry
+from sam3_vlm.core.geometry import GeometryRef
 
 
 class NodeStatus(str, Enum):
@@ -42,10 +43,11 @@ class SpatialMode(str, Enum):
 
 
 class ActionSource(str, Enum):
+    """Action source taxonomy (V4 Design Spec §7.2)."""
+
     USER_BOOTSTRAP = "USER_BOOTSTRAP"
-    TILED_BOOTSTRAP = "TILED_BOOTSTRAP"
-    QWEN_PROPOSAL = "QWEN_PROPOSAL"
-    REPLANNING = "REPLANNING"
+    QWEN = "QWEN"
+    CONTROLLER = "CONTROLLER"
     CLEANUP = "CLEANUP"
 
 
@@ -71,9 +73,17 @@ class ClassBelief:
 
     def __post_init__(self) -> None:
         if self.probabilities:
+            total = 0.0
             for k, v in self.probabilities.items():
+                if not math.isfinite(v):
+                    raise ValueError(f"Probability for class '{k}' must be finite, got: {v}")
                 if v < 0.0:
-                    raise ValueError(f"Probability for class '{k}' cannot be negative: {v}")
+                    raise ValueError(f"Probability for class '{k}' cannot be negative, got: {v}")
+                total += v
+            if abs(total - 1.0) > 1e-4:
+                raise ValueError(
+                    f"Class probabilities must sum to 1.0 within numerical tolerance, got sum={total}"
+                )
 
 
 @dataclass

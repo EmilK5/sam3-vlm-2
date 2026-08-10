@@ -16,7 +16,6 @@ dependencies = [
     "scipy",
     "pillow",
     "opencv-python",
-    "pytest",
 ]
 
 [project.optional-dependencies]
