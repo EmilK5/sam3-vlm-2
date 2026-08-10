@@ -1,6 +1,7 @@
 """Evidence collection, contact sheet construction, and Qwen evidence pack assembly (V4 Design Spec §5.3 / §6.1)."""
 
 from dataclasses import dataclass, field
+import json
 from typing import Any, Dict, List, Optional
 from sam3_vlm.core.geometry import Box
 from sam3_vlm.scene.graph import SceneGraph
@@ -19,6 +20,29 @@ class CropCandidateAnnotation:
     provenance: str
     class_belief: Dict[str, float] = field(default_factory=dict)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "node_id": self.node_id,
+            "box": self.box.as_tuple(),
+            "sam3_score": self.sam3_score,
+            "support_count": self.support_count,
+            "provenance": self.provenance,
+            "class_belief": dict(self.class_belief),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CropCandidateAnnotation":
+        box_coords = data["box"]
+        box = Box(x1=box_coords[0], y1=box_coords[1], x2=box_coords[2], y2=box_coords[3])
+        return cls(
+            node_id=data["node_id"],
+            box=box,
+            sam3_score=data["sam3_score"],
+            support_count=data["support_count"],
+            provenance=data["provenance"],
+            class_belief=dict(data.get("class_belief", {})),
+        )
+
 
 @dataclass
 class ContactSheet:
@@ -27,6 +51,22 @@ class ContactSheet:
     crops: List[CropCandidateAnnotation] = field(default_factory=list)
     total_candidates: int = 0
     strata_counts: Dict[str, int] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "crops": [c.to_dict() for c in self.crops],
+            "total_candidates": self.total_candidates,
+            "strata_counts": dict(self.strata_counts),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ContactSheet":
+        crops = [CropCandidateAnnotation.from_dict(c) for c in data.get("crops", [])]
+        return cls(
+            crops=crops,
+            total_candidates=data.get("total_candidates", len(crops)),
+            strata_counts=dict(data.get("strata_counts", {})),
+        )
 
 
 @dataclass
@@ -39,6 +79,59 @@ class QwenEvidencePack:
     contact_sheet: ContactSheet
     scene_summary: str = ""
     discovery_diagnostics: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "original_image_id": self.original_image_id,
+            "user_prompt": self.user_prompt,
+            "target_class": self.target_class,
+            "contact_sheet": self.contact_sheet.to_dict(),
+            "scene_summary": self.scene_summary,
+            "discovery_diagnostics": dict(self.discovery_diagnostics),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "QwenEvidencePack":
+        cs_data = data.get("contact_sheet", {})
+        contact_sheet = ContactSheet.from_dict(cs_data)
+        return cls(
+            original_image_id=data["original_image_id"],
+            user_prompt=data["user_prompt"],
+            target_class=data["target_class"],
+            contact_sheet=contact_sheet,
+            scene_summary=data.get("scene_summary", ""),
+            discovery_diagnostics=dict(data.get("discovery_diagnostics", {})),
+        )
+
+    def to_json(self, indent: int = 2) -> str:
+        return json.dumps(self.to_dict(), indent=indent)
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "QwenEvidencePack":
+        return cls.from_dict(json.loads(json_str))
+
+    def to_prompt_text(self) -> str:
+        """Format evidence pack into a compact token-efficient text prompt for Qwen (V4 Design Spec §6.1)."""
+        lines = [
+            f"=== SCENE EVIDENCE PACK ===",
+            f"Image ID: {self.original_image_id}",
+            f"User Target Concept: '{self.user_prompt}' (Class: {self.target_class})",
+            f"Summary: {self.scene_summary or 'Initial bootstrap candidates.'}",
+            f"Total Candidates Found: {self.contact_sheet.total_candidates}",
+            f"Sampled Contact Sheet Crops ({len(self.contact_sheet.crops)} crops):",
+        ]
+        for c in self.contact_sheet.crops:
+            top_class = (
+                max(c.class_belief.items(), key=lambda x: x[1])[0]
+                if c.class_belief
+                else "unclassified"
+            )
+            lines.append(
+                f"  - [{c.node_id}] box=({c.box.x1:.1f}, {c.box.y1:.1f}, {c.box.x2:.1f}, {c.box.y2:.1f}) | "
+                f"score={c.sam3_score:.2f} | support={c.support_count} | prov={c.provenance} | system_belief={top_class}"
+            )
+        lines.append("==========================")
+        return "\n".join(lines)
 
 
 @dataclass
@@ -61,15 +154,17 @@ class ContactSheetBuilder:
         if total_candidates == 0:
             return ContactSheet(crops=[], total_candidates=0, strata_counts={})
 
-        # Categorize nodes into strata
         high_stratum: List[Node] = []
         medium_stratum: List[Node] = []
         low_stratum: List[Node] = []
         outlier_stratum: List[Node] = []
 
         for node in active_nodes:
-            # Score from latest observation or default 0.5
-            score = node.observations[-1].score if node.observations and node.observations[-1].score is not None else 0.5
+            score = (
+                node.observations[-1].score
+                if node.observations and node.observations[-1].score is not None
+                else 0.5
+            )
 
             if node.diagnostics.duplicate_risk > 0.6 or node.diagnostics.merge_risk > 0.6:
                 outlier_stratum.append(node)
@@ -80,7 +175,6 @@ class ContactSheetBuilder:
             else:
                 low_stratum.append(node)
 
-        # Budget per stratum
         per_stratum_cap = max(1, max_crops // 4)
         sampled_nodes: List[Node] = []
 
@@ -89,7 +183,6 @@ class ContactSheetBuilder:
         sampled_nodes.extend(low_stratum[:per_stratum_cap])
         sampled_nodes.extend(outlier_stratum[:per_stratum_cap])
 
-        # Fill remaining budget from remaining nodes
         remaining_budget = max_crops - len(sampled_nodes)
         if remaining_budget > 0:
             already_sampled_ids = {n.node_id for n in sampled_nodes}
