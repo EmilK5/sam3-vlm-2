@@ -100,3 +100,30 @@ def test_planner_repair_pass():
     assert output.scene_summary == "Repaired"
     assert len(output.proposed_actions) == 1
     assert output.proposed_actions[0].semantic_key == "repaired"
+
+
+class TotalFailureBackend:
+    def __init__(self):
+        self.call_count = 0
+
+    def plan_scene(self, evidence, budget, config):
+        self.call_count += 1
+        return "invalid unparseable json [] {"
+
+
+def test_planner_deterministic_fallback():
+    backend = TotalFailureBackend()
+    service = QwenPlannerService(planner_backend=backend)
+    cs = ContactSheet(crops=[], total_candidates=0)
+    pack = QwenEvidencePack("img1", "citrus_target", "citrus_target_class", cs)
+    budget = BudgetState(qwen_calls=0)
+
+    output = service.plan_scene(pack, budget)
+
+    # Should have called backend twice (initial + 1 repair), both failed
+    assert backend.call_count == 2
+    assert budget.qwen_calls == 2
+    assert "Deterministic fallback due to repeated model failure" in output.scene_summary
+    assert len(output.proposed_actions) == 1
+    assert output.proposed_actions[0].semantic_key == "target_fallback"
+    assert output.proposed_actions[0].prompt == "citrus_target"

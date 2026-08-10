@@ -86,3 +86,31 @@ def test_qwen_planner_budget_enforcement():
     # Call 3 exceeds max_qwen_calls -> raises BudgetExceededError
     with pytest.raises(BudgetExceededError, match="Qwen call budget exhausted"):
         service.plan_scene(pack, budget, cfg)
+
+
+def test_valid_default_mock_produces_zero_invalid_entries():
+    from sam3_vlm.planning.action_bank import ActionBank, ActionBankGenerator
+    from sam3_vlm.scene.belief import SemanticMemory
+    from sam3_vlm.core.id_generator import IDGenerator
+
+    planner = MockQwenPlanner()
+    cs = ContactSheet(crops=[], total_candidates=2)
+    pack = QwenEvidencePack(
+        original_image_id="img_001",
+        user_prompt="green citrus",
+        target_class="green_citrus",
+        contact_sheet=cs,
+    )
+
+    output = planner.plan_scene(pack)
+    generator = ActionBankGenerator()
+    mem = SemanticMemory()
+    bank = ActionBank()
+    id_gen = IDGenerator()
+
+    entries = generator.generate_entries(output, mem, bank, id_gen)
+    
+    assert len(entries) == 3
+    assert len(bank.entries) == 3
+    for entry in bank.entries:
+        assert entry.invalid_reason is None

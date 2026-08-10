@@ -90,18 +90,22 @@ class ActionBankGenerator:
         semantic_memory: SemanticMemory,
         action_bank: ActionBank,
         id_gen: IDGenerator,
+        valid_node_ids: Optional[Set[str]] = None,
     ) -> List[ActionBankEntry]:
         """Convert proposed actions into ActionBankEntry objects with deduplication and correlation grouping."""
         added_entries: List[ActionBankEntry] = []
 
         existing_keys: Set[str] = set()
         existing_correlation_groups: Set[str] = set()
+        existing_prompts: Set[str] = set()
 
         for mem_key, record in semantic_memory.records.items():
             ckey = canonicalize_semantic_key(mem_key)
             existing_keys.add(ckey)
             group = derive_correlation_group(mem_key, " ".join(record.prompts))
             existing_correlation_groups.add(group)
+            for prompt in record.prompts:
+                existing_prompts.add(prompt.strip().lower())
 
         for entry in action_bank.entries:
             ckey = canonicalize_semantic_key(entry.action.semantic_key)
@@ -110,6 +114,7 @@ class ActionBankGenerator:
                 entry.action.semantic_key, entry.action.prompt
             )
             existing_correlation_groups.add(group)
+            existing_prompts.add(entry.action.prompt.strip().lower())
 
         for p_action in planner_output.proposed_actions:
             canonical_key = canonicalize_semantic_key(p_action.semantic_key)
@@ -119,6 +124,25 @@ class ActionBankGenerator:
             # Check exact key deduplication
             if canonical_key in existing_keys:
                 continue
+
+            # Check exact prompt deduplication (Spec M3.5 Phase 3)
+            clean_prompt = p_action.prompt.strip().lower()
+            if clean_prompt in existing_prompts:
+                continue
+
+            # Validate exemplars if valid_node_ids is provided (Spec M3.5 Phase 3)
+            if valid_node_ids is not None:
+                invalid_exemplars = False
+                for ex_id in p_action.positive_exemplar_ids:
+                    if ex_id not in valid_node_ids:
+                        invalid_exemplars = True
+                        break
+                for ex_id in p_action.negative_exemplar_ids:
+                    if ex_id not in valid_node_ids:
+                        invalid_exemplars = True
+                        break
+                if invalid_exemplars:
+                    continue
 
             corr_group = p_action.correlation_group or derive_correlation_group(
                 canonical_key, p_action.prompt
@@ -157,6 +181,7 @@ class ActionBankGenerator:
             entry = action_bank.add_action(action, qwen_priority=p_action.priority)
             existing_keys.add(canonical_key)
             existing_correlation_groups.add(corr_group)
+            existing_prompts.add(clean_prompt)
 
             if entry:
                 if is_correlated:

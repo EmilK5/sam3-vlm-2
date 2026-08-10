@@ -75,6 +75,7 @@ class MockQwenPlanner:
             semantic_prior={target_cls: 0.70, "leaf": 0.30},
             suggested_threshold=0.30,
             suggested_spatial_mode=SpatialMode.TILED,
+            tiling={"grid_rows": 2, "grid_cols": 2, "overlap_ratio": 0.15, "tile_min_size": 512},
             rationale="High-resolution tiled pass over dense clusters.",
         )
 

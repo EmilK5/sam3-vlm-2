@@ -171,7 +171,23 @@ class QwenPlannerService:
                     output = self._coerce_to_planner_output(raw_output)
                 except Exception:
                     pass
-        
+
+        # Deterministic fallback if still invalid (Spec M3.5 Phase 3)
+        if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
+            output = PlannerOutput(
+                scene_summary="Deterministic fallback due to repeated model failure.",
+                proposed_actions=[
+                    ProposedAction(
+                        semantic_key="target_fallback",
+                        prompt=evidence.user_prompt or (evidence.target_class or "target"),
+                        family=ActionFamily.DISCOVERY,
+                        priority=1.0,
+                        suggested_threshold=0.25,
+                        suggested_spatial_mode=SpatialMode.GLOBAL,
+                    )
+                ]
+            )
+
         max_actions = config.planner.max_actions_per_prompt
         return self._validate_and_normalize_output(output, max_actions=max_actions)
 

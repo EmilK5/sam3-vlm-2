@@ -94,13 +94,18 @@ def test_bootstrap_physical_asset_generation(tmp_path):
     )
 
     pack = result.qwen_evidence_pack
+    import cv2
+    
     assert pack.image_path is not None
     assert Path(pack.image_path).exists()
+    assert cv2.imread(pack.image_path) is not None
     
     assert pack.contact_sheet.contact_sheet_image_path is not None
     assert Path(pack.contact_sheet.contact_sheet_image_path).exists()
+    assert cv2.imread(pack.contact_sheet.contact_sheet_image_path) is not None
 
     assert len(pack.contact_sheet.crops) == 2
     for crop in pack.contact_sheet.crops:
         assert crop.crop_image_path is not None
         assert Path(crop.crop_image_path).exists()
+        assert cv2.imread(crop.crop_image_path) is not None

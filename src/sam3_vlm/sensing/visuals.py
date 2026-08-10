@@ -58,8 +58,7 @@ def save_image(image: np.ndarray, path: str) -> bool:
     """Save an image to disk, creating parent directories if needed."""
     try:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(path, image)
-        return True
+        return bool(cv2.imwrite(path, image))
     except Exception:
         return False
 
