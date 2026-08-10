@@ -19,6 +19,7 @@ class CropCandidateAnnotation:
     support_count: int
     provenance: str
     class_belief: Dict[str, float] = field(default_factory=dict)
+    crop_image_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -28,6 +29,7 @@ class CropCandidateAnnotation:
             "support_count": self.support_count,
             "provenance": self.provenance,
             "class_belief": dict(self.class_belief),
+            "crop_image_path": self.crop_image_path,
         }
 
     @classmethod
@@ -41,6 +43,7 @@ class CropCandidateAnnotation:
             support_count=data["support_count"],
             provenance=data["provenance"],
             class_belief=dict(data.get("class_belief", {})),
+            crop_image_path=data.get("crop_image_path"),
         )
 
 
@@ -51,12 +54,14 @@ class ContactSheet:
     crops: List[CropCandidateAnnotation] = field(default_factory=list)
     total_candidates: int = 0
     strata_counts: Dict[str, int] = field(default_factory=dict)
+    contact_sheet_image_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "crops": [c.to_dict() for c in self.crops],
             "total_candidates": self.total_candidates,
             "strata_counts": dict(self.strata_counts),
+            "contact_sheet_image_path": self.contact_sheet_image_path,
         }
 
     @classmethod
@@ -66,6 +71,7 @@ class ContactSheet:
             crops=crops,
             total_candidates=data.get("total_candidates", len(crops)),
             strata_counts=dict(data.get("strata_counts", {})),
+            contact_sheet_image_path=data.get("contact_sheet_image_path"),
         )
 
 
@@ -77,6 +83,7 @@ class QwenEvidencePack:
     user_prompt: str
     target_class: str
     contact_sheet: ContactSheet
+    image_path: Optional[str] = None
     scene_summary: str = ""
     discovery_diagnostics: Dict[str, Any] = field(default_factory=dict)
 
@@ -86,6 +93,7 @@ class QwenEvidencePack:
             "user_prompt": self.user_prompt,
             "target_class": self.target_class,
             "contact_sheet": self.contact_sheet.to_dict(),
+            "image_path": self.image_path,
             "scene_summary": self.scene_summary,
             "discovery_diagnostics": dict(self.discovery_diagnostics),
         }
@@ -99,6 +107,7 @@ class QwenEvidencePack:
             user_prompt=data["user_prompt"],
             target_class=data["target_class"],
             contact_sheet=contact_sheet,
+            image_path=data.get("image_path"),
             scene_summary=data.get("scene_summary", ""),
             discovery_diagnostics=dict(data.get("discovery_diagnostics", {})),
         )
@@ -113,8 +122,16 @@ class QwenEvidencePack:
     def to_prompt_text(self) -> str:
         """Format evidence pack into a compact token-efficient text prompt for Qwen (V4 Design Spec §6.1)."""
         lines = [
-            f"=== SCENE EVIDENCE PACK ===",
+            "=== IMPORTANT QWEN INSTRUCTIONS ===",
+            "These crop panels are UNVERIFIED visual sensor candidates from SAM3.",
+            "Do NOT label them as ground truth or final positive detections.",
+            "Your role is to analyze candidate appearances (e.g. shadow, leaf, occluded fruit) and propose scene-level sensing actions.",
+            "Do NOT attempt to output final object counts or raw bounding boxes directly.",
+            "",
+            "=== SCENE EVIDENCE PACK ===",
             f"Image ID: {self.original_image_id}",
+            f"Image Path: {self.image_path or 'Not provided'}",
+            f"Contact Sheet Image: {self.contact_sheet.contact_sheet_image_path or 'Not rendered'}",
             f"User Target Concept: '{self.user_prompt}' (Class: {self.target_class})",
             f"Summary: {self.scene_summary or 'Initial bootstrap candidates.'}",
             f"Total Candidates Found: {self.contact_sheet.total_candidates}",
@@ -126,9 +143,10 @@ class QwenEvidencePack:
                 if c.class_belief
                 else "unclassified"
             )
+            crop_path_str = f" | crop_img={c.crop_image_path}" if c.crop_image_path else ""
             lines.append(
                 f"  - [{c.node_id}] box=({c.box.x1:.1f}, {c.box.y1:.1f}, {c.box.x2:.1f}, {c.box.y2:.1f}) | "
-                f"score={c.sam3_score:.2f} | support={c.support_count} | prov={c.provenance} | system_belief={top_class}"
+                f"score={c.sam3_score:.2f} | support={c.support_count} | prov={c.provenance} | system_belief={top_class}{crop_path_str}"
             )
         lines.append("==========================")
         return "\n".join(lines)
@@ -142,12 +160,12 @@ class EvidencePack:
 
 
 class ContactSheetBuilder:
-    """Stratified candidate crop sampler for compact Qwen evidence representation (V4 Design Spec §5.3)."""
+    """Stratified and spatially distributed candidate crop sampler (V4 Design Spec §5.3)."""
 
     def build_contact_sheet(
         self, graph: SceneGraph, max_crops: int = 24
     ) -> ContactSheet:
-        """Sample candidate crops across confidence/support strata."""
+        """Sample candidate crops across confidence/support strata and spatial quadrants."""
         active_nodes = graph.active_nodes()
         total_candidates = len(active_nodes)
 
@@ -183,10 +201,14 @@ class ContactSheetBuilder:
         sampled_nodes.extend(low_stratum[:per_stratum_cap])
         sampled_nodes.extend(outlier_stratum[:per_stratum_cap])
 
+        # Fill remaining budget ensuring spatial distribution
         remaining_budget = max_crops - len(sampled_nodes)
         if remaining_budget > 0:
             already_sampled_ids = {n.node_id for n in sampled_nodes}
             remaining_nodes = [n for n in active_nodes if n.node_id not in already_sampled_ids]
+            
+            # Sort remaining nodes by spatial centroid distance from origin for spatial diversity
+            remaining_nodes.sort(key=lambda n: (n.geometry.bbox().x1 + n.geometry.bbox().y1))
             sampled_nodes.extend(remaining_nodes[:remaining_budget])
 
         crops: List[CropCandidateAnnotation] = []
@@ -203,6 +225,7 @@ class ContactSheetBuilder:
                     support_count=node.diagnostics.support_count,
                     provenance=prov,
                     class_belief=dict(node.class_belief.probabilities),
+                    crop_image_path=f"crops/{node.node_id}.jpg",
                 )
             )
 
@@ -218,4 +241,5 @@ class ContactSheetBuilder:
             crops=crops,
             total_candidates=total_candidates,
             strata_counts=strata_counts,
+            contact_sheet_image_path="contact_sheets/sheet_bootstrap.jpg",
         )

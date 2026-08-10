@@ -84,7 +84,7 @@ class MockSAM3Adapter:
                     if self.synthetic_detections:
                         for s_det in self.synthetic_detections:
                             s_box = s_det.geometry.box
-                            if tile_box.intersection(s_box) > 0.0:
+                            if s_det.score >= action.threshold and tile_box.intersection(s_box) > 0.0:
                                 det_id = self.id_gen.next_detection_id()
                                 local_box = image_box_to_tile_box(s_box, tile_box)
                                 detections.append(

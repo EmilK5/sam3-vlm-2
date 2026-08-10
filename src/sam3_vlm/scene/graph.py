@@ -16,7 +16,9 @@ class SceneGraph:
     nodes: Dict[str, Node] = field(default_factory=dict)
 
     def add_node(self, node: Node) -> None:
-        """Add or overwrite a node hypothesis in the graph."""
+        """Add a node hypothesis to the graph. Explodes loudly on duplicate persistent node ID (Spec §3.2)."""
+        if node.node_id in self.nodes:
+            raise ValueError(f"Duplicate persistent node ID: '{node.node_id}' already exists in SceneGraph.")
         self.nodes[node.node_id] = node
 
     def get_node(self, node_id: str) -> Optional[Node]:

@@ -24,6 +24,7 @@ class SensingAction:
     tiling: Optional[TilingConfig] = None
     qwen_priority: Optional[float] = None
     semantic_prior: Optional[Dict[str, float]] = None
+    correlation_group: Optional[str] = None
 
     def validate(self) -> None:
         """Validate action schema invariants (V4 Design Spec §21.7).

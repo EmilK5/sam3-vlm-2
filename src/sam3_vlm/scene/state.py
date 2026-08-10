@@ -1,11 +1,14 @@
 """Scene state and discovery state containers (V4 Design Spec §3.2 / §3.4)."""
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, TYPE_CHECKING
 from sam3_vlm.core.geometry import Geometry
 from sam3_vlm.core.types import BudgetState
 from sam3_vlm.scene.belief import SemanticMemory
 from sam3_vlm.scene.graph import SceneGraph
+
+if TYPE_CHECKING:
+    from sam3_vlm.planning.action_bank import ActionBank
 
 
 @dataclass
@@ -39,7 +42,7 @@ class SceneState:
     graph: SceneGraph
     semantic_memory: SemanticMemory
     discovery_state: DiscoveryState = field(default_factory=DiscoveryState)
-    action_bank: Optional[Any] = None
+    action_bank: Optional["ActionBank"] = None
     budget: BudgetState = field(default_factory=BudgetState)
     iteration: int = 0
     qwen_round: int = 0

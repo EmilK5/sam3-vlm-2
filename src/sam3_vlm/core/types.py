@@ -84,6 +84,13 @@ class ClassBelief:
                 raise ValueError(
                     f"Class probabilities must sum to 1.0 within numerical tolerance, got sum={total}"
                 )
+            
+            # Recompute entropy dynamically
+            h = 0.0
+            for p in self.probabilities.values():
+                if p > 0.0:
+                    h -= p * math.log2(p)
+            self.entropy = max(0.0, h)
 
 
 @dataclass

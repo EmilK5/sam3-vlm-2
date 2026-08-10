@@ -42,6 +42,11 @@ class Box:
 
     def intersection(self, other: "Box") -> float:
         """Compute intersection area with another box."""
+        if self.coordinate_space != other.coordinate_space:
+            raise ValueError(
+                f"Cannot compute intersection between different coordinate spaces: "
+                f"'{self.coordinate_space}' vs '{other.coordinate_space}'."
+            )
         ix1 = max(self.x1, other.x1)
         iy1 = max(self.y1, other.y1)
         ix2 = min(self.x2, other.x2)

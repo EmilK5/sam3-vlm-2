@@ -18,6 +18,18 @@ def canonicalize_semantic_key(key: str) -> str:
     return clean
 
 
+def derive_correlation_group(semantic_key: str, prompt: str) -> str:
+    """Derive correlation group for near-paraphrase grouping (V4 Design Spec §7.1)."""
+    combined = f"{semantic_key} {prompt}".lower()
+    if "citrus" in combined or "fruit" in combined:
+        return "citrus_target"
+    if "leaf" in combined or "foliage" in combined:
+        return "leaf_confounder"
+    if "branch" in combined or "shadow" in combined:
+        return "branch_shadow_confounder"
+    return canonicalize_semantic_key(semantic_key)
+
+
 @dataclass
 class ActionBankEntry:
     """Tracked unit within the action bank holding action state and metadata."""
@@ -85,26 +97,41 @@ class ActionBankGenerator:
         action_bank: ActionBank,
         id_gen: IDGenerator,
     ) -> List[ActionBankEntry]:
-        """Convert proposed actions into ActionBankEntry objects with deduplication against past memory and active bank."""
+        """Convert proposed actions into ActionBankEntry objects with deduplication and correlation grouping."""
         added_entries: List[ActionBankEntry] = []
 
-        # Collect existing keys in memory and bank for deduplication
         existing_keys: Set[str] = set()
-        for mem_key in semantic_memory.records:
-            existing_keys.add(canonicalize_semantic_key(mem_key))
+        existing_correlation_groups: Set[str] = set()
+
+        for mem_key, record in semantic_memory.records.items():
+            ckey = canonicalize_semantic_key(mem_key)
+            existing_keys.add(ckey)
+            group = derive_correlation_group(mem_key, " ".join(record.prompts))
+            existing_correlation_groups.add(group)
 
         for entry in action_bank.entries:
-            existing_keys.add(canonicalize_semantic_key(entry.action.semantic_key))
+            ckey = canonicalize_semantic_key(entry.action.semantic_key)
+            existing_keys.add(ckey)
+            group = entry.action.correlation_group or derive_correlation_group(
+                entry.action.semantic_key, entry.action.prompt
+            )
+            existing_correlation_groups.add(group)
 
         for p_action in planner_output.proposed_actions:
             canonical_key = canonicalize_semantic_key(p_action.semantic_key)
             if not canonical_key:
                 canonical_key = "unnamed_action"
 
-            # Check deduplication
+            # Check exact key deduplication
             if canonical_key in existing_keys:
-                # Deduplicated duplicate key -> skip adding duplicate action
                 continue
+
+            corr_group = p_action.correlation_group or derive_correlation_group(
+                canonical_key, p_action.prompt
+            )
+
+            # Check if near-paraphrase in same correlation group already exists
+            is_correlated = corr_group in existing_correlation_groups
 
             action = SensingAction(
                 action_id=id_gen.next_action_id(),
@@ -116,11 +143,16 @@ class ActionBankGenerator:
                 source=ActionSource.QWEN,
                 qwen_priority=p_action.priority,
                 semantic_prior=p_action.semantic_prior,
+                correlation_group=corr_group,
             )
 
             entry = action_bank.add_action(action, qwen_priority=p_action.priority)
             existing_keys.add(canonical_key)
+            existing_correlation_groups.add(corr_group)
+
             if entry:
+                if is_correlated:
+                    entry.redundancy = 0.5  # Mark correlated paraphrase redundancy
                 added_entries.append(entry)
 
         return added_entries

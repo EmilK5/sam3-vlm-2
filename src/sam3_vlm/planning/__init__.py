@@ -5,6 +5,7 @@ from sam3_vlm.planning.action_bank import (
     ActionBankEntry,
     ActionBankGenerator,
     canonicalize_semantic_key,
+    derive_correlation_group,
 )
 from sam3_vlm.planning.qwen_planner import (
     PlannerService,
@@ -21,6 +22,7 @@ __all__ = [
     "ActionBankEntry",
     "ActionBankGenerator",
     "canonicalize_semantic_key",
+    "derive_correlation_group",
     "PlannerService",
     "QwenPlannerService",
     "ProposedAction",
