@@ -97,9 +97,8 @@ class BootstrapPipeline:
             threshold=self.config.sam3.default_threshold,
         )
 
-        semantic_memory.record_execution(global_action, "global_bootstrap")
-
         obs_global = self.sensor.observe(image, global_action)
+        semantic_memory.record_execution(global_action, obs_global.call_id)
         state.budget.sam3_calls += 1
         state.budget.total_runtime_ms += obs_global.runtime_ms
 
@@ -155,9 +154,8 @@ class BootstrapPipeline:
                 threshold=self.config.sam3.default_threshold,
             )
 
-            semantic_memory.record_execution(tiled_action, "tiled_bootstrap")
-
             obs_tiled = self.sensor.observe(image, tiled_action)
+            semantic_memory.record_execution(tiled_action, obs_tiled.call_id)
             state.budget.sam3_calls += 1
             state.budget.sam3_tiles += len(tiling_decision.tiles)
             state.budget.total_runtime_ms += obs_tiled.runtime_ms

@@ -39,6 +39,15 @@ def test_bootstrap_pipeline_execution():
     assert result.state.budget.sam3_calls >= 1
     assert result.state.budget.total_runtime_ms > 0.0
 
+    # Verify provenance tracing in SemanticMemory uses real SAM3 call IDs
+    mem = result.state.semantic_memory
+    assert "green_citrus" in mem.records
+    rec = mem.records["green_citrus"]
+    assert len(rec.sam3_call_ids) >= 1
+    for call_id in rec.sam3_call_ids:
+        assert call_id.startswith("sam3_")
+        assert call_id not in ("global_bootstrap", "tiled_bootstrap")
+
     # Verify QwenEvidencePack assembly
     evidence_pack = result.qwen_evidence_pack
     assert evidence_pack.original_image_id == "img_001"

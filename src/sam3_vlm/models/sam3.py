@@ -7,7 +7,7 @@ from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import Detection, SpatialMode
 from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.sensing.observation import SAM3Observation
-from sam3_vlm.sensing.tiling import compute_tiles, tile_box_to_image_box
+from sam3_vlm.sensing.tiling import compute_tiles, tile_box_to_image_box, image_box_to_tile_box
 
 
 @runtime_checkable
@@ -86,12 +86,14 @@ class MockSAM3Adapter:
                             s_box = s_det.geometry.box
                             if tile_box.intersection(s_box) > 0.0:
                                 det_id = self.id_gen.next_detection_id()
+                                local_box = image_box_to_tile_box(s_box, tile_box)
                                 detections.append(
                                     Detection(
                                         detection_id=det_id,
                                         geometry=s_det.geometry,
                                         score=s_det.score,
                                         source_tile_id=tile_id,
+                                        local_geometry=GeometryRef(box=local_box),
                                     )
                                 )
                     else:

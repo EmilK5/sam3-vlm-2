@@ -54,6 +54,29 @@ def test_mock_sam3_adapter_tiled_sensing():
         assert det.geometry.box.coordinate_space == "image"
 
 
+def test_mock_sam3_adapter_synthetic_tiled_local_geometry():
+    """Verify synthetic detections in tiled mode populate local_geometry (Spec §4.2)."""
+    synth_det = Detection("s1", GeometryRef(Box(100.0, 100.0, 200.0, 200.0)), score=0.9)
+    adapter = MockSAM3Adapter(synthetic_detections=[synth_det])
+    tiling_cfg = TilingConfig(grid_rows=2, grid_cols=2)
+
+    action = SensingAction(
+        action_id="act_003",
+        semantic_key="citrus",
+        prompt="citrus",
+        family=ActionFamily.DISCOVERY,
+        spatial_mode=SpatialMode.TILED,
+        tiling=tiling_cfg,
+        source=ActionSource.USER_BOOTSTRAP,
+    )
+
+    obs = adapter.observe(image=(1000, 1000), action=action)
+    assert len(obs.detections) >= 1
+    det = obs.detections[0]
+    assert det.local_geometry is not None
+    assert det.local_geometry.box.coordinate_space == "tile"
+
+
 def test_coordinate_transformation_helpers():
     tile_region = Box(x1=500.0, y1=500.0, x2=1000.0, y2=1000.0)
     local_box = Box(x1=10.0, y1=20.0, x2=100.0, y2=150.0, coordinate_space="tile")
