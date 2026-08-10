@@ -23,6 +23,13 @@ class BudgetStoppingCondition:
         return state.budget.sam3_calls >= config.budget.max_sam3_calls
 
 
+class IterationStoppingCondition:
+    """Stops when the maximum number of iterations is reached."""
+    
+    def should_stop(self, state: "SceneState", config: "V4Config") -> bool:
+        return state.iteration >= config.stopping.max_iterations
+
+
 class MarginalUtilityStoppingCondition:
     """Stops when all available actions in the bank have low utility."""
     

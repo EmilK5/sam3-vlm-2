@@ -74,6 +74,7 @@ class AssociationConfig:
 
     iou_match_threshold: float = 0.5
     new_node_iou_threshold: float = 0.3
+    tiled_nms_threshold: float = 0.7
 
 
 @dataclass(frozen=True)

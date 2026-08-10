@@ -25,8 +25,7 @@ class SemanticRecord:
     sam3_call_ids: List[str] = field(default_factory=list)
     total_cost: float = 0.0
     new_nodes_by_execution: List[int] = field(default_factory=list)
-    realized_utility_by_execution: List[float] = field(default_factory=list)
-
+    predicted_utility_by_execution: List[float] = field(default_factory=list)
 
 @dataclass
 class SemanticMemory:
@@ -40,7 +39,7 @@ class SemanticMemory:
         sam3_call_id: str,
         new_nodes: int = 0,
         runtime_ms: float = 0.0,
-        realized_utility: float = 0.0,
+        predicted_utility: float = 0.0,
     ) -> SemanticRecord:
         if action.semantic_key not in self.records:
             self.records[action.semantic_key] = SemanticRecord(
@@ -54,7 +53,7 @@ class SemanticMemory:
         rec.sam3_call_ids.append(sam3_call_id)
         rec.total_cost += runtime_ms
         rec.new_nodes_by_execution.append(new_nodes)
-        rec.realized_utility_by_execution.append(realized_utility)
+        rec.predicted_utility_by_execution.append(predicted_utility)
         return rec
 
 

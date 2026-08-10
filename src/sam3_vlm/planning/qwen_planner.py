@@ -213,7 +213,7 @@ class QwenPlannerService:
         """Defensively clamp numerical values and cap action count to max_actions."""
         normalized_actions: List[ProposedAction] = []
         for action in output.proposed_actions:
-            clamped_priority = max(0.0, min(1.0, float(action.priority)))
+            clamped_priority = max(0.0, min(1.0, float(action.priority if action.priority is not None else 0.5)))
             clamped_threshold = (
                 max(0.0, min(1.0, float(action.suggested_threshold)))
                 if action.suggested_threshold is not None

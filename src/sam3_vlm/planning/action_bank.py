@@ -36,6 +36,7 @@ class ActionBankEntry:
     estimated_cost: float = 1.0
     executed: bool = False
     invalid_reason: Optional[str] = None
+    total_utility: Optional[float] = None
 
 
 @dataclass

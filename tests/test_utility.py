@@ -44,12 +44,16 @@ def test_default_utility_evaluator_discovery():
     # Utility = 1.0(1.0) + 1.0(0.0) - 1.0(0.0) - 0.5(1.0) + 1.0(0.8) = 1.0 - 0.5 + 0.8 = 1.3
     assert breakdown_it0.total_utility == 1.3
     
-    # Iteration 5 (decaying discovery)
+    # Iteration 5 (simulate some nodes)
     state, config = create_mock_state_and_config(iteration=5)
+    # Add a mock node to the graph so len(active_nodes) is 1
+    from sam3_vlm.scene.node import Node
+    from sam3_vlm.core.geometry import BoxGeometry, Box
+    state.graph.add_node(Node(node_id="n1", geometry=BoxGeometry(Box(0,0,10,10))))
     breakdown_it5 = evaluator.evaluate_utility(entry, state, config)
-    assert breakdown_it5.discovery_value == 0.5
-    # Utility = 1.0(0.5) + 1.0(0.0) - 1.0(0.0) - 0.5(1.0) + 1.0(0.8) = 0.5 - 0.5 + 0.8 = 0.8
-    assert breakdown_it5.total_utility == 0.8
+    # 1.0 - (1 * 0.02) = 0.98
+    assert breakdown_it5.discovery_value == pytest.approx(0.98)
+    assert breakdown_it5.total_utility == pytest.approx(1.28)
 
 
 def test_default_utility_evaluator_discrimination():
@@ -68,18 +72,26 @@ def test_default_utility_evaluator_discrimination():
     state, config = create_mock_state_and_config(iteration=0)
     breakdown_it0 = evaluator.evaluate_utility(entry, state, config)
     assert breakdown_it0.discovery_value == 0.0
-    assert breakdown_it0.discrimination_value == 0.5
+    assert breakdown_it0.discrimination_value == 0.2
     assert breakdown_it0.redundancy_cost == 0.2
     assert breakdown_it0.compute_cost == 1.0
-    # Utility = 1.0(0.0) + 1.0(0.5) - 1.0(0.2) - 0.5(1.0) + 1.0(0.5) = 0.5 - 0.2 - 0.5 + 0.5 = 0.3
-    assert breakdown_it0.total_utility == 0.3
+    # Utility = 1.0(0.0) + 1.0(0.2) - 1.0(0.2) - 0.5(1.0) + 1.0(0.5) = 0.2 - 0.2 - 0.5 + 0.5 = 0.0
+    assert breakdown_it0.total_utility == 0.0
     
-    # Iteration 3 (increasing discrimination)
+    # Iteration 3 (increasing discrimination with entropy)
     state, config = create_mock_state_and_config(iteration=3)
+    from sam3_vlm.scene.node import Node
+    from sam3_vlm.core.geometry import BoxGeometry, Box
+    from sam3_vlm.scene.belief import ClassBelief
+    n1 = Node(node_id="n1", geometry=BoxGeometry(Box(0,0,10,10)))
+    n1.class_belief = ClassBelief(probabilities={}, update_count=1, entropy=5.0)
+    state.graph.add_node(n1)
+    
     breakdown_it3 = evaluator.evaluate_utility(entry, state, config)
-    assert breakdown_it3.discrimination_value == 0.8
-    # Utility = 1.0(0.0) + 1.0(0.8) - 1.0(0.2) - 0.5(1.0) + 1.0(0.5) = 0.8 - 0.2 - 0.5 + 0.5 = 0.6
-    assert breakdown_it3.total_utility == pytest.approx(0.6)
+    # discrimination = min(1.0, 0.2 + 5.0*0.1) = 0.7
+    assert breakdown_it3.discrimination_value == pytest.approx(0.7)
+    # Utility = 1.0(0.0) + 1.0(0.7) - 1.0(0.2) - 0.5(1.0) + 1.0(0.5) = 0.7 - 0.2 - 0.5 + 0.5 = 0.5
+    assert breakdown_it3.total_utility == pytest.approx(0.5)
 
 
 def test_default_utility_evaluator_tiled_cost():

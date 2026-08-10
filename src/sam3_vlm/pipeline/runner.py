@@ -10,7 +10,12 @@ from sam3_vlm.models.sam3 import SAM3Sensor
 from sam3_vlm.models.qwen import QwenPlanner
 from sam3_vlm.planning.action_bank import ActionBank, ActionBankGenerator
 from sam3_vlm.planning.qwen_planner import QwenPlannerService
-from sam3_vlm.planning.stopping import CompositeStoppingCondition, BudgetStoppingCondition, DiscoveryPlateauStoppingCondition
+from sam3_vlm.planning.stopping import (
+    CompositeStoppingCondition,
+    BudgetStoppingCondition,
+    DiscoveryPlateauStoppingCondition,
+    IterationStoppingCondition,
+)
 from sam3_vlm.planning.utility import DefaultUtilityEvaluator
 from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy
 from sam3_vlm.scene.belief import SemanticMemory, BeliefUpdater
@@ -59,6 +64,7 @@ class Runner:
         self.stopping_condition = CompositeStoppingCondition([
             BudgetStoppingCondition(),
             DiscoveryPlateauStoppingCondition(),
+            IterationStoppingCondition(),
         ])
 
     def run(self, image: Any, user_prompt: str, target_class: str = "target", image_id: str = "img1") -> float:
@@ -124,7 +130,7 @@ class Runner:
             if action.spatial_mode == SpatialMode.TILED and action.tiling:
                 predicted_tiles = action.tiling.grid_rows * action.tiling.grid_cols
                 if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
-                    best_entry.executed = True
+                    best_entry.invalid_reason = "Budget Exceeded"
                     return # skip this action because it exceeds tile budget
                     
             # 4. Execute SAM3 once
@@ -159,8 +165,9 @@ class Runner:
                 new_nodes_count = len(assoc_result.new_nodes)
                 
                 # Scene-wide projection (M4/M5 interface)
-                # First, collect matched node IDs
+                # First, collect matched node IDs and new node IDs
                 matched_node_ids = {nid for nid, _ in assoc_result.matched_observations}
+                new_node_ids = {n.node_id for n in assoc_result.new_nodes}
                 
                 for node_id, obs_ref in assoc_result.matched_observations:
                     node = self.scene_state.graph.get_node(node_id)
@@ -173,17 +180,25 @@ class Runner:
                         new_node, action, new_node.observations[-1], target_class=self.target_class
                     )
                     
-                # Project NOT_RETRIEVED for unmatched active nodes
+                # Project absences for unmatched active nodes
                 from sam3_vlm.core.types import ObservationRelation, NodeObservationRef
                 for node in self.scene_state.graph.active_nodes():
-                    if node.node_id not in matched_node_ids:
-                        # Append a NOT_RETRIEVED observation
+                    if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
+                        # Determine if node was within search ROI. 
+                        # GLOBAL and TILED (without explicit sub-ROI) cover the entire scene.
+                        # For M4, if action is GLOBAL/TILED, we assign NOT_RETRIEVED. Otherwise NOT_OBSERVABLE.
+                        if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
+                            relation = ObservationRelation.NOT_RETRIEVED
+                        else:
+                            relation = ObservationRelation.NOT_OBSERVABLE
+                            
+                        # Append observation
                         obs_ref = NodeObservationRef(
                             observation_id=self.id_gen.next_observation_id(),
                             sam3_call_id=observation.call_id,
                             action_id=action.action_id,
                             semantic_key=action.semantic_key,
-                            relation=ObservationRelation.NOT_RETRIEVED,
+                            relation=relation,
                             score=0.0
                         )
                         node.observations.append(obs_ref)
@@ -197,12 +212,12 @@ class Runner:
                 sam3_call_id=observation.call_id,
                 new_nodes=new_nodes_count,
                 runtime_ms=observation.runtime_ms,
-                realized_utility=best_entry.total_utility if best_entry.total_utility else 0.0
+                predicted_utility=best_entry.total_utility if best_entry.total_utility else 0.0
             )
             
             # 11. Update discovery state
             self.scene_state.discovery_state.recent_new_node_counts.append(float(new_nodes_count))
-            if new_nodes_count > 0 and not isinstance(action.family, type(ActionFamily.CONTEXT)): # skip context for recent_new_nodes
+            if new_nodes_count > 0 and action.family != ActionFamily.CONTEXT: # skip context for recent_new_nodes
                 self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
             
             # 13. Evaluate replanning triggers & 14. Global stopping

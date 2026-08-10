@@ -87,6 +87,10 @@ def test_runner_multiple_nodes_updated_and_created():
     
     # 3. M4 tests: executed flag changes only after execution
     assert entry.executed is True
+    
+    # NEW NODE TEST: Check that the new node (from d3) did not receive NOT_RETRIEVED
+    new_node = [n for n in runner.scene_state.graph.active_nodes() if n.node_id not in ["node1", "node2"]][0]
+    assert len(new_node.observations) == 1 # Only NEW_DETECTION, no NOT_RETRIEVED
 
 
 def test_runner_plateau_allows_discrimination():
@@ -129,7 +133,19 @@ def test_runner_id_collision():
     # 6. Post-bootstrap new-node IDs never collide
     config = V4Config()
     sensor = MockSAM3Adapter()
-    runner = Runner(config=config, sensor=sensor, planner=ExtendedMockPlanner())
+    
+    from sam3_vlm.sensing.observation import SAM3Observation
+    from sam3_vlm.core.types import Detection
+    def fake_observe(image, action):
+        # Force a detection to guarantee a new node during GLOBAL_SENSING
+        dets = [Detection(detection_id="d_new", geometry=BoxGeometry(Box(90,90,100,100)), score=0.9)]
+        return SAM3Observation(call_id="call1", action_id=action.action_id, semantic_key=action.semantic_key, detections=dets, runtime_ms=10.0)
+    sensor.observe = fake_observe
+    
+    from sam3_vlm.planning.qwen_planner import ProposedAction
+    runner = Runner(config=config, sensor=sensor, planner=ExtendedMockPlanner(actions=[
+        ProposedAction(semantic_key="new", prompt="new", family=ActionFamily.DISCOVERY, suggested_spatial_mode=SpatialMode.GLOBAL)
+    ]))
     
     # Run full mock
     runner.run(image=np.zeros((100,100,3)), user_prompt="test", target_class="t", image_id="img")
@@ -139,12 +155,14 @@ def test_runner_id_collision():
     
     # Check uniqueness
     assert len(node_ids) == len(set(node_ids))
+    # Ensure there was actually a new node created post-bootstrap
+    assert len(node_ids) > 0
 
 
 def test_runner_budgets_enforced():
     # 7. Tile/runtime budgets are actually enforced
     config = V4Config(
-        budget=BudgetConfig(max_sam3_calls=10, max_sam3_tiles=4, max_runtime_seconds=0.01) # 10 ms
+        budget=BudgetConfig(max_sam3_calls=10, max_sam3_tiles=3, max_runtime_seconds=1.0) # 3 tiles max
     )
     sensor = MockSAM3Adapter()
     from sam3_vlm.sensing.observation import SAM3Observation
@@ -167,11 +185,19 @@ def test_runner_budgets_enforced():
     runner._step()
     
     # Now budget is exhausted
-    runner.scene_state.action_bank.entries.append(ActionBankEntry(action=action1, qwen_priority=0.9))
+    from sam3_vlm.sensing.tiling import TilingConfig
+    action2 = SensingAction(action_id="act2", semantic_key="disc", prompt="disc", family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.TILED, tiling=TilingConfig(grid_rows=2, grid_cols=2)) # 4 tiles, budget is 3
+    entry2 = ActionBankEntry(action=action2, qwen_priority=0.9)
+    runner.scene_state.action_bank.entries.append(entry2)
     runner._step()
     
-    # Should transition to CLEANUP_DECISION
-    assert runner.state == RunnerState.CLEANUP_DECISION
+    # Action should NOT be executed, but invalid
+    assert not entry2.executed
+    assert entry2.invalid_reason is not None
+    
+    # Try another loop step, it should transition to REPLAN
+    runner._step()
+    assert runner.state == RunnerState.REPLAN
 
 
 def test_runner_context_action_nodes():
@@ -196,6 +222,10 @@ def test_runner_context_action_nodes():
         return SAM3Observation(call_id="call1", action_id=action.action_id, semantic_key=action.semantic_key, detections=dets, runtime_ms=10.0)
     sensor.observe = fake_observe
     runner.image = np.zeros((100,100,3))
+    
+    def mock_choose():
+        return runner.scene_state.action_bank.entries[0]
+    runner._choose_best_action = mock_choose
     
     runner._step()
     
@@ -229,10 +259,69 @@ def test_runner_historical_penalty():
     
     # Populate memory
     runner.scene_state.semantic_memory.record_execution(
-        action=action_bad, sam3_call_id="c1", new_nodes=0, runtime_ms=10.0, realized_utility=0.0
+        action=action_bad, sam3_call_id="c1", new_nodes=0, runtime_ms=10.0, predicted_utility=0.0
     )
     
     best = runner._choose_best_action()
     
     # Despite Qwen priority being higher (0.9 vs 0.8), bad_prompt should be penalized
     assert best.action.semantic_key == "good_prompt"
+
+
+def test_runner_not_observable():
+    # 10. Local actions append NOT_OBSERVABLE rather than NOT_RETRIEVED to unmatched nodes
+    config = V4Config()
+    sensor = MockSAM3Adapter()
+    runner = Runner(config=config, sensor=sensor, planner=ExtendedMockPlanner())
+    
+    runner.state = RunnerState.GLOBAL_SENSING
+    from sam3_vlm.scene.graph import SceneGraph
+    from sam3_vlm.scene.belief import SemanticMemory
+    from sam3_vlm.planning.action_bank import ActionBank
+    runner.scene_state = SceneState(image_id="img1", user_prompt="c", target_class="t", graph=SceneGraph(), semantic_memory=SemanticMemory(), action_bank=ActionBank())
+    
+    # Add an existing node
+    node1 = Node(node_id="node1", geometry=BoxGeometry(Box(0,0,10,10)))
+    runner.scene_state.graph.add_node(node1)
+    
+    # We use ROI_BATCH here to trigger NOT_OBSERVABLE because it does not cover the full scene
+    action1 = SensingAction(action_id="act1", semantic_key="roibatch", prompt="roibatch", family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.ROI_BATCH)
+    runner.scene_state.action_bank.entries.append(ActionBankEntry(action=action1, qwen_priority=0.9))
+    
+    from sam3_vlm.sensing.observation import SAM3Observation
+    def fake_observe(image, action):
+        return SAM3Observation(call_id="call1", action_id=action.action_id, semantic_key=action.semantic_key, detections=[], runtime_ms=10.0)
+    sensor.observe = fake_observe
+    runner.image = np.zeros((100,100,3))
+    
+    # Need target_class for runner
+    runner.target_class = "t"
+    
+    def mock_choose():
+        return runner.scene_state.action_bank.entries[0]
+    runner._choose_best_action = mock_choose
+    
+    runner._step()
+    
+    assert len(node1.observations) == 1
+    from sam3_vlm.core.types import ObservationRelation
+    assert node1.observations[0].relation == ObservationRelation.NOT_OBSERVABLE
+
+
+def test_runner_max_iterations():
+    # 11. max_iterations condition stops the loop
+    config = V4Config(
+        stopping=StoppingConfig(max_iterations=5)
+    )
+    sensor = MockSAM3Adapter()
+    runner = Runner(config=config, sensor=sensor, planner=ExtendedMockPlanner())
+    
+    runner.state = RunnerState.GLOBAL_SENSING
+    from sam3_vlm.scene.graph import SceneGraph
+    from sam3_vlm.scene.belief import SemanticMemory
+    from sam3_vlm.planning.action_bank import ActionBank
+    runner.scene_state = SceneState(image_id="img1", user_prompt="c", target_class="t", graph=SceneGraph(), semantic_memory=SemanticMemory(), action_bank=ActionBank())
+    runner.scene_state.iteration = 5  # reached max
+    
+    # Check stopping condition directly
+    assert runner.stopping_condition.should_stop(runner.scene_state, runner.config)

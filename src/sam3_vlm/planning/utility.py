@@ -36,6 +36,10 @@ class DefaultUtilityEvaluator:
         cfg = config.action_selection
         iteration = state.iteration
         
+        # If action is CONTEXT, return useless utility for M4
+        if entry.action.family == ActionFamily.CONTEXT:
+            return UtilityBreakdown(total_utility=-1.0)
+            
         # Determine empirical penalty from semantic history
         history_penalty = 0.0
         rec = state.semantic_memory.records.get(entry.action.semantic_key)
@@ -43,19 +47,21 @@ class DefaultUtilityEvaluator:
             if sum(rec.new_nodes_by_execution) == 0:
                 history_penalty = 0.5 * rec.execution_count # Heavy penalty for repeatedly failing to find anything
                 
+        # Calculate active node stats
+        active_nodes = state.graph.active_nodes()
+        total_entropy = sum(n.class_belief.entropy for n in active_nodes)
+        
         # 1. Discovery value D_t(x) based on novelty and history
         discovery_value = 0.0
         if entry.action.family == ActionFamily.DISCOVERY:
-            # decays slightly over iterations, but penalized if past executions of this key failed
-            discovery_value = max(0.0, 1.0 - (iteration * 0.1) - history_penalty)
-        elif entry.action.family == ActionFamily.CONTEXT:
-            discovery_value = 0.2
+            # Discovery value drops slightly as we find more objects, but penalty is the main factor
+            discovery_value = max(0.0, 1.0 - (len(active_nodes) * 0.02) - history_penalty)
             
         # 2. Discrimination value I_t(x) based on uncertainty and iteration
         discrimination_value = 0.0
         if entry.action.family in (ActionFamily.VERIFICATION, ActionFamily.CONFOUNDER):
-            # scales with iteration
-            discrimination_value = min(1.0, 0.5 + (iteration * 0.1) - history_penalty)
+            # scales with total entropy in the scene
+            discrimination_value = min(1.0, 0.2 + (total_entropy * 0.1) - history_penalty)
 
         # 3. Redundancy cost R_t(x)
         redundancy_cost = entry.redundancy

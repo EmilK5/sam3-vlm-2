@@ -126,7 +126,7 @@ class IoUAssociationPolicy:
                 for j in range(i + 1, len(sorted_dets)):
                     if keep_flags[j]:
                         box_j = sorted_dets[j].geometry.box
-                        if box_i.iou(box_j) >= config.new_node_iou_threshold:
+                        if box_i.iou(box_j) >= config.tiled_nms_threshold:
                             keep_flags[j] = False
             
             deduplicated_unmatched = [d for idx, d in enumerate(sorted_dets) if keep_flags[idx]]
