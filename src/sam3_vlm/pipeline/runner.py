@@ -62,7 +62,7 @@ class Runner:
         self.target_class = "target"
         
         # Sub-components
-        self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen)
+        self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen, recorder=self.recorder)
         self.planner_service = QwenPlannerService(planner)
         self.bank_generator = ActionBankGenerator()
         self.association_policy = IoUAssociationPolicy()
@@ -88,6 +88,7 @@ class Runner:
         
         if self.recorder:
             self.recorder.record_run_started()
+            self.recorder.record_bootstrap_started()
             
         try:
             while self.state != RunnerState.DONE:
@@ -117,21 +118,9 @@ class Runner:
                     "saturated": getattr(self.scene_state.discovery_state, "saturated", False)
                 }
             )
-            # Serialize graph
-            from sam3_vlm.scene.state import SceneGraph
-            # we will define a dict serialization for final graph later, passing empty dict for now or dump nodes
-            nodes_dict = {
-                nid: {
-                    "geometry": node.geometry.bbox().__dict__,
-                    "status": node.status.value,
-                    "class_belief": node.class_belief.probabilities,
-                    "created_by_call_id": node.created_by_call_id
-                }
-                for nid, node in self.scene_state.graph.nodes.items()
-            }
-            final_graph_dict = {"nodes": nodes_dict}
-            self.recorder.record_run_completed()
-            self.recorder.close(summary=summary, final_graph_dict=final_graph_dict)
+            # Serialize graph properly
+            final_graph_dict = self.scene_state.graph.to_dict()
+            self.recorder.finalize_success(summary, final_graph_dict)
             
         return final_count
 
@@ -240,16 +229,18 @@ class Runner:
             budget.model_runtime_ms += observation.runtime_ms
             budget.total_runtime_ms += observation.runtime_ms
             
-            mask_artifacts = []
             if self.recorder:
+                mask_artifacts = []
                 for det in observation.detections:
                     if "mask" in det.raw_metadata:
-                        path = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
-                        det.mask_artifact = path
-                        mask_artifacts.append(path)
+                        art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
+                        det.mask_artifact = art_ref["relative_path"]
+                        mask_artifacts.append(art_ref["relative_path"])
                 self.recorder.record_sam3_action_completed(
-                    action.action_id, observation.call_id, len(observation.detections), observation.runtime_ms, mask_artifacts
+                    action.action_id, observation.call_id,
+                    {"num_detections": len(observation.detections), "runtime_ms": observation.runtime_ms, "mask_artifacts": mask_artifacts}
                 )
+                self.recorder.record_budget_updated(budget.__dict__)
             
             new_nodes_count = 0
             
@@ -313,12 +304,17 @@ class Runner:
                 variance_change=self.scene_state.count_estimate.variance - pre_count.variance if 'pre_count' in locals() else 0.0,
                 realized_discrimination_proxy=discrimination_proxy,
             )
+            if self.recorder:
+                self.recorder.record_semantic_memory_updated({"records_count": len(self.scene_state.semantic_memory.records)})
             
             # 11. Update discovery state
             if action.family == ActionFamily.DISCOVERY:
                 self.scene_state.discovery_state.recent_new_node_counts.append(float(new_nodes_count))
             if new_nodes_count > 0 and action.family != ActionFamily.CONTEXT: # skip context for recent_new_nodes
                 self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
+            if self.recorder:
+                sat = getattr(self.scene_state.discovery_state, "saturated", False)
+                self.recorder.record_discovery_state_updated({"recent_new_node_counts": self.scene_state.discovery_state.recent_new_node_counts, "saturated": sat})
             
             # 13. Evaluate replanning triggers & 14. Global stopping
             self.scene_state.iteration += 1
@@ -406,17 +402,18 @@ class Runner:
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
             
-            mask_artifacts = []
             if self.recorder:
+                mask_artifacts = []
                 for det in observation.detections:
                     if "mask" in det.raw_metadata:
-                        path = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
-                        det.mask_artifact = path
-                        mask_artifacts.append(path)
+                        art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
+                        det.mask_artifact = art_ref["relative_path"]
+                        mask_artifacts.append(art_ref["relative_path"])
                 self.recorder.record_sam3_action_completed(
-                    cleanup_action.action_id, observation.call_id, len(observation.detections), observation.runtime_ms, mask_artifacts
+                    cleanup_action.action_id, observation.call_id, {"num_detections": len(observation.detections), "runtime_ms": observation.runtime_ms, "mask_artifacts": mask_artifacts}
                 )
                 self.recorder.record_cleanup_action_completed(cleanup_action.action_id)
+                self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
 
             assoc_result = self.association_policy.associate(
                 self.scene_state.graph,
@@ -459,6 +456,8 @@ class Runner:
                 variance_change=self.scene_state.count_estimate.variance - pre_count.variance,
                 realized_discrimination_proxy=max(0.0, pre_entropy - post_entropy)
             )
+            if self.recorder:
+                self.recorder.record_semantic_memory_updated({"records_count": len(self.scene_state.semantic_memory.records)})
 
             self.scene_state.iteration += 1
             self.state = RunnerState.ASSESS_CLEANUP
@@ -483,13 +482,27 @@ class Runner:
                     node, action, obs_ref, target_class=self.target_class
                 )
                 if self.recorder:
-                    self.recorder.record_node_updated(node_id, action.action_id, observation.call_id, obs_ref.relation.value)
+                    prov = {
+                        "action_id": action.action_id,
+                        "sam3_call_id": observation.call_id,
+                        "detection_id": obs_ref.detection_id,
+                        "observation_id": obs_ref.observation_id,
+                        "semantic_key": action.semantic_key
+                    }
+                    self.recorder.record_node_updated(node_id, node.to_dict(), prov)
         for new_node in assoc_result.new_nodes:
             self.belief_updater.update_node_belief(
                 new_node, action, new_node.observations[-1], target_class=self.target_class
             )
             if self.recorder:
-                self.recorder.record_node_created(new_node.node_id, action.action_id, observation.call_id)
+                prov = {
+                    "action_id": action.action_id,
+                    "sam3_call_id": observation.call_id,
+                    "detection_id": new_node.observations[-1].detection_id,
+                    "observation_id": new_node.observations[-1].observation_id,
+                    "semantic_key": action.semantic_key
+                }
+                self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
             
         from sam3_vlm.core.types import ObservationRelation, NodeObservationRef, SpatialMode
         not_retrieved_nodes_count = 0
@@ -523,7 +536,14 @@ class Runner:
                     node, action, obs_ref, target_class=self.target_class
                 )
                 if self.recorder:
-                    self.recorder.record_node_updated(node.node_id, action.action_id, observation.call_id, obs_ref.relation.value)
+                    prov = {
+                        "action_id": action.action_id,
+                        "sam3_call_id": observation.call_id,
+                        "observation_id": obs_ref.observation_id,
+                        "semantic_key": action.semantic_key,
+                        "relation": obs_ref.relation.value
+                    }
+                    self.recorder.record_node_updated(node.node_id, node.to_dict(), prov)
                 
         return new_nodes_count, not_retrieved_nodes_count
 
@@ -543,7 +563,27 @@ class Runner:
         )
         
         if self.recorder:
-            path = self.recorder.save_qwen_artifact(call_id, planner_output.to_dict())
+            cs_ref = None
+            if self.evidence_pack.contact_sheet.contact_sheet_image_path:
+                try:
+                    with open(self.evidence_pack.contact_sheet.contact_sheet_image_path, "rb") as f:
+                        cs_ref = self.recorder.save_contact_sheet_artifact(call_id, f.read())
+                except FileNotFoundError:
+                    pass
+            payload = {
+                "qwen_call_id": call_id,
+                "qwen_round": self.scene_state.qwen_round,
+                "input": {
+                    "evidence_pack": self.evidence_pack.to_dict(),
+                    "contact_sheet_ref": cs_ref
+                },
+                "output": planner_output.to_dict(),
+                "metadata": {
+                    "repair_attempted": False,
+                    "fallback_used": False
+                }
+            }
+            path = self.recorder.save_qwen_artifact(call_id, payload)
             action_ids = [e.action.action_id for e in new_entries]
             self.recorder.record_qwen_plan_completed(path, action_ids)
             
@@ -567,7 +607,27 @@ class Runner:
         )
         
         if self.recorder:
-            path = self.recorder.save_qwen_artifact(call_id, planner_output.to_dict())
+            cs_ref = None
+            if self.evidence_pack.contact_sheet.contact_sheet_image_path:
+                try:
+                    with open(self.evidence_pack.contact_sheet.contact_sheet_image_path, "rb") as f:
+                        cs_ref = self.recorder.save_contact_sheet_artifact(call_id, f.read())
+                except FileNotFoundError:
+                    pass
+            payload = {
+                "qwen_call_id": call_id,
+                "qwen_round": self.scene_state.qwen_round,
+                "input": {
+                    "evidence_pack": self.evidence_pack.to_dict(),
+                    "contact_sheet_ref": cs_ref
+                },
+                "output": planner_output.to_dict(),
+                "metadata": {
+                    "repair_attempted": False,
+                    "fallback_used": False
+                }
+            }
+            path = self.recorder.save_qwen_artifact(call_id, payload)
             action_ids = [e.action.action_id for e in new_entries]
             self.recorder.record_qwen_plan_completed(path, action_ids)
             

@@ -52,3 +52,31 @@ class CountingMetrics:
     sam3_calls: int = 0
     qwen_calls: int = 0
     total_runtime_ms: float = 0.0
+
+def aggregate_count_metrics(metrics_list: list[CountingMetrics]) -> Dict[str, Any]:
+    """Aggregate a list of CountingMetrics into dataset-level statistics."""
+    if not metrics_list:
+        return {}
+        
+    n = len(metrics_list)
+    mae = sum(m.absolute_error for m in metrics_list) / n
+    mse = sum(m.squared_error for m in metrics_list) / n
+    rmse = mse ** 0.5
+    
+    valid_rel = [m.relative_error for m in metrics_list if m.relative_error is not None]
+    mre = sum(valid_rel) / len(valid_rel) if valid_rel else None
+    
+    avg_sam3 = sum(m.sam3_calls for m in metrics_list) / n
+    avg_qwen = sum(m.qwen_calls for m in metrics_list) / n
+    avg_runtime = sum(m.total_runtime_ms for m in metrics_list) / n
+    
+    return {
+        "MAE": mae,
+        "MSE": mse,
+        "RMSE": rmse,
+        "MRE": mre,
+        "avg_sam3_calls": avg_sam3,
+        "avg_qwen_calls": avg_qwen,
+        "avg_runtime_ms": avg_runtime,
+        "n_samples": n
+    }

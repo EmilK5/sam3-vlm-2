@@ -54,6 +54,27 @@ class RunValidator:
         last_seq = 0
         qwen_events = 0
         
+        import hashlib
+        
+        def verify_artifact(art_dict: Dict[str, Any], path_prefix: str) -> bool:
+            if not isinstance(art_dict, dict) or "relative_path" not in art_dict:
+                errors.append(f"{path_prefix} is not a valid ArtifactRef dict: {art_dict}")
+                return False
+            path_str = art_dict["relative_path"]
+            full_path = self.paths.base_dir / path_str
+            if not full_path.exists():
+                errors.append(f"Artifact missing: {path_str}")
+                return False
+            if "sha256" in art_dict:
+                h = hashlib.sha256()
+                with open(full_path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        h.update(chunk)
+                if h.hexdigest() != art_dict["sha256"]:
+                    errors.append(f"Hash mismatch for {path_str}: expected {art_dict['sha256']}, got {h.hexdigest()}")
+                    return False
+            return True
+
         with open(self.paths.events_jsonl, "r") as f:
             for line_idx, line in enumerate(f):
                 if not line.strip():
@@ -76,17 +97,19 @@ class RunValidator:
                 
                 if event.get("event_type") == "QWEN_PLAN_COMPLETED":
                     qwen_events += 1
-                    path_str = event["data"].get("qwen_artifact")
-                    if path_str:
-                        full_path = self.paths.base_dir / path_str
-                        if not full_path.exists():
-                            errors.append(f"Qwen artifact missing: {path_str}")
+                    art_dict = event["data"].get("qwen_artifact")
+                    if art_dict:
+                        verify_artifact(art_dict, "Qwen artifact")
                             
                 if event.get("event_type") == "SAM3_ACTION_COMPLETED":
-                    for mask_path in event["data"].get("mask_artifacts", []):
-                        full_path = self.paths.base_dir / mask_path
-                        if not full_path.exists():
-                            errors.append(f"Mask artifact missing: {mask_path}")
+                    for art_dict in event["data"].get("mask_artifacts", []):
+                        if isinstance(art_dict, str):
+                            # Fallback if old format
+                            full_path = self.paths.base_dir / art_dict
+                            if not full_path.exists():
+                                errors.append(f"Mask artifact missing: {art_dict}")
+                        else:
+                            verify_artifact(art_dict, "Mask artifact")
 
         if qwen_events == 0:
             warnings.append("No Qwen planning events found (0 calls).")

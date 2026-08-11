@@ -49,7 +49,7 @@ def test_validator_detects_corruptions():
         
         # 4. Missing Qwen artifact
         with open(paths.events_jsonl, "w") as f:
-            f.write(json.dumps({"sequence_number": 1, "event_id": "e1", "event_type": "QWEN_PLAN_COMPLETED", "data": {"qwen_artifact": "artifacts/qwen/missing.json"}}) + "\n")
+            f.write(json.dumps({"sequence_number": 1, "event_id": "e1", "event_type": "QWEN_PLAN_COMPLETED", "data": {"qwen_artifact": {"relative_path": "artifacts/qwen/missing.json"}}}) + "\n")
         res = validator.validate()
         assert not res.valid
-        assert any("Qwen artifact missing" in e for e in res.errors)
+        assert any("Artifact missing" in e for e in res.errors)

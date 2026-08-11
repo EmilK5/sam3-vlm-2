@@ -54,6 +54,7 @@ class BootstrapPipeline:
         tiling_policy: Optional[TilingPolicy] = None,
         id_gen: Optional[IDGenerator] = None,
         config: V4Config = V4Config(),
+        recorder: Optional[Any] = None
     ) -> None:
         self.sensor = sensor
         self.association_policy = association_policy or IoUAssociationPolicy()
@@ -61,6 +62,7 @@ class BootstrapPipeline:
         self.tiling_policy = tiling_policy or DefaultTilingPolicy()
         self.id_gen = id_gen or IDGenerator()
         self.config = config
+        self.recorder = recorder
 
     def execute_bootstrap(
         self,
@@ -97,7 +99,25 @@ class BootstrapPipeline:
             threshold=self.config.sam3.default_threshold,
         )
 
+        if self.recorder:
+            self.recorder.record_sam3_action_selected(global_action.action_id, global_action.semantic_key)
+            self.recorder.record_sam3_action_started(global_action.action_id)
+
         obs_global = self.sensor.observe(image, global_action)
+        
+        if self.recorder:
+            mask_artifacts = []
+            for det in obs_global.detections:
+                if "mask" in det.raw_metadata:
+                    art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
+                    det.mask_artifact = art_ref["relative_path"]
+                    mask_artifacts.append(art_ref["relative_path"])
+            # Save simple dictionary with counts to comply with the updated writer
+            self.recorder.record_sam3_action_completed(
+                global_action.action_id,
+                obs_global.call_id,
+                {"num_detections": len(obs_global.detections), "runtime_ms": obs_global.runtime_ms, "mask_artifacts": mask_artifacts}
+            )
         semantic_memory.record_execution(global_action, obs_global.call_id)
         state.budget.sam3_calls += 1
         state.budget.total_runtime_ms += obs_global.runtime_ms
@@ -112,7 +132,8 @@ class BootstrapPipeline:
             id_gen=self.id_gen,
             config=self.config.association,
         )
-
+        if self.recorder:
+            self.recorder.record_association_completed(global_action.action_id, len(assoc_global.matched_observations), len(assoc_global.new_nodes))
         # Update beliefs for matched and new nodes
         for node_id, obs_ref in assoc_global.matched_observations:
             node = state.graph.get_node(node_id)
@@ -125,6 +146,15 @@ class BootstrapPipeline:
             self.belief_updater.update_node_belief(
                 new_node, global_action, new_node.observations[0], target_class=target_class, confounder_class=confounder_class
             )
+            if self.recorder:
+                prov = {
+                    "action_id": global_action.action_id,
+                    "sam3_call_id": obs_global.call_id,
+                    "detection_id": new_node.observations[0].detection_id,
+                    "observation_id": new_node.observations[0].observation_id,
+                    "semantic_key": global_action.semantic_key
+                }
+                self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
 
         # Stage 2: Conditional Tiled Bootstrap Pass (Spec §5.2)
         img_w, img_h = 1000, 1000
@@ -154,7 +184,25 @@ class BootstrapPipeline:
                 threshold=self.config.sam3.default_threshold,
             )
 
+            if self.recorder:
+                self.recorder.record_sam3_action_selected(tiled_action.action_id, tiled_action.semantic_key)
+                self.recorder.record_sam3_action_started(tiled_action.action_id)
+
             obs_tiled = self.sensor.observe(image, tiled_action)
+            
+            if self.recorder:
+                mask_artifacts = []
+                for det in obs_tiled.detections:
+                    if "mask" in det.raw_metadata:
+                        art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
+                        det.mask_artifact = art_ref["relative_path"]
+                        mask_artifacts.append(art_ref["relative_path"])
+                self.recorder.record_sam3_action_completed(
+                    tiled_action.action_id,
+                    obs_tiled.call_id,
+                    {"num_detections": len(obs_tiled.detections), "runtime_ms": obs_tiled.runtime_ms, "mask_artifacts": mask_artifacts}
+                )
+            
             semantic_memory.record_execution(tiled_action, obs_tiled.call_id)
             state.budget.sam3_calls += 1
             state.budget.sam3_tiles += len(tiling_decision.tiles)
@@ -169,6 +217,8 @@ class BootstrapPipeline:
                 id_gen=self.id_gen,
                 config=self.config.association,
             )
+            if self.recorder:
+                self.recorder.record_association_completed(tiled_action.action_id, len(assoc_tiled.matched_observations), len(assoc_tiled.new_nodes))
 
             for node_id, obs_ref in assoc_tiled.matched_observations:
                 node = state.graph.get_node(node_id)
@@ -181,6 +231,15 @@ class BootstrapPipeline:
                 self.belief_updater.update_node_belief(
                     new_node, tiled_action, new_node.observations[0], target_class=target_class, confounder_class=confounder_class
                 )
+                if self.recorder:
+                    prov = {
+                        "action_id": tiled_action.action_id,
+                        "sam3_call_id": obs_tiled.call_id,
+                        "detection_id": new_node.observations[0].detection_id,
+                        "observation_id": new_node.observations[0].observation_id,
+                        "semantic_key": tiled_action.semantic_key
+                    }
+                    self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
 
             discovery_state.tiled_bootstrap_gain = float(len(assoc_tiled.new_nodes))
 

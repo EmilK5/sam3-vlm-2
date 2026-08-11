@@ -9,6 +9,39 @@ EVENT_SCHEMA_VERSION = "1.0"
 SUMMARY_SCHEMA_VERSION = "1.0"
 GRAPH_SCHEMA_VERSION = "1.0"
 
+from enum import Enum
+
+class EventKind(str, Enum):
+    """Enumeration of persistent state-changing events."""
+    BOOTSTRAP_STARTED = "BOOTSTRAP_STARTED"
+    SAM3_ACTION_STARTED = "SAM3_ACTION_STARTED"
+    SAM3_ACTION_COMPLETED = "SAM3_ACTION_COMPLETED"
+    NODE_CREATED = "NODE_CREATED"
+    NODE_UPDATED = "NODE_UPDATED"
+    SEMANTIC_MEMORY_UPDATED = "SEMANTIC_MEMORY_UPDATED"
+    DISCOVERY_STATE_UPDATED = "DISCOVERY_STATE_UPDATED"
+    BUDGET_UPDATED = "BUDGET_UPDATED"
+    STOP_DECIDED = "STOP_DECIDED"
+    QWEN_PLAN_STARTED = "QWEN_PLAN_STARTED"
+    QWEN_PLAN_COMPLETED = "QWEN_PLAN_COMPLETED"
+    REPLAN_TRIGGERED = "REPLAN_TRIGGERED"
+    ACTION_BANK_REFRESHED = "ACTION_BANK_REFRESHED"
+    CLEANUP_ACTION_STARTED = "CLEANUP_ACTION_STARTED"
+    CLEANUP_ACTION_COMPLETED = "CLEANUP_ACTION_COMPLETED"
+    FINAL_COUNT = "FINAL_COUNT"
+    RUN_COMPLETED = "RUN_COMPLETED"
+    RUN_FAILED = "RUN_FAILED"
+
+@dataclass
+class ArtifactRef:
+    """A compact, hash-verified reference to an external artifact."""
+    relative_path: str
+    artifact_type: str
+    sha256: str
+    size_bytes: int
+    shape: Optional[List[int]] = None
+    dtype: Optional[str] = None
+
 @dataclass
 class RunManifest:
     """Immutable run metadata."""

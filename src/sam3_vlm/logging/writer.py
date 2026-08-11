@@ -69,23 +69,68 @@ class RunRecorder:
             
         return event
 
-    def save_qwen_artifact(self, call_id: str, data: Dict[str, Any]) -> str:
-        """Save Qwen input/output externally and return relative path."""
+    def save_qwen_artifact(self, call_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Save Qwen input/output externally and return ArtifactRef dict."""
+        import hashlib
         file_name = f"{call_id}.json"
         path = self.paths.qwen_dir / file_name
         
+        # We save input, output and metadata
         self._write_json_atomic(path, data)
         
-        return str(path.relative_to(self.paths.base_dir))
+        # Calculate sha256
+        h = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                h.update(chunk)
+                
+        return {
+            "relative_path": str(path.relative_to(self.paths.base_dir)),
+            "artifact_type": "qwen_json",
+            "sha256": h.hexdigest(),
+            "size_bytes": path.stat().st_size
+        }
 
-    def save_mask_artifact(self, detection_id: str, mask_array: Any) -> str:
-        """Save binary mask to npz and return relative path."""
+    def save_contact_sheet_artifact(self, qwen_call_id: str, image_bytes: bytes) -> Dict[str, Any]:
+        """Save a contact sheet image and return ArtifactRef dict."""
+        import hashlib
+        file_name = f"{qwen_call_id}_contact_sheet.jpg"
+        path = self.paths.contact_sheets_dir / file_name
+        path.write_bytes(image_bytes)
+        
+        h = hashlib.sha256(image_bytes)
+        return {
+            "relative_path": str(path.relative_to(self.paths.base_dir)),
+            "artifact_type": "contact_sheet_jpg",
+            "sha256": h.hexdigest(),
+            "size_bytes": len(image_bytes)
+        }
+
+    def save_mask_artifact(self, detection_id: str, mask_array: Any) -> Dict[str, Any]:
+        """Save binary mask to npz and return ArtifactRef dict."""
         import numpy as np
+        import hashlib
         file_name = f"{detection_id}.npz"
         path = self.paths.masks_dir / file_name
         
         np.savez_compressed(path, mask=mask_array)
-        return str(path.relative_to(self.paths.base_dir))
+        
+        # Calculate sha256
+        h = hashlib.sha256()
+        b = bytearray(128 * 1024)
+        mv = memoryview(b)
+        with open(path, 'rb', buffering=0) as f:
+            while n := f.readinto(mv):
+                h.update(mv[:n])
+                
+        return {
+            "relative_path": str(path.relative_to(self.paths.base_dir)),
+            "artifact_type": "mask_npz",
+            "sha256": h.hexdigest(),
+            "size_bytes": path.stat().st_size,
+            "shape": list(mask_array.shape) if hasattr(mask_array, "shape") else None,
+            "dtype": str(mask_array.dtype) if hasattr(mask_array, "dtype") else None
+        }
         
     def record_run_started(self):
         self.record_event("RUN_STARTED", {
@@ -102,9 +147,9 @@ class RunRecorder:
     def record_qwen_plan_started(self, round_num: int):
         self.record_event("QWEN_PLAN_STARTED", {"qwen_round": round_num})
         
-    def record_qwen_plan_completed(self, qwen_artifact_path: str, action_ids: List[str]):
+    def record_qwen_plan_completed(self, qwen_artifact: Dict[str, Any], action_ids: List[str]):
         self.record_event("QWEN_PLAN_COMPLETED", {
-            "qwen_artifact": qwen_artifact_path,
+            "qwen_artifact": qwen_artifact,
             "action_ids": action_ids
         })
 
@@ -130,16 +175,12 @@ class RunRecorder:
         self, 
         action_id: str, 
         call_id: str, 
-        num_detections: int, 
-        runtime_ms: float, 
-        mask_artifacts: List[str]
+        observation_dict: Dict[str, Any]
     ):
         self.record_event("SAM3_ACTION_COMPLETED", {
             "action_id": action_id,
             "sam3_call_id": call_id,
-            "num_detections": num_detections,
-            "runtime_ms": runtime_ms,
-            "mask_artifacts": mask_artifacts
+            "observation": observation_dict
         })
 
     def record_association_completed(self, action_id: str, matched_count: int, new_count: int):
@@ -149,20 +190,28 @@ class RunRecorder:
             "new_nodes": new_count
         })
 
-    def record_node_created(self, node_id: str, action_id: str, sam3_call_id: str):
+    def record_node_created(self, node_id: str, node_dict: Dict[str, Any], provenance: Dict[str, Any]):
         self.record_event("NODE_CREATED", {
             "node_id": node_id,
-            "action_id": action_id,
-            "sam3_call_id": sam3_call_id
+            "node_state": node_dict,
+            "provenance": provenance
         })
 
-    def record_node_updated(self, node_id: str, action_id: str, sam3_call_id: str, observation_type: str):
+    def record_node_updated(self, node_id: str, updated_dict: Dict[str, Any], provenance: Dict[str, Any]):
         self.record_event("NODE_UPDATED", {
             "node_id": node_id,
-            "action_id": action_id,
-            "sam3_call_id": sam3_call_id,
-            "observation_type": observation_type
+            "node_update": updated_dict,
+            "provenance": provenance
         })
+        
+    def record_semantic_memory_updated(self, record_dict: Dict[str, Any]):
+        self.record_event("SEMANTIC_MEMORY_UPDATED", record_dict)
+        
+    def record_discovery_state_updated(self, discovery_dict: Dict[str, Any]):
+        self.record_event("DISCOVERY_STATE_UPDATED", discovery_dict)
+
+    def record_budget_updated(self, budget_dict: Dict[str, Any]):
+        self.record_event("BUDGET_UPDATED", budget_dict)
         
     def record_belief_update_completed(self, node_count: int, total_entropy: float):
         self.record_event("BELIEF_UPDATE_COMPLETED", {
@@ -188,21 +237,28 @@ class RunRecorder:
     def record_run_completed(self):
         self.record_event("RUN_COMPLETED", {})
         
-    def close(self, summary: Optional[RunSummary] = None, final_graph_dict: Optional[Dict] = None):
-        """Close recorder, write summary and graph atomically."""
+    def finalize_success(self, summary: RunSummary, final_graph_dict: Dict):
+        """Failure-safe finalization of a successful run."""
+        # Write final graph and summary atomically
+        graph_path = self.paths.base_dir / "artifacts" / "graph" / "final_graph.json"
+        graph_path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_json_atomic(graph_path, final_graph_dict)
+        self._write_json_atomic(self.paths.summary_json, summary.__dict__)
+        
+        # Verify required artifacts
+        if not graph_path.exists() or not self.paths.summary_json.exists():
+            raise RuntimeError("Finalization failed to write required artifacts")
+            
+        self.record_final_count(summary.final_soft_count, summary.count_variance)
+        self.record_run_completed()
+        
         if self._events_file:
             self._events_file.close()
             self._events_file = None
             
-        if summary:
-            self._write_json_atomic(self.paths.summary_json, summary.__dict__)
-            
-        if final_graph_dict is not None:
-            graph_path = self.paths.base_dir / "artifacts" / "graph" / "final_graph.json"
-            graph_path.parent.mkdir(parents=True, exist_ok=True)
-            self._write_json_atomic(graph_path, final_graph_dict)
-            
     def record_run_failed(self, exception_msg: str):
         """Failure-safe recording of a crash."""
         self.record_event("RUN_FAILED", {"error": exception_msg})
-        self.close()
+        if self._events_file:
+            self._events_file.close()
+            self._events_file = None
