@@ -19,6 +19,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+class UnsupportedRealSAM3ActionError(RuntimeError):
+    """Raised when an action requests a capability explicitly not supported by the RealSAM3 adapter."""
+    pass
+
 @runtime_checkable
 class SAM3Sensor(Protocol):
     """Clean SAM3 visual sensor interface contract (V4 Design Spec §4)."""
@@ -173,11 +177,13 @@ class RealSAM3Sensor:
         model_id: str = "facebook/sam3",
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         id_gen: Optional[IDGenerator] = None,
+        compile_model: bool = False,
     ) -> None:
         self.id_gen = id_gen or IDGenerator()
         self.call_count = 0
         self.device = torch.device(device)
         self.model_id = model_id
+        self.compile_model = compile_model
         
         logger.info(f"Loading real SAM3 model: {model_id} on {self.device}")
         try:
@@ -194,7 +200,7 @@ class RealSAM3Sensor:
         self.processor = Sam3Processor.from_pretrained(model_id)
         self.processor.model = self.model
 
-        if self.device.type == "cuda":
+        if self.device.type == "cuda" and self.compile_model:
             logger.info("Compiling SAM3 model graph...")
             self.model = torch.compile(self.model)
 
@@ -244,6 +250,9 @@ class RealSAM3Sensor:
         detections: List[Detection] = []
         searched_regions: List[BoxGeometry] = []
 
+        if action.positive_exemplar_ids or action.negative_exemplar_ids:
+            raise UnsupportedRealSAM3ActionError("Exemplars are explicitly unsupported in RealSAM3Sensor.")
+
         if action.spatial_mode == SpatialMode.TILED and action.tiling:
             tile_geoms = compute_tiles(img_w, img_h, action.tiling)
             searched_regions = tile_geoms
@@ -276,6 +285,63 @@ class RealSAM3Sensor:
                         local_geometry=GeometryRef(box=local_box),
                         raw_metadata=raw_meta
                     ))
+        elif action.spatial_mode in (SpatialMode.LOCAL, SpatialMode.ROI_BATCH):
+            if not action.roi:
+                raise ValueError(f"Action requires ROI for spatial_mode={action.spatial_mode.name}")
+                
+            roi_box = action.roi
+            if hasattr(roi_box, "bbox"):
+                roi_box = roi_box.bbox()
+            elif hasattr(roi_box, "xmin"):
+                pass
+            else:
+                # If it's a BoxGeometry
+                if hasattr(roi_box, "box"):
+                    roi_box = roi_box.box
+                    
+            crop_box = (int(roi_box.xmin), int(roi_box.ymin), int(roi_box.xmax), int(roi_box.ymax))
+            
+            # Ensure crop box is within bounds
+            crop_box = (
+                max(0, crop_box[0]), max(0, crop_box[1]),
+                min(img_w, crop_box[2]), min(img_h, crop_box[3])
+            )
+            
+            if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
+                raise ValueError(f"Invalid ROI crop box {crop_box} for image size {img_w}x{img_h}")
+                
+            tile_pil = img_pil.crop(crop_box)
+            boxes, scores, masks = self._run_inference(tile_pil, action.prompt, action.threshold)
+            
+            from sam3_vlm.core.geometry import BoxGeometry, Box
+            searched_regions = [BoxGeometry(Box(float(crop_box[0]), float(crop_box[1]), float(crop_box[2]), float(crop_box[3])))]
+            
+            for i in range(len(boxes)):
+                b = boxes[i]
+                s = float(scores[i])
+                det_id = self.id_gen.next_detection_id()
+                
+                local_box = Box(float(b[0]), float(b[1]), float(b[2]), float(b[3]), coordinate_space="local")
+                global_box = Box(
+                    x1=local_box.x1 + float(crop_box[0]),
+                    y1=local_box.y1 + float(crop_box[1]),
+                    x2=local_box.x2 + float(crop_box[0]),
+                    y2=local_box.y2 + float(crop_box[1])
+                )
+                
+                raw_meta = {}
+                if masks and i < len(masks):
+                    raw_meta["mask"] = masks[i]
+                    raw_meta["mask_offset_x"] = float(crop_box[0])
+                    raw_meta["mask_offset_y"] = float(crop_box[1])
+                    
+                detections.append(Detection(
+                    detection_id=det_id,
+                    geometry=GeometryRef(box=global_box),
+                    score=s,
+                    local_geometry=GeometryRef(box=local_box),
+                    raw_metadata=raw_meta
+                ))
         else:
             # Global sensing mode
             global_region = Box(0.0, 0.0, float(img_w), float(img_h))

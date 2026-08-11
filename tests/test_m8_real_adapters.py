@@ -1,65 +1,131 @@
 import pytest
+import os
 import numpy as np
 from PIL import Image
+import tempfile
+import uuid
+
+# M8 STRICT GATE
+RUN_REAL_MODELS = os.environ.get("RUN_REAL_MODELS") == "1"
+if not RUN_REAL_MODELS:
+    pytest.skip("Skipping real model tests because RUN_REAL_MODELS=1 is not set.", allow_module_level=True)
 
 from sam3_vlm.models.sam3 import RealSAM3Sensor
 from sam3_vlm.models.qwen import RealQwenPlanner
 from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.core.types import ActionFamily, SpatialMode
 from sam3_vlm.sensing.evidence import QwenEvidencePack, ContactSheet
+from sam3_vlm.core.config import V4Config
+from sam3_vlm.core.geometry import Box
 
 @pytest.mark.real_models
-def test_real_sam3_sensor_global():
-    try:
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        sensor = RealSAM3Sensor(device=device)
-    except Exception as e:
-        pytest.skip(f"RealSAM3Sensor could not be initialized: {e}")
-
-    # Create synthetic image
-    img = np.zeros((512, 512, 3), dtype=np.uint8)
-    img[100:200, 100:200] = [0, 255, 0] # A green square
+def test_real_sam3_tiled_and_local():
+    sensor = RealSAM3Sensor(compile_model=False)
+    
+    img = np.zeros((1024, 1024, 3), dtype=np.uint8)
+    img[100:200, 100:200] = [0, 255, 0] # Top left
+    img[800:900, 800:900] = [0, 255, 0] # Bottom right
     img_pil = Image.fromarray(img)
-
-    action = SensingAction(
-        action_id="test_01",
+    
+    # TILED
+    action_tiled = SensingAction(
+        action_id="tiled_01",
         semantic_key="test_target",
         prompt="green object",
         family=ActionFamily.DISCOVERY,
         threshold=0.1,
-        spatial_mode=SpatialMode.GLOBAL,
+        spatial_mode=SpatialMode.TILED,
+        tiling={"grid_rows": 2, "grid_cols": 2, "overlap_ratio": 0.0, "tile_min_size": 256}
     )
-
-    obs = sensor.observe(img_pil, action)
-
-    assert obs.action_id == "test_01"
-    assert obs.model_metadata["real"] is True
-    assert obs.model_metadata["spatial_mode"] == "GLOBAL"
+    
+    obs_tiled = sensor.observe(img_pil, action_tiled)
+    assert obs_tiled.model_metadata["spatial_mode"] == "TILED"
+    assert len(obs_tiled.searched_regions) == 4
+    
+    # LOCAL
+    action_local = SensingAction(
+        action_id="local_01",
+        semantic_key="test_target",
+        prompt="green object",
+        family=ActionFamily.CONFOUNDER,
+        threshold=0.1,
+        spatial_mode=SpatialMode.LOCAL,
+        roi=Box(x1=50, y1=50, x2=250, y2=250)
+    )
+    
+    obs_local = sensor.observe(img_pil, action_local)
+    assert obs_local.model_metadata["spatial_mode"] == "LOCAL"
+    assert len(obs_local.searched_regions) == 1
+    assert obs_local.searched_regions[0].box.x1 == 50
 
 @pytest.mark.real_models
-def test_real_qwen_planner():
-    try:
-        planner = RealQwenPlanner()
-    except Exception as e:
-        pytest.skip(f"RealQwenPlanner could not be initialized: {e}")
-
+def test_real_qwen_multimodal():
+    planner = RealQwenPlanner(strict_model_errors=True)
+    
+    img = Image.new("RGB", (64, 64), color="red")
+    fd1, p1 = tempfile.mkstemp(suffix=".jpg")
+    os.close(fd1)
+    img.save(p1)
+    
+    fd2, p2 = tempfile.mkstemp(suffix=".png")
+    os.close(fd2)
+    img.save(p2)
+    
     evidence = QwenEvidencePack(
         original_image_id="test_img",
-        user_prompt="green square",
+        user_prompt="red square",
         target_class="target",
-        contact_sheet=ContactSheet(crops=[], total_candidates=0)
+        image_path=p1,
+        contact_sheet=ContactSheet(crops=[], total_candidates=0, contact_sheet_image_path=p2)
     )
-
-    from sam3_vlm.core.config import V4Config
-    from sam3_vlm.core.types import BudgetState
+    
     from sam3_vlm.planning.qwen_planner import QwenPlannerService
-
+    from sam3_vlm.core.types import BudgetState
     service = QwenPlannerService(planner)
     
-    try:
-        output = service.plan_scene(evidence, BudgetState(), V4Config())
-        assert output is not None
-        assert isinstance(output.proposed_actions, list)
-    except Exception as e:
-        pytest.fail(f"QwenPlannerService failed with real planner: {e}")
+    output = service.plan_scene(evidence, BudgetState(), V4Config())
+    
+    os.remove(p1)
+    os.remove(p2)
+    
+    assert output is not None
+    assert isinstance(output.proposed_actions, list)
+
+@pytest.mark.real_models
+def test_real_e2e_bounded(tmp_path):
+    sensor = RealSAM3Sensor(compile_model=False)
+    planner = RealQwenPlanner(strict_model_errors=True)
+    
+    from sam3_vlm.pipeline.runner import Runner
+    from sam3_vlm.core.config import BudgetConfig, StoppingConfig, ReplanningConfig
+    from sam3_vlm.logging.writer import RunRecorder, RunArtifactPaths, RunManifest
+    from sam3_vlm.logging.validator import RunValidator
+    from sam3_vlm.logging.replay import ReplayEngine
+    
+    config = V4Config(
+        budget=BudgetConfig(max_qwen_calls=1, max_sam3_calls=3, max_sam3_tiles=4),
+        stopping=StoppingConfig(max_iterations=1),
+        replanning=ReplanningConfig(max_replans=0)
+    )
+    
+    run_id = f"test_{uuid.uuid4().hex[:6]}"
+    paths = RunArtifactPaths(run_dir=os.path.join(tmp_path, run_id))
+    manifest = RunManifest(run_id=run_id, user_prompt="green square", target_class="target", dataset_name="test")
+    recorder = RunRecorder(paths, manifest)
+    
+    runner = Runner(sensor, planner, config=config, recorder=recorder)
+    
+    img = Image.new("RGB", (256, 256), color="black")
+    count = runner.run(image=img, user_prompt="green square", target_class="target", image_id="test")
+    
+    assert count >= 0
+    
+    # Validator
+    validator = RunValidator(paths)
+    res = validator.validate()
+    assert res.valid
+    
+    # Replay
+    engine = ReplayEngine(paths)
+    replayed = engine.replay_state()
+    assert len(replayed.graph.nodes) == len(runner.scene_state.graph.nodes)

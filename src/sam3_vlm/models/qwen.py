@@ -102,11 +102,18 @@ class RealQwenPlanner:
         "Always respond with ONLY a valid JSON object matching the requested schema."
     )
 
-    def __init__(self, base_url: str = None, model: str = None, api_key: str = None) -> None:
+    def __init__(
+        self, 
+        base_url: str = None, 
+        model: str = None, 
+        api_key: str = None,
+        strict_model_errors: bool = False,
+    ) -> None:
         self.call_count = 0
         self.base_url = base_url or os.environ.get("QWEN_BASE_URL")
         self.model = model or os.environ.get("QWEN_MODEL")
         self.api_key = api_key or os.environ.get("QWEN_API_KEY", "EMPTY")
+        self.strict_model_errors = strict_model_errors
 
         if not self.base_url or not self.model:
             raise ValueError("RealQwenPlanner requires QWEN_BASE_URL and QWEN_MODEL environment variables.")
@@ -147,23 +154,46 @@ class RealQwenPlanner:
 
         content = [{"type": "text", "text": text}]
 
+        def get_mime_type(path: str) -> str:
+            ext = os.path.splitext(path)[1].lower()
+            if ext in (".jpg", ".jpeg"):
+                return "image/jpeg"
+            elif ext == ".png":
+                return "image/png"
+            elif ext == ".webp":
+                return "image/webp"
+            return "image/jpeg"
+
+        import base64
+        
+        orig_path = evidence_pack.image_path
+        if orig_path and os.path.exists(orig_path):
+            with open(orig_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+            mime = get_mime_type(orig_path)
+            content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+
         cs_path = evidence_pack.contact_sheet.contact_sheet_image_path
         if cs_path and os.path.exists(cs_path):
-            import base64
             with open(cs_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("ascii")
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+            mime = get_mime_type(cs_path)
+            content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
 
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {"role": "user", "content": content},
         ]
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.0,
-            messages=messages,
-        )
-        
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0.0,
+                messages=messages,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            if self.strict_model_errors:
+                raise RuntimeError(f"Strict Qwen execution failed: {e}") from e
+            raise e
 

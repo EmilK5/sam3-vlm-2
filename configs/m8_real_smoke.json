@@ -1,0 +1,29 @@
+{
+  "sam3_model": "facebook/sam3",
+  "qwen_model": "qwen2.5-vl-72b-instruct",
+  "require_cuda": true,
+  "compile_sam3": false,
+  "budgets": {
+    "max_qwen_calls": 5,
+    "max_sam3_calls": 15,
+    "max_sam3_tiles": 64,
+    "max_runtime_seconds": 300
+  },
+  "tiling": {
+    "grid_rows": 2,
+    "grid_cols": 2,
+    "overlap_ratio": 0.15,
+    "tile_min_size": 256
+  },
+  "cleanup": {
+    "max_cleanup_calls": 5,
+    "low_utility_threshold": 0.05
+  },
+  "replanning": {
+    "max_replans": 3,
+    "replan_cooldown_actions": 2
+  },
+  "seed": 42,
+  "output_root": "runs/m8_real_smoke",
+  "pilot_sample_limit": 10
+}

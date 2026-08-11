@@ -145,6 +145,8 @@ class QwenPlannerService:
             elif hasattr(self.planner_backend, "plan_actions"):
                 raw_output = self.planner_backend.plan_actions(evidence)
         except Exception as e:
+            if getattr(self.planner_backend, "strict_model_errors", False):
+                raise e
             # Defensive fallback on model call failure
             return PlannerOutput(
                 scene_summary=f"Model call failed ({type(e).__name__}: {e}). Using deterministic fallback.",
@@ -171,6 +173,11 @@ class QwenPlannerService:
                     output = self._coerce_to_planner_output(raw_output)
                 except Exception:
                     pass
+        
+        # In strict mode, malformed output is a hard failure, not a fallback
+        if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
+            if getattr(self.planner_backend, "strict_model_errors", False):
+                raise ValueError(f"Strict Qwen execution failed: Unparseable or malformed response: {raw_output}")
 
         # Deterministic fallback if still invalid (Spec M3.5 Phase 3)
         if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
