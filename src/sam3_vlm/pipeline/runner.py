@@ -95,18 +95,17 @@ class Runner:
         budget = self.scene_state.budget
         cfg_budget = self.config.budget
         
-        # Max iterations is supreme
-        if self.scene_state.iteration >= self.config.stopping.max_iterations:
-            return StopReason.MAX_ITERATIONS
-            
-        if cfg_budget.max_runtime_seconds and (budget.total_runtime_ms / 1000.0) >= cfg_budget.max_runtime_seconds:
-            return StopReason.RUNTIME_BUDGET
-            
         if budget.sam3_calls >= cfg_budget.max_sam3_calls:
             return StopReason.SAM3_BUDGET
             
         if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
             return StopReason.TILE_BUDGET
+            
+        if cfg_budget.max_runtime_seconds and (budget.total_runtime_ms / 1000.0) >= cfg_budget.max_runtime_seconds:
+            return StopReason.RUNTIME_BUDGET
+            
+        if self.scene_state.iteration >= self.config.stopping.max_iterations:
+            return StopReason.MAX_ITERATIONS
             
         return None
 
@@ -257,28 +256,30 @@ class Runner:
         elif self.state == RunnerState.CLEANUP_DECISION:
             # Kept for backward compatibility if needed, but ASSESS handles this now.
             self.state = RunnerState.CLEANUP
-
         elif self.state == RunnerState.CLEANUP:
             if self.scene_state.budget.cleanup_calls >= getattr(self.config.budget, 'max_cleanup_calls', 5):
                 self.scene_state.stop_reason = StopReason.CLEANUP_BUDGET
                 self.state = RunnerState.FINALIZE
                 return
 
-            residual_nodes = self.cleanup_controller.select_residual_nodes(self.scene_state.graph, self.config, self.target_class)
-            if not residual_nodes:
-                self.scene_state.stop_reason = StopReason.CLEANUP_COMPLETE
+            residual_nodes = self.cleanup_controller.select_residual_nodes(
+                self.scene_state.graph, self.config, self.target_class
+            )
+            
+            decision = self.cleanup_controller.generate_cleanup_action(
+                residual_nodes, self.scene_state.graph, self.target_class, self.config
+            )
+            
+            if not decision.action:
+                self.scene_state.stop_reason = decision.reason
                 self.state = RunnerState.FINALIZE
                 return
-
-            cleanup_action = self.cleanup_controller.generate_cleanup_action(residual_nodes, self.scene_state.graph, self.target_class, self.config)
-            if not cleanup_action:
-                self.scene_state.stop_reason = StopReason.CLEANUP_COMPLETE
-                self.state = RunnerState.FINALIZE
-                return
-
+            
+            cleanup_action = decision.action
+            
             from sam3_vlm.core.types import SpatialMode
             
-            predicted_tiles = 1 if cleanup_action.spatial_mode == SpatialMode.TILED else 0
+            predicted_tiles = 1 if cleanup_action.spatial_mode == SpatialMode.LOCAL else 4
             stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
             if stop_reason:
                 self.scene_state.stop_reason = stop_reason
@@ -431,7 +432,6 @@ class Runner:
         if self.scene_state.replans_executed >= self.config.replanning.max_replans:
             limit_reached = True
         elif self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
-            self.scene_state.stop_reason = StopReason.QWEN_BUDGET
             limit_reached = True
 
         if limit_reached:

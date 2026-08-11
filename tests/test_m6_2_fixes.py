@@ -245,10 +245,10 @@ def test_m6_2_l_cleanup_batch_rotation():
     assert len(residuals) == 3
     
     action1 = cleanup_controller.generate_cleanup_action(residuals, graph, "t", config)
-    assert action1 is not None
+    assert action1.action is not None
     # first batch is n1, n2
     
     # If utility doesn't improve, next call should pick n3!
     action2 = cleanup_controller.generate_cleanup_action(residuals, graph, "t", config)
-    assert action2 is not None
-    assert action2.roi == Box(40, 40, 50, 50) # only n3 is selected since n1,n2 are penalized
+    assert action2.action is not None
+    assert action2.action.roi == Box(40, 40, 50, 50) # only n3 is selected since n1,n2 are penalized

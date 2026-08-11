@@ -206,6 +206,8 @@ class BootstrapPipeline:
                     full_img_path = Path(self.config.assets_dir) / f"{image_id}.jpg"
                     if save_image(img_arr, str(full_img_path)):
                         image_path_str = str(full_img_path)
+                        
+        state.image_path = image_path_str
 
         qwen_evidence_pack = QwenEvidencePack(
             original_image_id=image_id,

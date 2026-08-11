@@ -123,6 +123,14 @@ class RegistrationDiagnostics:
 
 
 @dataclass
+class CleanupDecision:
+    """Structured decision output from the CleanupController (M6.3)."""
+    
+    action: Optional["SensingAction"] = None
+    reason: Optional[StopReason] = None
+
+
+@dataclass
 class NodeObservationRef:
     """Pointer from a graph node to the observation update (V4 Design Spec §21.4)."""
 

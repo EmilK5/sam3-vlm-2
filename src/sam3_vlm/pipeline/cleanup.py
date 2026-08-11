@@ -54,10 +54,12 @@ class CleanupController:
                 
         return tuple(trusted)
 
-    def generate_cleanup_action(self, residual_nodes: List[Node], graph: SceneGraph, target_class: str, config: V4Config) -> Optional[SensingAction]:
+    def generate_cleanup_action(self, residual_nodes: List[Node], graph: SceneGraph, target_class: str, config: V4Config) -> "CleanupDecision":
         """Generate a batched or local cleanup action for the residual nodes."""
+        from sam3_vlm.core.types import CleanupDecision, StopReason
+        
         if not residual_nodes:
-            return None
+            return CleanupDecision(action=None, reason=StopReason.CLEANUP_COMPLETE)
 
         # Partition residual nodes spatially into batches of max roi_batch_size
         residual_nodes_sorted = sorted(residual_nodes, key=lambda n: n.geometry.bbox().x1)
@@ -66,6 +68,7 @@ class CleanupController:
         best_batch = None
         best_utility = -1.0
         best_raw_utility = -1.0
+        low_utility_count = 0
 
         for batch in batches:
             batch_ids = frozenset(n.node_id for n in batch)
@@ -79,6 +82,7 @@ class CleanupController:
             raw_utility = (total_variance + total_entropy) / (len(batch) + 1)
 
             if raw_utility < config.cleanup.cleanup_min_utility:
+                low_utility_count += 1
                 continue
 
             utility = raw_utility
@@ -86,6 +90,7 @@ class CleanupController:
                 last_util = self.last_batch_utility.get(batch_ids, 0.0)
                 gain = last_util - raw_utility
                 if gain < 0.05:
+                    low_utility_count += 1
                     continue
                 utility /= (attempts + 1)
 
@@ -95,7 +100,10 @@ class CleanupController:
                 best_batch = batch
 
         if not best_batch:
-            return None
+            if low_utility_count == len(batches):
+                return CleanupDecision(action=None, reason=StopReason.LOW_MARGINAL_UTILITY)
+            else:
+                return CleanupDecision(action=None, reason=StopReason.NO_VALID_ACTIONS)
             
         batch = best_batch
         batch_ids = frozenset(n.node_id for n in batch)
@@ -119,7 +127,7 @@ class CleanupController:
         # Dataset-independent cleanup prior
         semantic_prior = {target_class: 0.9}
 
-        return SensingAction(
+        action = SensingAction(
             action_id=self.id_gen.next_action_id(),
             semantic_key=f"cleanup_{target_class}",
             prompt=f"verify {target_class}",
@@ -131,3 +139,4 @@ class CleanupController:
             qwen_priority=1.0,
             semantic_prior=semantic_prior
         )
+        return CleanupDecision(action=action)

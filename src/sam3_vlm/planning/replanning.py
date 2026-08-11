@@ -74,7 +74,7 @@ class ReplanEvidenceBuilder:
                 history_lines.append(
                     f"- group='{key}': execs={record.execution_count}, nodes_found={sum(record.new_nodes_by_execution)}, "
                     f"affected={sum(record.affected_nodes_by_execution)}, "
-                    f"avg_ent_red={avg_ent:.2f}, avg_var_red={avg_var:.2f}, avg_disc={avg_disc:.2f}, "
+                    f"avg_ent_delta={avg_ent:.2f}, avg_var_delta={avg_var:.2f}, avg_disc={avg_disc:.2f}, "
                     f"avg_util={sum(record.realized_utility_by_execution)/record.execution_count:.2f}"
                 )
         
