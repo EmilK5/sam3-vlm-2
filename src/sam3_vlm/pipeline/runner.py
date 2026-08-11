@@ -51,10 +51,11 @@ class RunnerState(str, Enum):
 class Runner:
     """Central state machine orchestrating SAM3 and Qwen across the active sensing loop."""
 
-    def __init__(self, config: V4Config, sensor: SAM3Sensor, planner: QwenPlanner):
+    def __init__(self, config: V4Config, sensor: SAM3Sensor, planner: QwenPlanner, recorder=None):
         self.config = config
         self.sensor = sensor
         self.planner = planner
+        self.recorder = recorder
         self.state = RunnerState.INITIALIZE
         self.scene_state: Optional[SceneState] = None
         self.id_gen = IDGenerator()
@@ -85,10 +86,54 @@ class Runner:
         self.target_class = target_class
         self.image_id = image_id
         
-        while self.state != RunnerState.DONE:
-            self._step()
+        if self.recorder:
+            self.recorder.record_run_started()
             
-        return self._compute_final_count()
+        try:
+            while self.state != RunnerState.DONE:
+                self._step()
+        except Exception as e:
+            if self.recorder:
+                self.recorder.record_run_failed(str(e))
+            raise e
+            
+        final_count = self._compute_final_count()
+        if self.recorder:
+            from sam3_vlm.logging.schema import RunSummary
+            summary = RunSummary(
+                run_id=self.recorder.manifest.run_id,
+                final_soft_count=final_count,
+                count_variance=self.scene_state.count_estimate.variance,
+                final_stop_reason=self.scene_state.stop_reason.value if self.scene_state.stop_reason else None,
+                node_count=len(self.scene_state.graph.nodes),
+                qwen_calls=self.scene_state.budget.qwen_calls,
+                sam3_calls=self.scene_state.budget.sam3_calls,
+                sam3_tiles=self.scene_state.budget.sam3_tiles,
+                cleanup_calls=self.scene_state.budget.cleanup_calls,
+                runtime_ms=self.scene_state.budget.total_runtime_ms,
+                number_of_replans=self.scene_state.replans_executed,
+                discovery_statistics={
+                    "coverage_ratio": getattr(self.scene_state.discovery_state.spatial_coverage, "coverage_ratio", 0.0) if hasattr(self.scene_state.discovery_state, "spatial_coverage") else 0.0,
+                    "saturated": getattr(self.scene_state.discovery_state, "saturated", False)
+                }
+            )
+            # Serialize graph
+            from sam3_vlm.scene.state import SceneGraph
+            # we will define a dict serialization for final graph later, passing empty dict for now or dump nodes
+            nodes_dict = {
+                nid: {
+                    "geometry": node.geometry.bbox().__dict__,
+                    "status": node.status.value,
+                    "class_belief": node.class_belief.probabilities,
+                    "created_by_call_id": node.created_by_call_id
+                }
+                for nid, node in self.scene_state.graph.nodes.items()
+            }
+            final_graph_dict = {"nodes": nodes_dict}
+            self.recorder.record_run_completed()
+            self.recorder.close(summary=summary, final_graph_dict=final_graph_dict)
+            
+        return final_count
 
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
         from sam3_vlm.core.types import SpatialMode
@@ -137,11 +182,22 @@ class Runner:
                 self.scene_state.action_bank = ActionBank()
                 
             self.evidence_pack = self.bootstrap_result.qwen_evidence_pack
+            
+            if self.recorder:
+                self.recorder.record_bootstrap_completed(len(self.scene_state.graph.nodes))
+                
             self.state = RunnerState.PLAN
             
         elif self.state == RunnerState.PLAN:
+            if self.recorder:
+                self.recorder.record_qwen_plan_started(self.scene_state.qwen_round)
+                
             # Initial plan uses bootstrap evidence pack
             self._execute_initial_plan()
+            
+            # (Note: we should ideally record completion inside _execute_initial_plan or here)
+            # but since Qwen artifact path is needed, we'll instrument QwenPlannerService or do it here.
+            
             self.state = RunnerState.GLOBAL_SENSING
             
         elif self.state == RunnerState.GLOBAL_SENSING:
@@ -152,16 +208,25 @@ class Runner:
                 self.state = RunnerState.REPLAN
                 return
                 
-            # 3. Validate budget BEFORE execution
             from sam3_vlm.core.types import ActionFamily
             action = best_entry.action
+            
+            if self.recorder:
+                self.recorder.record_sam3_action_selected(action.action_id, action.semantic_key)
+                
+            # 3. Validate budget BEFORE execution
             predicted_tiles = self._estimated_tile_count(action)
                 
             stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
             if stop_reason:
+                if self.recorder:
+                    self.recorder.record_stop_decided(stop_reason.value)
                 self.scene_state.set_stop_reason(stop_reason)
                 self.state = RunnerState.CLEANUP
                 return
+                
+            if self.recorder:
+                self.recorder.record_sam3_action_started(action.action_id)
                 
             # 4. Execute SAM3 once
             observation = self.sensor.observe(self.image, action)
@@ -174,6 +239,17 @@ class Runner:
             budget.sam3_tiles += predicted_tiles
             budget.model_runtime_ms += observation.runtime_ms
             budget.total_runtime_ms += observation.runtime_ms
+            
+            mask_artifacts = []
+            if self.recorder:
+                for det in observation.detections:
+                    if "mask" in det.raw_metadata:
+                        path = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
+                        det.mask_artifact = path
+                        mask_artifacts.append(path)
+                self.recorder.record_sam3_action_completed(
+                    action.action_id, observation.call_id, len(observation.detections), observation.runtime_ms, mask_artifacts
+                )
             
             new_nodes_count = 0
             
@@ -199,6 +275,11 @@ class Runner:
                     config=self.config.association
                 )
                 
+                if self.recorder:
+                    self.recorder.record_association_completed(
+                        action.action_id, len(assoc_result.matched_observations), len(assoc_result.new_nodes)
+                    )
+                
                 new_nodes_count, not_retrieved_nodes_count = self._project_observations(
                     action, observation, assoc_result
                 )
@@ -207,6 +288,9 @@ class Runner:
             self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
             
             post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
+            
+            if self.recorder:
+                self.recorder.record_belief_update_completed(len(self.scene_state.graph.nodes), post_entropy)
             
             # Simple discrimination proxy for logging
             discrimination_proxy = max(0.0, pre_entropy - post_entropy)
@@ -263,14 +347,21 @@ class Runner:
             # Kept for backward compatibility if needed, but ASSESS handles this now.
             self.state = RunnerState.CLEANUP
         elif self.state == RunnerState.CLEANUP:
+            if self.recorder:
+                self.recorder.record_cleanup_started()
+                
             # First evaluate global hard budgets!
             hard_reason = self._check_hard_budgets(predicted_tiles=0)
             if hard_reason:
+                if self.recorder:
+                    self.recorder.record_stop_decided(hard_reason.value)
                 self.scene_state.set_stop_reason(hard_reason)
                 self.state = RunnerState.FINALIZE
                 return
                 
             if self.scene_state.budget.cleanup_calls >= getattr(self.config.budget, 'max_cleanup_calls', 5):
+                if self.recorder:
+                    self.recorder.record_stop_decided(StopReason.CLEANUP_BUDGET.value)
                 self.scene_state.set_stop_reason(StopReason.CLEANUP_BUDGET)
                 self.state = RunnerState.FINALIZE
                 return
@@ -284,19 +375,28 @@ class Runner:
             )
             
             if not decision.action:
+                if self.recorder:
+                    self.recorder.record_stop_decided(decision.reason.value if decision.reason else "CLEANUP_COMPLETE")
                 self.scene_state.set_stop_reason(decision.reason)
                 self.state = RunnerState.FINALIZE
                 return
             
             cleanup_action = decision.action
+            if self.recorder:
+                self.recorder.record_sam3_action_selected(cleanup_action.action_id, cleanup_action.semantic_key)
             
             predicted_tiles = self._estimated_tile_count(cleanup_action)
             stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
             if stop_reason:
+                if self.recorder:
+                    self.recorder.record_stop_decided(stop_reason.value)
                 self.scene_state.set_stop_reason(stop_reason)
                 self.state = RunnerState.FINALIZE
                 return
 
+            if self.recorder:
+                self.recorder.record_sam3_action_started(cleanup_action.action_id)
+                
             # Execute cleanup
             observation = self.sensor.observe(self.image, cleanup_action)
             self.scene_state.actions_since_replan += 1
@@ -305,6 +405,18 @@ class Runner:
             self.scene_state.budget.sam3_tiles += predicted_tiles
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
+            
+            mask_artifacts = []
+            if self.recorder:
+                for det in observation.detections:
+                    if "mask" in det.raw_metadata:
+                        path = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
+                        det.mask_artifact = path
+                        mask_artifacts.append(path)
+                self.recorder.record_sam3_action_completed(
+                    cleanup_action.action_id, observation.call_id, len(observation.detections), observation.runtime_ms, mask_artifacts
+                )
+                self.recorder.record_cleanup_action_completed(cleanup_action.action_id)
 
             assoc_result = self.association_policy.associate(
                 self.scene_state.graph,
@@ -316,6 +428,11 @@ class Runner:
                 correlation_group=cleanup_action.correlation_group,
                 config=self.config.association
             )
+            
+            if self.recorder:
+                self.recorder.record_association_completed(
+                    cleanup_action.action_id, len(assoc_result.matched_observations), len(assoc_result.new_nodes)
+                )
 
             new_nodes_count, not_retrieved_nodes_count = self._project_observations(
                 cleanup_action, observation, assoc_result
@@ -327,6 +444,9 @@ class Runner:
             
             self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
             post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
+            
+            if self.recorder:
+                self.recorder.record_belief_update_completed(len(self.scene_state.graph.nodes), post_entropy)
             
             self.scene_state.semantic_memory.record_execution(
                 action=cleanup_action,
@@ -362,10 +482,14 @@ class Runner:
                 self.belief_updater.update_node_belief(
                     node, action, obs_ref, target_class=self.target_class
                 )
+                if self.recorder:
+                    self.recorder.record_node_updated(node_id, action.action_id, observation.call_id, obs_ref.relation.value)
         for new_node in assoc_result.new_nodes:
             self.belief_updater.update_node_belief(
                 new_node, action, new_node.observations[-1], target_class=self.target_class
             )
+            if self.recorder:
+                self.recorder.record_node_created(new_node.node_id, action.action_id, observation.call_id)
             
         from sam3_vlm.core.types import ObservationRelation, NodeObservationRef, SpatialMode
         not_retrieved_nodes_count = 0
@@ -398,12 +522,16 @@ class Runner:
                 self.belief_updater.update_node_belief(
                     node, action, obs_ref, target_class=self.target_class
                 )
+                if self.recorder:
+                    self.recorder.record_node_updated(node.node_id, action.action_id, observation.call_id, obs_ref.relation.value)
                 
         return new_nodes_count, not_retrieved_nodes_count
 
     def _execute_initial_plan(self):
         """Execute the initial Qwen planning round using bootstrap evidence."""
+        call_id = self.id_gen.next_qwen_call_id() if hasattr(self.id_gen, 'next_qwen_call_id') else f"qwen_{self.scene_state.qwen_round}"
         planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
+        
         valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
         new_entries = self.bank_generator.generate_entries(
             planner_output,
@@ -413,13 +541,21 @@ class Runner:
             valid_node_ids=valid_node_ids,
             config=self.config,
         )
+        
+        if self.recorder:
+            path = self.recorder.save_qwen_artifact(call_id, planner_output.to_dict())
+            action_ids = [e.action.action_id for e in new_entries]
+            self.recorder.record_qwen_plan_completed(path, action_ids)
+            
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
 
     def _execute_replan(self):
         """Execute Qwen planning for subsequent rounds and update action bank."""
+        call_id = self.id_gen.next_qwen_call_id() if hasattr(self.id_gen, 'next_qwen_call_id') else f"qwen_{self.scene_state.qwen_round}"
         planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
+        
         valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
         new_entries = self.bank_generator.generate_entries(
             planner_output,
@@ -429,7 +565,12 @@ class Runner:
             valid_node_ids=valid_node_ids,
             config=self.config,
         )
-        # Purge stale unexecuted actions based on min_utility
+        
+        if self.recorder:
+            path = self.recorder.save_qwen_artifact(call_id, planner_output.to_dict())
+            action_ids = [e.action.action_id for e in new_entries]
+            self.recorder.record_qwen_plan_completed(path, action_ids)
+            
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
