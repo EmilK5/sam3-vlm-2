@@ -83,6 +83,6 @@ def test_datasets_imports():
 def test_evaluation_imports():
     from sam3_vlm.evaluation import CountingMetrics
     metrics = CountingMetrics(
-        absolute_error=1.0, squared_error=1.0, relative_error=0.1, true_count=10, predicted_count=9
+        absolute_error=1.0, signed_error=1.0, squared_error=1.0, relative_error=0.1, true_count=10, predicted_count=9
     )
     assert metrics.predicted_count == 9

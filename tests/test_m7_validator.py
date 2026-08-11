@@ -21,9 +21,26 @@ def test_validator_detects_corruptions():
         
         # 2. Write valid run.json and summary.json, and events.jsonl
         with open(paths.run_json, "w") as f:
-            json.dump({"schema_version": "1.0"}, f)
+            json.dump({
+                "schema_version": "1.0",
+                "run_id": "test_run",
+                "image_id": "test.jpg",
+                "target_class": "target"
+            }, f)
         with open(paths.summary_json, "w") as f:
-            json.dump({"schema_version": "1.0"}, f)
+            json.dump({
+                "schema_version": "1.0",
+                "run_id": "test_run",
+                "final_soft_count": 0.0,
+                "node_count": 0,
+                "qwen_calls": 0,
+                "sam3_calls": 0,
+                "sam3_tiles": 0,
+                "cleanup_calls": 0,
+                "runtime_ms": 0.0,
+                "number_of_replans": 0,
+                "discovery_statistics": {"coverage_ratio": 0.0, "saturated": False}
+            }, f)
             
         # final graph
         graph_path = paths.base_dir / "artifacts" / "graph" / "final_graph.json"
@@ -33,7 +50,7 @@ def test_validator_detects_corruptions():
             
         with open(paths.events_jsonl, "w") as f:
             f.write(json.dumps({"sequence_number": 1, "event_id": "e1", "event_type": "TEST"}) + "\n")
-            f.write(json.dumps({"sequence_number": 2, "event_id": "e2", "event_type": "TEST"}) + "\n")
+            f.write(json.dumps({"sequence_number": 2, "event_id": "e2", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
             
         res = validator.validate()
         assert res.valid
@@ -41,7 +58,7 @@ def test_validator_detects_corruptions():
         # 3. Inject sequence discontinuity
         with open(paths.events_jsonl, "w") as f:
             f.write(json.dumps({"sequence_number": 1, "event_id": "e1", "event_type": "TEST"}) + "\n")
-            f.write(json.dumps({"sequence_number": 3, "event_id": "e2", "event_type": "TEST"}) + "\n")
+            f.write(json.dumps({"sequence_number": 3, "event_id": "e2", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
             
         res = validator.validate()
         assert not res.valid
@@ -53,3 +70,12 @@ def test_validator_detects_corruptions():
         res = validator.validate()
         assert not res.valid
         assert any("Artifact missing" in e for e in res.errors)
+        
+        # 5. Referential integrity corruption (mismatched detection)
+        with open(paths.events_jsonl, "w") as f:
+            f.write(json.dumps({"sequence_number": 1, "event_id": "e1", "event_type": "SAM3_ACTION_COMPLETED", "data": {"sam3_call_id": "c1", "action_id": "a1", "observation": {"detections": [{"detection_id": "d1"}]}}}) + "\n")
+            f.write(json.dumps({"sequence_number": 2, "event_id": "e2", "event_type": "NODE_CREATED", "data": {"node_state": {"node_id": "n1", "observations": [{"sam3_call_id": "c1", "action_id": "a1", "detection_id": "d2"}]}}}) + "\n")
+            f.write(json.dumps({"sequence_number": 3, "event_id": "e3", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
+        res = validator.validate()
+        assert not res.valid
+        assert any("references unknown detection d2" in e for e in res.errors)

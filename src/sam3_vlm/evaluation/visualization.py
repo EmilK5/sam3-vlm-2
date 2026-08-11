@@ -1,8 +1,6 @@
 """Matplotlib-based final scene rendering (V4 Design Spec §17.3)."""
 
 from typing import Dict, Any, Optional
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from pathlib import Path
 
 from sam3_vlm.scene.state import SceneGraph
@@ -15,6 +13,8 @@ def render_final_scene(
     output_path: Optional[str] = None
 ) -> None:
     """Renders final active nodes with IDs and target posteriors."""
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
     fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     
     # Load and display image if available
@@ -36,9 +36,9 @@ def render_final_scene(
         color = (1.0 - posterior, posterior, 0.0, 0.5)
         
         rect = patches.Rectangle(
-            (box.xmin, box.ymin), 
-            box.xmax - box.xmin, 
-            box.ymax - box.ymin, 
+            (box.x1, box.y1), 
+            box.x2 - box.x1, 
+            box.y2 - box.y1, 
             linewidth=2, 
             edgecolor=color, 
             facecolor='none'
@@ -46,7 +46,7 @@ def render_final_scene(
         ax.add_patch(rect)
         
         ax.text(
-            box.xmin, box.ymin - 5,
+            box.x1, box.y1 - 5,
             f"{node.node_id[:6]}\n{posterior:.2f}",
             color='white',
             fontsize=8,

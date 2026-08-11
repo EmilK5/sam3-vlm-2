@@ -45,6 +45,7 @@ class CountingMetrics:
     """Standard evaluation metrics summary for a sample or dataset."""
 
     absolute_error: float
+    signed_error: float
     squared_error: float
     relative_error: float
     true_count: float
@@ -52,6 +53,7 @@ class CountingMetrics:
     sam3_calls: int = 0
     qwen_calls: int = 0
     total_runtime_ms: float = 0.0
+    storage_bytes: int = 0
 
 def aggregate_count_metrics(metrics_list: list[CountingMetrics]) -> Dict[str, Any]:
     """Aggregate a list of CountingMetrics into dataset-level statistics."""
@@ -66,17 +68,22 @@ def aggregate_count_metrics(metrics_list: list[CountingMetrics]) -> Dict[str, An
     valid_rel = [m.relative_error for m in metrics_list if m.relative_error is not None]
     mre = sum(valid_rel) / len(valid_rel) if valid_rel else None
     
+    mean_signed_error = sum(m.signed_error for m in metrics_list) / n
+    
     avg_sam3 = sum(m.sam3_calls for m in metrics_list) / n
     avg_qwen = sum(m.qwen_calls for m in metrics_list) / n
     avg_runtime = sum(m.total_runtime_ms for m in metrics_list) / n
+    avg_storage = sum(m.storage_bytes for m in metrics_list) / n
     
     return {
         "MAE": mae,
         "MSE": mse,
         "RMSE": rmse,
         "MRE": mre,
+        "mean_signed_error": mean_signed_error,
         "avg_sam3_calls": avg_sam3,
         "avg_qwen_calls": avg_qwen,
         "avg_runtime_ms": avg_runtime,
+        "avg_storage_bytes": avg_storage,
         "n_samples": n
     }

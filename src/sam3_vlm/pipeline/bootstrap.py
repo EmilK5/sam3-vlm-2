@@ -107,20 +107,38 @@ class BootstrapPipeline:
         
         if self.recorder:
             mask_artifacts = []
+            compact_detections = []
             for det in obs_global.detections:
                 if "mask" in det.raw_metadata:
                     art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                     det.mask_artifact = art_ref["relative_path"]
                     mask_artifacts.append(art_ref["relative_path"])
-            # Save simple dictionary with counts to comply with the updated writer
+                    
+                box = det.geometry.bbox()
+                compact_detections.append({
+                    "detection_id": det.detection_id,
+                    "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
+                    "score": det.score,
+                    "source_tile_id": getattr(det, 'source_tile_id', None),
+                    "mask_artifact": getattr(det, 'mask_artifact', None)
+                })
+
             self.recorder.record_sam3_action_completed(
                 global_action.action_id,
                 obs_global.call_id,
-                {"num_detections": len(obs_global.detections), "runtime_ms": obs_global.runtime_ms, "mask_artifacts": mask_artifacts}
+                {
+                    "num_detections": len(obs_global.detections), 
+                    "runtime_ms": obs_global.runtime_ms, 
+                    "mask_artifacts": mask_artifacts,
+                    "searched_regions": [{"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space} for r in obs_global.searched_regions] if hasattr(obs_global, 'searched_regions') else [],
+                    "detections": compact_detections
+                }
             )
         semantic_memory.record_execution(global_action, obs_global.call_id)
         state.budget.sam3_calls += 1
         state.budget.total_runtime_ms += obs_global.runtime_ms
+        if self.recorder:
+            self.recorder.record_budget_updated(state.budget.__dict__)
 
         # Associate global observations into graph
         assoc_global = self.association_policy.associate(
@@ -192,21 +210,40 @@ class BootstrapPipeline:
             
             if self.recorder:
                 mask_artifacts = []
+                compact_detections = []
                 for det in obs_tiled.detections:
                     if "mask" in det.raw_metadata:
                         art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                         det.mask_artifact = art_ref["relative_path"]
                         mask_artifacts.append(art_ref["relative_path"])
+                    
+                    box = det.geometry.bbox()
+                    compact_detections.append({
+                        "detection_id": det.detection_id,
+                        "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
+                        "score": det.score,
+                        "source_tile_id": getattr(det, 'source_tile_id', None),
+                        "mask_artifact": getattr(det, 'mask_artifact', None)
+                    })
+
                 self.recorder.record_sam3_action_completed(
                     tiled_action.action_id,
                     obs_tiled.call_id,
-                    {"num_detections": len(obs_tiled.detections), "runtime_ms": obs_tiled.runtime_ms, "mask_artifacts": mask_artifacts}
+                    {
+                        "num_detections": len(obs_tiled.detections), 
+                        "runtime_ms": obs_tiled.runtime_ms, 
+                        "mask_artifacts": mask_artifacts,
+                        "searched_regions": [{"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space} for r in obs_tiled.searched_regions] if hasattr(obs_tiled, 'searched_regions') else [],
+                        "detections": compact_detections
+                    }
                 )
             
             semantic_memory.record_execution(tiled_action, obs_tiled.call_id)
             state.budget.sam3_calls += 1
             state.budget.sam3_tiles += len(tiling_decision.tiles)
             state.budget.total_runtime_ms += obs_tiled.runtime_ms
+            if self.recorder:
+                self.recorder.record_budget_updated(state.budget.__dict__)
 
             assoc_tiled = self.association_policy.associate(
                 graph=state.graph,

@@ -174,6 +174,7 @@ class Runner:
             
             if self.recorder:
                 self.recorder.record_bootstrap_completed(len(self.scene_state.graph.nodes))
+                self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
                 
             self.state = RunnerState.PLAN
             
@@ -187,6 +188,8 @@ class Runner:
             # (Note: we should ideally record completion inside _execute_initial_plan or here)
             # but since Qwen artifact path is needed, we'll instrument QwenPlannerService or do it here.
             
+            if self.recorder:
+                self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
             self.state = RunnerState.GLOBAL_SENSING
             
         elif self.state == RunnerState.GLOBAL_SENSING:
@@ -236,9 +239,28 @@ class Runner:
                         art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                         det.mask_artifact = art_ref["relative_path"]
                         mask_artifacts.append(art_ref["relative_path"])
+                
+                # Save comprehensive detection metadata
+                compact_detections = []
+                for det in observation.detections:
+                    box = det.geometry.bbox()
+                    compact_detections.append({
+                        "detection_id": det.detection_id,
+                        "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
+                        "score": det.score,
+                        "source_tile_id": getattr(det, 'source_tile_id', None),
+                        "mask_artifact": getattr(det, 'mask_artifact', None)
+                    })
+
                 self.recorder.record_sam3_action_completed(
                     action.action_id, observation.call_id,
-                    {"num_detections": len(observation.detections), "runtime_ms": observation.runtime_ms, "mask_artifacts": mask_artifacts}
+                    {
+                        "num_detections": len(observation.detections), 
+                        "runtime_ms": observation.runtime_ms, 
+                        "mask_artifacts": mask_artifacts,
+                        "searched_regions": [{"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space} for r in observation.searched_regions] if hasattr(observation, 'searched_regions') else [],
+                        "detections": compact_detections
+                    }
                 )
                 self.recorder.record_budget_updated(budget.__dict__)
             
@@ -305,7 +327,9 @@ class Runner:
                 realized_discrimination_proxy=discrimination_proxy,
             )
             if self.recorder:
-                self.recorder.record_semantic_memory_updated({"records_count": len(self.scene_state.semantic_memory.records)})
+                import dataclasses
+                records_dict = {k: dataclasses.asdict(v) for k, v in self.scene_state.semantic_memory.records.items()}
+                self.recorder.record_semantic_memory_updated({"records": records_dict})
             
             # 11. Update discovery state
             if action.family == ActionFamily.DISCOVERY:
@@ -313,8 +337,8 @@ class Runner:
             if new_nodes_count > 0 and action.family != ActionFamily.CONTEXT: # skip context for recent_new_nodes
                 self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
             if self.recorder:
-                sat = getattr(self.scene_state.discovery_state, "saturated", False)
-                self.recorder.record_discovery_state_updated({"recent_new_node_counts": self.scene_state.discovery_state.recent_new_node_counts, "saturated": sat})
+                import dataclasses
+                self.recorder.record_discovery_state_updated(dataclasses.asdict(self.scene_state.discovery_state))
             
             # 13. Evaluate replanning triggers & 14. Global stopping
             self.scene_state.iteration += 1
@@ -337,6 +361,8 @@ class Runner:
                 self.state = RunnerState.GLOBAL_SENSING
                 
         elif self.state == RunnerState.REPLAN:
+            if self.recorder:
+                self.recorder.record_replan_triggered("REPLAN_POLICY_TRUE")
             self._request_replan()
                 
         elif self.state == RunnerState.CLEANUP_DECISION:
@@ -398,19 +424,38 @@ class Runner:
             self.scene_state.actions_since_replan += 1
             self.scene_state.budget.sam3_calls += 1
             self.scene_state.budget.cleanup_calls += 1
+            self.scene_state.budget.qwen_calls += 1
             self.scene_state.budget.sam3_tiles += predicted_tiles
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
             
             if self.recorder:
                 mask_artifacts = []
+                compact_detections = []
                 for det in observation.detections:
                     if "mask" in det.raw_metadata:
                         art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                         det.mask_artifact = art_ref["relative_path"]
                         mask_artifacts.append(art_ref["relative_path"])
+                        
+                    box = det.geometry.bbox()
+                    compact_detections.append({
+                        "detection_id": det.detection_id,
+                        "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
+                        "score": det.score,
+                        "source_tile_id": getattr(det, 'source_tile_id', None),
+                        "mask_artifact": getattr(det, 'mask_artifact', None)
+                    })
+                    
                 self.recorder.record_sam3_action_completed(
-                    cleanup_action.action_id, observation.call_id, {"num_detections": len(observation.detections), "runtime_ms": observation.runtime_ms, "mask_artifacts": mask_artifacts}
+                    cleanup_action.action_id, observation.call_id, 
+                    {
+                        "num_detections": len(observation.detections), 
+                        "runtime_ms": observation.runtime_ms, 
+                        "mask_artifacts": mask_artifacts,
+                        "searched_regions": [{"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space} for r in observation.searched_regions] if hasattr(observation, 'searched_regions') else [],
+                        "detections": compact_detections
+                    }
                 )
                 self.recorder.record_cleanup_action_completed(cleanup_action.action_id)
                 self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
@@ -457,7 +502,10 @@ class Runner:
                 realized_discrimination_proxy=max(0.0, pre_entropy - post_entropy)
             )
             if self.recorder:
-                self.recorder.record_semantic_memory_updated({"records_count": len(self.scene_state.semantic_memory.records)})
+                import dataclasses
+                records_dict = {k: dataclasses.asdict(v) for k, v in self.scene_state.semantic_memory.records.items()}
+                self.recorder.record_semantic_memory_updated({"records": records_dict})
+                self.recorder.record_discovery_state_updated(dataclasses.asdict(self.scene_state.discovery_state))
 
             self.scene_state.iteration += 1
             self.state = RunnerState.ASSESS_CLEANUP

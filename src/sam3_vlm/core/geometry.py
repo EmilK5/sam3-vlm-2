@@ -137,3 +137,23 @@ class GeometryRef:
 
     box: Box
     mask_artifact: str | None = None
+
+    def bbox(self) -> Box:
+        return self.box
+        
+    def area(self) -> float:
+        return self.box.area
+        
+    def iou(self, other: Geometry) -> float:
+        return self.box.iou(other.bbox())
+
+def deserialize_geometry(data: dict) -> Geometry:
+    if "box" in data:
+        coords = data["box"]
+        space = data.get("coordinate_space", "image")
+        b = Box(x1=coords[0], y1=coords[1], x2=coords[2], y2=coords[3], coordinate_space=space)
+        return BoxGeometry(b)
+    elif "points" in data:
+        pts = tuple(tuple(p) for p in data["points"])
+        return PolygonGeometry(pts)
+    raise ValueError(f"Unknown geometry format: {data}")

@@ -14,7 +14,20 @@ from sam3_vlm.models.qwen import MockQwenPlanner
 
 def test_log_size_and_mask_externalization():
     config = V4Config()
-    sensor = MockSAM3Adapter()
+    
+    import numpy as np
+    from sam3_vlm.core.types import Detection
+    from sam3_vlm.core.geometry import GeometryRef, Box
+    
+    dense_mask = np.ones((50, 50), dtype=bool)
+    synth_det = Detection(
+        detection_id="det_with_mask",
+        geometry=GeometryRef(box=Box(10.0, 10.0, 60.0, 60.0)),
+        score=0.9,
+        raw_metadata={"mask": dense_mask}
+    )
+    
+    sensor = MockSAM3Adapter(synthetic_detections=[synth_det])
     planner = MockQwenPlanner()
     
     with tempfile.TemporaryDirectory() as tmp_dir:

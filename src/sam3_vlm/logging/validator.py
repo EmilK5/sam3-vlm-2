@@ -13,6 +13,7 @@ class ValidatorResult:
     valid: bool
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
 class RunValidator:
     """Validates structural integrity, provenance, and schemas of an M7 run."""
@@ -114,9 +115,116 @@ class RunValidator:
         if qwen_events == 0:
             warnings.append("No Qwen planning events found (0 calls).")
             
+        # Referential integrity structures
+        actions = set()
+        sam3_calls = {} # call_id -> action_id
+        detections = set() # (call_id, detection_id)
+        node_observations = [] # list of dicts
+        nodes_created_by = {}
+        stop_events = 0
+        run_completed = False
+        
+        with open(self.paths.events_jsonl, "r") as f:
+            for line in f:
+                if not line.strip(): continue
+                event = json.loads(line)
+                etype = event.get("event_type")
+                data = event.get("data", {})
+                
+                if etype == "SAM3_ACTION_SELECTED":
+                    actions.add(data["action_id"])
+                elif etype == "SAM3_ACTION_COMPLETED":
+                    call_id = data["sam3_call_id"]
+                    sam3_calls[call_id] = data["action_id"]
+                    obs = data.get("observation", {})
+                    if "detections" in obs:
+                        for d in obs["detections"]:
+                            detections.add((call_id, d["detection_id"]))
+                elif etype == "NODE_CREATED":
+                    nstate = data.get("node_state", {})
+                    nid = nstate.get("node_id")
+                    if nid:
+                        created_by = nstate.get("created_by_call_id", "")
+                        nodes_created_by[nid] = created_by
+                        if created_by.startswith("qwen") or not created_by:
+                            errors.append(f"Node {nid} created by non-sensor or missing call: {created_by}")
+                    
+                    for obs in nstate.get("observations", []):
+                        node_observations.append({
+                            "node_id": nid,
+                            "sam3_call_id": obs.get("sam3_call_id"),
+                            "action_id": obs.get("action_id"),
+                            "detection_id": obs.get("detection_id")
+                        })
+                elif etype == "NODE_UPDATED":
+                    nup = data.get("node_update", {})
+                    nid = nup.get("node_id")
+                    for obs in nup.get("observations", []):
+                        node_observations.append({
+                            "node_id": nid,
+                            "sam3_call_id": obs.get("sam3_call_id"),
+                            "action_id": obs.get("action_id"),
+                            "detection_id": obs.get("detection_id")
+                        })
+                elif etype == "STOP_DECIDED":
+                    stop_events += 1
+                elif etype == "RUN_COMPLETED":
+                    run_completed = True
+                    
+        # Check integrity
+        for obs in node_observations:
+            cid = obs["sam3_call_id"]
+            aid = obs["action_id"]
+            did = obs["detection_id"]
+            if cid not in sam3_calls:
+                errors.append(f"Node Observation references unknown sam3_call_id: {cid}")
+            elif sam3_calls[cid] != aid:
+                errors.append(f"Observation mismatch: call {cid} belongs to action {sam3_calls[cid]}, but observation claims action {aid}")
+            
+            if (cid, did) not in detections:
+                errors.append(f"Node Observation references unknown detection {did} for call {cid}")
+                
+        if not run_completed:
+            errors.append("RUN_COMPLETED event is missing (strict boundary validation failed).")
+        if stop_events == 0:
+            warnings.append("No STOP_DECIDED event recorded.")
+            
         # 3. Check final graph
         graph_path = self.paths.base_dir / "artifacts" / "graph" / "final_graph.json"
         if not graph_path.exists():
             errors.append("final_graph.json is missing.")
+        else:
+            # Replay equivalence
+            try:
+                from sam3_vlm.logging.replay import ReplayEngine
+                engine = ReplayEngine(self.paths)
+                replayed_state = engine.replay_state()
+                
+                with open(graph_path, "r") as f:
+                    oracle_graph_dict = json.load(f)
+                    
+                replayed_graph_dict = replayed_state.graph.to_dict()
+                
+                oracle_nodes = oracle_graph_dict.get("nodes", {})
+                replayed_nodes = replayed_graph_dict.get("nodes", {})
+                
+                if len(oracle_nodes) != len(replayed_nodes):
+                    errors.append(f"Replay mismatch: Oracle graph has {len(oracle_nodes)} nodes, replay produced {len(replayed_nodes)}")
+                else:
+                    for nid in oracle_nodes:
+                        if nid not in replayed_nodes:
+                            errors.append(f"Replay mismatch: Node {nid} in Oracle but not in replay")
+                            
+                # Check hard budgets
+                from sam3_vlm.core.config import V4Config
+                cfg = V4Config().budget
+                b = replayed_state.budget
+                if b.sam3_calls > cfg.max_sam3_calls:
+                    errors.append(f"Hard limit exceeded: sam3_calls {b.sam3_calls} > {cfg.max_sam3_calls}")
+                if b.sam3_tiles > cfg.max_sam3_tiles:
+                    errors.append(f"Hard limit exceeded: sam3_tiles {b.sam3_tiles} > {cfg.max_sam3_tiles}")
+                    
+            except Exception as e:
+                errors.append(f"Replay equivalence failed: {e}")
             
         return ValidatorResult(valid=len(errors)==0, errors=errors, warnings=warnings)

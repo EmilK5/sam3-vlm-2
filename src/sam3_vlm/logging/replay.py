@@ -10,6 +10,7 @@ from sam3_vlm.logging.schema import RunManifest, RunSummary
 from sam3_vlm.scene.state import SceneState
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.node import Node
+from sam3_vlm.scene.belief import SemanticRecord
 from sam3_vlm.core.types import BudgetState, StopReason, NodeStatus, ClassBelief, ObservationRelation, NodeObservationRef
 from sam3_vlm.core.geometry import BoxGeometry, Box
 
@@ -67,10 +68,18 @@ class ReplayEngine:
         
         for event in self.iter_events():
             etype = event["event_type"]
-            data = event["data"]
+            data = event.get("data", {})
             
             if etype == EventKind.QWEN_PLAN_STARTED.value:
                 state.qwen_round = data.get("qwen_round", state.qwen_round)
+                state.iteration += 1
+                
+            elif etype == EventKind.REPLAN_TRIGGERED.value:
+                state.replans_executed += 1
+                state.actions_since_replan = 0
+                
+            elif etype == EventKind.SAM3_ACTION_COMPLETED.value:
+                state.actions_since_replan += 1
                 
             elif etype == EventKind.BUDGET_UPDATED.value:
                 state.budget.sam3_calls = data.get("sam3_calls", state.budget.sam3_calls)
@@ -80,9 +89,30 @@ class ReplayEngine:
                 state.budget.model_runtime_ms = data.get("model_runtime_ms", state.budget.model_runtime_ms)
                 state.budget.total_runtime_ms = data.get("total_runtime_ms", state.budget.total_runtime_ms)
                 
+            elif etype == EventKind.SEMANTIC_MEMORY_UPDATED.value:
+                records = data.get("records", {})
+                for k, v in records.items():
+                    # Just directly set via dictionary expansion
+                    # Family is stored as str, needs conversion to Enum
+                    from sam3_vlm.core.types import ActionFamily
+                    if "family" in v and isinstance(v["family"], str):
+                        v["family"] = ActionFamily(v["family"])
+                    state.semantic_memory.records[k] = SemanticRecord(**v)
+                
             elif etype == EventKind.DISCOVERY_STATE_UPDATED.value:
-                state.discovery_state.recent_new_node_counts = data.get("recent_new_node_counts", [])
-                state.discovery_state.saturated = data.get("saturated", False)
+                from sam3_vlm.scene.state import CoverageSummary
+                # Handle spatial_coverage nested object
+                if "spatial_coverage" in data and isinstance(data["spatial_coverage"], dict):
+                    data["spatial_coverage"] = CoverageSummary(**data["spatial_coverage"])
+                    
+                # Handle unresolved_regions
+                from sam3_vlm.core.geometry import deserialize_geometry
+                if "unresolved_regions" in data and isinstance(data["unresolved_regions"], list):
+                    data["unresolved_regions"] = [deserialize_geometry(geom_dict) for geom_dict in data["unresolved_regions"]]
+                    
+                for k, v in data.items():
+                    if hasattr(state.discovery_state, k):
+                        setattr(state.discovery_state, k, v)
                 
             elif etype == EventKind.STOP_DECIDED.value:
                 reason_str = data.get("reason")
@@ -102,38 +132,18 @@ class ReplayEngine:
                 if not node_id or not node_dict:
                     continue
                     
-                # Reconstruct node
-                if "box" in node_dict:
-                    box_coords = node_dict["box"]
-                    geom = BoxGeometry(Box(
-                        x1=box_coords[0],
-                        y1=box_coords[1],
-                        x2=box_coords[2],
-                        y2=box_coords[3],
-                        coordinate_space=node_dict.get("coordinate_space", "global")
-                    ))
-                    
-                    status = NodeStatus(node_dict.get("status", "ACTIVE"))
-                    created_by = node_dict.get("created_by_call_id", "")
-                    
-                    existing_node = state.graph.get_node(node_id)
-                    cb_dict = node_dict.get("class_belief", {})
-                    probs = cb_dict.get("probabilities", {})
-                    if existing_node:
-                        # Update existing
-                        existing_node.geometry = geom
-                        existing_node.status = status
-                        existing_node.class_belief = ClassBelief(probabilities=probs if probs else existing_node.class_belief.probabilities)
-                    else:
-                        # Create new
-                        node = Node(
-                            node_id=node_id,
-                            geometry=geom,
-                            created_by_call_id=created_by,
-                            status=status
-                        )
-                        node.class_belief = ClassBelief(probabilities=probs)
-                        state.graph.add_node(node)
+                # We expect the full dict representation of the Node
+                # Node.from_dict will correctly deserialize geometry, beliefs, observations, and diagnostics.
+                reconstructed_node = Node.from_dict(node_dict)
+                
+                existing_node = state.graph.get_node(node_id)
+                if existing_node:
+                    # Remove it and re-add the updated one
+                    # This is slightly wasteful but ensures 100% fidelity without piecewise patching
+                    del state.graph.nodes[node_id]
+                    state.graph.add_node(reconstructed_node)
+                else:
+                    state.graph.add_node(reconstructed_node)
                         
         from sam3_vlm.scene.state import CountEstimator
         state.count_estimate = CountEstimator.estimate(state.graph, state.target_class)
