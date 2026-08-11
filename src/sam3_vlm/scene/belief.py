@@ -30,6 +30,7 @@ class SemanticRecord:
     entropy_change_by_execution: List[float] = field(default_factory=list)
     variance_change_by_execution: List[float] = field(default_factory=list)
     realized_discrimination_proxy_by_execution: List[float] = field(default_factory=list)
+    realized_utility_by_execution: List[float] = field(default_factory=list)
 
 @dataclass
 class SemanticMemory:
@@ -66,6 +67,8 @@ class SemanticMemory:
         rec.entropy_change_by_execution.append(entropy_change)
         rec.variance_change_by_execution.append(variance_change)
         rec.realized_discrimination_proxy_by_execution.append(realized_discrimination_proxy)
+        # Assuming realized utility for now is just discrimination proxy or we can pass it
+        rec.realized_utility_by_execution.append(realized_discrimination_proxy)
         return rec
 
 

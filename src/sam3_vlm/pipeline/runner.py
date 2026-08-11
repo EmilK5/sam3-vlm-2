@@ -13,16 +13,20 @@ from sam3_vlm.planning.qwen_planner import QwenPlannerService
 from sam3_vlm.planning.stopping import (
     CompositeStoppingCondition,
     BudgetStoppingCondition,
-    DiscoveryPlateauStoppingCondition,
+    DiscoveryAndUncertaintySaturatedStoppingCondition,
     IterationStoppingCondition,
 )
+from sam3_vlm.planning.replanning import ReplanningPolicy, ReplanEvidenceBuilder
 from sam3_vlm.planning.utility import DefaultUtilityEvaluator
+from sam3_vlm.pipeline.cleanup import CleanupController
 from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy
 from sam3_vlm.scene.belief import SemanticMemory, BeliefUpdater
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.state import SceneState, CountEstimator
 from sam3_vlm.pipeline.bootstrap import BootstrapPipeline
+from sam3_vlm.sensing.evidence import ContactSheetBuilder
 from sam3_vlm.sensing.tiling import TilingPolicy
+from sam3_vlm.core.types import StopReason
 
 
 class RunnerState(str, Enum):
@@ -35,9 +39,11 @@ class RunnerState(str, Enum):
     BUILD_QWEN_EVIDENCE = "BUILD_QWEN_EVIDENCE"
     PLAN = "PLAN"
     GLOBAL_SENSING = "GLOBAL_SENSING"
+    ASSESS = "ASSESS"
     REPLAN = "REPLAN"
     CLEANUP_DECISION = "CLEANUP_DECISION"
     CLEANUP = "CLEANUP"
+    ASSESS_CLEANUP = "ASSESS_CLEANUP"
     FINALIZE = "FINALIZE"
     DONE = "DONE"
 
@@ -64,9 +70,13 @@ class Runner:
         
         self.stopping_condition = CompositeStoppingCondition([
             BudgetStoppingCondition(),
-            DiscoveryPlateauStoppingCondition(),
+            DiscoveryAndUncertaintySaturatedStoppingCondition(),
             IterationStoppingCondition(),
         ])
+        
+        self.replanning_policy = ReplanningPolicy()
+        self.replan_evidence_builder = ReplanEvidenceBuilder(ContactSheetBuilder())
+        self.cleanup_controller = CleanupController(self.id_gen)
 
     def run(self, image: Any, user_prompt: str, target_class: str = "target", image_id: str = "img1") -> float:
         """Execute the active perception state machine until DONE."""
@@ -258,19 +268,92 @@ class Runner:
             # 13. Evaluate replanning triggers & 14. Global stopping
             self.scene_state.iteration += 1
             
-            if self.stopping_condition.should_stop(self.scene_state, self.config):
-                self.state = RunnerState.CLEANUP_DECISION
+            self.state = RunnerState.ASSESS
+                
+        elif self.state == RunnerState.ASSESS:
+            # Check stopping
+            stop_reason = self.stopping_condition.should_stop(self.scene_state, self.config)
+            if stop_reason:
+                self.scene_state.stop_reason = stop_reason
+                self.state = RunnerState.CLEANUP
+                return
+
+            # Check replanning
+            should_replan, replan_reason = self.replanning_policy.should_replan(self.scene_state, self.config)
+            if should_replan:
+                if self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
+                    self.scene_state.stop_reason = StopReason.QWEN_BUDGET
+                    self.state = RunnerState.CLEANUP
+                else:
+                    self.evidence_pack = self.replan_evidence_builder.build(self.scene_state, self.image)
+                    self.state = RunnerState.PLAN
+            else:
+                self.state = RunnerState.GLOBAL_SENSING
                 
         elif self.state == RunnerState.REPLAN:
             if self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
-                self.state = RunnerState.CLEANUP_DECISION
+                self.state = RunnerState.CLEANUP
             else:
                 self._execute_replan()
                 self.state = RunnerState.GLOBAL_SENSING
                 
         elif self.state == RunnerState.CLEANUP_DECISION:
-            # Skip cleanup for M4, proceed to FINALIZE
-            self.state = RunnerState.FINALIZE
+            # Kept for backward compatibility if needed, but ASSESS handles this now.
+            self.state = RunnerState.CLEANUP
+
+        elif self.state == RunnerState.CLEANUP:
+            if self.scene_state.budget.cleanup_calls >= getattr(self.config.budget, 'max_cleanup_calls', 5):
+                self.state = RunnerState.FINALIZE
+                return
+            
+            if not getattr(self.scene_state, 'stop_reason', None):
+                self.scene_state.stop_reason = StopReason.CLEANUP_COMPLETE 
+
+            residual_nodes = self.cleanup_controller.select_residual_nodes(self.scene_state.graph, self.config, self.target_class)
+            if not residual_nodes:
+                self.state = RunnerState.FINALIZE
+                return
+
+            cleanup_action = self.cleanup_controller.generate_cleanup_action(residual_nodes, self.config)
+            if not cleanup_action:
+                self.state = RunnerState.FINALIZE
+                return
+
+            # Execute cleanup
+            from sam3_vlm.core.types import SpatialMode
+            
+            observation = self.sensor.observe(self.image, cleanup_action)
+            self.scene_state.budget.sam3_calls += 1
+            self.scene_state.budget.cleanup_calls += 1
+            if cleanup_action.spatial_mode == SpatialMode.TILED:
+                 self.scene_state.budget.sam3_tiles += 1 # approx
+            self.scene_state.budget.model_runtime_ms += observation.runtime_ms
+            self.scene_state.budget.total_runtime_ms += observation.runtime_ms
+
+            assoc_result = self.association_policy.associate(
+                self.scene_state.graph,
+                observation.detections,
+                observation.call_id,
+                cleanup_action.action_id,
+                cleanup_action.semantic_key,
+                self.id_gen,
+                correlation_group=cleanup_action.correlation_group,
+                config=self.config.association
+            )
+
+            for node_id, obs_ref in assoc_result.matched_observations:
+                node = self.scene_state.graph.get_node(node_id)
+                if node:
+                    self.belief_updater.update_node_belief(node, cleanup_action, obs_ref, target_class=self.target_class)
+            for new_node in assoc_result.new_nodes:
+                self.belief_updater.update_node_belief(new_node, cleanup_action, new_node.observations[-1], target_class=self.target_class)
+
+            self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            self.state = RunnerState.ASSESS_CLEANUP
+
+        elif self.state == RunnerState.ASSESS_CLEANUP:
+            # Simple loop back to cleanup to see if there are more residuals
+            self.state = RunnerState.CLEANUP
             
         elif self.state == RunnerState.FINALIZE:
             self.state = RunnerState.DONE
@@ -284,8 +367,12 @@ class Runner:
             self.scene_state.semantic_memory,
             self.scene_state.action_bank,
             self.id_gen,
-            valid_node_ids=valid_node_ids
+            valid_node_ids=valid_node_ids,
+            config=self.config,
         )
+        # Purge stale unexecuted actions based on min_utility
+        self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
+        
         self.scene_state.qwen_round += 1
 
     def _choose_best_action(self):

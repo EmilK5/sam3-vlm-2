@@ -51,6 +51,20 @@ class ActionSource(str, Enum):
     CLEANUP = "CLEANUP"
 
 
+class StopReason(str, Enum):
+    """M6 structured stopping reasons."""
+    SAM3_BUDGET = "SAM3_BUDGET"
+    QWEN_BUDGET = "QWEN_BUDGET"
+    TILE_BUDGET = "TILE_BUDGET"
+    RUNTIME_BUDGET = "RUNTIME_BUDGET"
+    MAX_ITERATIONS = "MAX_ITERATIONS"
+    DISCOVERY_AND_UNCERTAINTY_SATURATED = "DISCOVERY_AND_UNCERTAINTY_SATURATED"
+    LOW_MARGINAL_UTILITY = "LOW_MARGINAL_UTILITY"
+    ACTION_BANK_EXHAUSTED = "ACTION_BANK_EXHAUSTED"
+    CLEANUP_COMPLETE = "CLEANUP_COMPLETE"
+    NO_VALID_ACTIONS = "NO_VALID_ACTIONS"
+
+
 @dataclass
 class BudgetState:
     """Computational resource accounting (V4 Design Spec §15)."""
@@ -58,6 +72,7 @@ class BudgetState:
     qwen_calls: int = 0
     sam3_calls: int = 0
     sam3_tiles: int = 0
+    cleanup_calls: int = 0
     model_runtime_ms: float = 0.0
     total_runtime_ms: float = 0.0
 

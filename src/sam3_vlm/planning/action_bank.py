@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 import re
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Any
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import ActionSource
 from sam3_vlm.planning.qwen_planner import PlannerOutput
@@ -81,6 +81,21 @@ class ActionBank:
     def executed_entries(self) -> List[ActionBankEntry]:
         return [e for e in self.entries if e.executed]
 
+    def purge_stale_actions(self, min_utility: float):
+        """Remove unexecuted actions whose total utility has fallen below threshold."""
+        retained = []
+        for entry in self.entries:
+            if entry.executed or entry.invalid_reason is not None:
+                retained.append(entry)
+            else:
+                if entry.total_utility is None or entry.total_utility >= min_utility:
+                    retained.append(entry)
+                else:
+                    # Mark invalid rather than deleting to preserve provenance if needed
+                    entry.invalid_reason = "Purged: Stale/Low Utility"
+                    retained.append(entry)
+        self.entries = retained
+
 
 class ActionBankGenerator:
     """Converts structured Qwen planner outputs into deduplicated ActionBank entries (V4 Design Spec §7.1)."""
@@ -92,6 +107,7 @@ class ActionBankGenerator:
         action_bank: ActionBank,
         id_gen: IDGenerator,
         valid_node_ids: Optional[Set[str]] = None,
+        config: Optional[Any] = None,
     ) -> List[ActionBankEntry]:
         """Convert proposed actions into ActionBankEntry objects with deduplication and correlation grouping."""
         added_entries: List[ActionBankEntry] = []
@@ -99,6 +115,9 @@ class ActionBankGenerator:
         existing_keys: Set[str] = set()
         existing_correlation_groups: Set[str] = set()
         existing_prompts: Set[str] = set()
+        
+        # Track historical utility per correlation group
+        group_avg_utilities = {}
 
         for mem_key, record in semantic_memory.records.items():
             ckey = canonicalize_semantic_key(mem_key)
@@ -107,6 +126,10 @@ class ActionBankGenerator:
             existing_correlation_groups.add(group)
             for prompt in record.prompts:
                 existing_prompts.add(prompt.strip().lower())
+                
+            if record.execution_count > 0:
+                avg_utility = sum(record.realized_utility_by_execution) / record.execution_count
+                group_avg_utilities[group] = avg_utility
 
         for entry in action_bank.entries:
             ckey = canonicalize_semantic_key(entry.action.semantic_key)
@@ -159,7 +182,18 @@ class ActionBankGenerator:
                 from sam3_vlm.core.config import TilingConfig
                 tiling_cfg = TilingConfig(**p_action.tiling)
 
-            # Check if near-paraphrase in same correlation group already exists
+            # Adjust priority based on empirical history
+            adjusted_priority = p_action.priority
+            if corr_group in group_avg_utilities:
+                avg_utility = group_avg_utilities[corr_group]
+                utility_threshold = config.stopping.utility_min_threshold if config else 0.05
+                if avg_utility < utility_threshold:
+                    # Penalize priority strongly if history shows low utility
+                    adjusted_priority *= 0.1
+                else:
+                    # Boost priority slightly if history shows good utility
+                    adjusted_priority = min(1.0, adjusted_priority * 1.2)
+
             is_correlated = corr_group in existing_correlation_groups
 
             action = SensingAction(
@@ -170,7 +204,7 @@ class ActionBankGenerator:
                 threshold=p_action.suggested_threshold if p_action.suggested_threshold is not None else 0.25,
                 spatial_mode=p_action.suggested_spatial_mode,
                 source=ActionSource.QWEN,
-                qwen_priority=p_action.priority,
+                qwen_priority=adjusted_priority,
                 semantic_prior=p_action.semantic_prior,
                 correlation_group=corr_group,
                 roi=roi_geom,
@@ -179,7 +213,7 @@ class ActionBankGenerator:
                 tiling=tiling_cfg,
             )
 
-            entry = action_bank.add_action(action, qwen_priority=p_action.priority)
+            entry = action_bank.add_action(action, qwen_priority=adjusted_priority)
             existing_keys.add(canonical_key)
             existing_correlation_groups.add(corr_group)
             existing_prompts.add(clean_prompt)

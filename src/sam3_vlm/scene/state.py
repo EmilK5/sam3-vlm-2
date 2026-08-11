@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, TYPE_CHECKING
 from sam3_vlm.core.geometry import Geometry
-from sam3_vlm.core.types import BudgetState
+from sam3_vlm.core.types import BudgetState, StopReason
 from sam3_vlm.scene.belief import SemanticMemory
 from sam3_vlm.scene.graph import SceneGraph
 
@@ -73,3 +73,5 @@ class SceneState:
     budget: BudgetState = field(default_factory=BudgetState)
     iteration: int = 0
     qwen_round: int = 0
+    stop_reason: Optional[StopReason] = None
+

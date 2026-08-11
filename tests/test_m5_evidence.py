@@ -392,7 +392,7 @@ def test_m5_n_precise_observability():
     
     # Patch runner to run just the global sensing step
     runner._step()
-    assert runner.state == RunnerState.GLOBAL_SENSING, f"State changed to {runner.state}!"
+    assert runner.state == RunnerState.ASSESS, f"State changed to {runner.state}!"
 
     
     # Node should have a new observation, and it MUST be NOT_OBSERVABLE since the searched region (100,100,110,110) does not intersect (0,0,10,10)

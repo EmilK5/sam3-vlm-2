@@ -64,4 +64,4 @@ def test_runner_end_to_end_mock():
     assert count >= 0.0
     
     # Check stopping condition was met
-    assert runner.stopping_condition.stop_reason is not None or count > 0
+    assert runner.scene_state.stop_reason is not None or count > 0

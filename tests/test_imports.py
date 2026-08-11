@@ -64,7 +64,7 @@ def test_planning_imports():
 
 
 def test_pipeline_imports():
-    from sam3_vlm.pipeline import BootstrapStage, RunnerState, ResidualCleanupStage
+    from sam3_vlm.pipeline import BootstrapStage, RunnerState, CleanupController
     assert RunnerState.INITIALIZE == "INITIALIZE"
 
 

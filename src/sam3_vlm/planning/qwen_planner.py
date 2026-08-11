@@ -221,7 +221,7 @@ class QwenPlannerService:
             )
             clamped_priors = {
                 k: max(0.0, min(1.0, float(v))) for k, v in action.semantic_prior.items()
-            }
+            } if action.semantic_prior is not None else None
 
             normalized_actions.append(
                 ProposedAction(

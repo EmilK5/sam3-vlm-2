@@ -21,6 +21,7 @@ class BudgetConfig:
     max_qwen_calls: int = 4
     max_sam3_calls: int = 15
     max_sam3_tiles: int = 30
+    max_cleanup_calls: int = 5
     max_runtime_seconds: Optional[float] = 300.0
 
 
@@ -31,6 +32,7 @@ class StoppingConfig:
     discovery_saturation_threshold: float = 0.05
     utility_min_threshold: float = 0.02
     max_iterations: int = 20
+    count_variance_threshold: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,9 @@ class ReplanningConfig:
 
     max_replans: int = 2
     discovery_plateau_steps: int = 2
+    unresolved_entropy_threshold: float = 1.0
+    count_variance_threshold: float = 0.5
+    min_actions_between_replans: int = 2
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,8 @@ class CleanupConfig:
     """Residual cleanup configuration (V4 Design Spec §13)."""
 
     cleanup_residual_max_nodes: int = 10
+    cleanup_ambiguity_threshold: float = 0.8  # e.g., entropy > 0.8 is ambiguous
+    cleanup_min_utility: float = 0.05
     roi_batch_size: int = 4
 
 
