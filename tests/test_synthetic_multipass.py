@@ -4,7 +4,7 @@ import pytest
 from sam3_vlm.core.config import AssociationConfig, BeliefConfig
 from sam3_vlm.core.geometry import Box, BoxGeometry, GeometryRef
 from sam3_vlm.core.id_generator import IDGenerator
-from sam3_vlm.core.types import ActionFamily, ActionSource, Detection, NodeStatus
+from sam3_vlm.core.types import ActionFamily, ActionSource, NodeObservationRef, ObservationRelation, NodeStatus, Detection
 from sam3_vlm.scene.association import IoUAssociationPolicy
 from sam3_vlm.scene.belief import BeliefUpdater, SemanticMemory
 from sam3_vlm.scene.graph import SceneGraph
@@ -75,7 +75,6 @@ def test_synthetic_multipass_scene_graph_evolution():
 
     p2_detections = [
         Detection("det_3", GeometryRef(Box(11.0, 10.0, 51.0, 50.0)), score=0.90),
-        Detection("det_4", GeometryRef(Box(101.0, 99.0, 141.0, 139.0)), score=0.80),
     ]
 
     res2 = assoc_policy.associate(
@@ -87,22 +86,30 @@ def test_synthetic_multipass_scene_graph_evolution():
         id_gen=id_gen,
     )
 
-    assert len(res2.matched_observations) == 2
+    assert len(res2.matched_observations) == 1
     assert len(res2.new_nodes) == 0
 
+    matched_node_ids = {nid for nid, _ in res2.matched_observations}
     for node_id, obs_ref in res2.matched_observations:
         node = graph.get_node(node_id)
         if node:
             belief_updater.update_node_belief(
                 node, pass2_action, obs_ref, target_class=target_cls, confounder_class=confounder_cls
             )
-
-    # Both nodes should have high target belief after Pass 2
-    n1 = graph.get_node(n1_id)
+            
+    # Apply NOT_RETRIEVED for n2 manually since we bypassed Runner
     n2 = graph.get_node(n2_id)
+    if n2.node_id not in matched_node_ids:
+        obs_ref = NodeObservationRef("o_nr", "call2", pass2_action.action_id, pass2_action.semantic_key, relation=ObservationRelation.NOT_RETRIEVED, score=0.0)
+        n2.observations.append(obs_ref)
+        belief_updater.update_node_belief(n2, pass2_action, obs_ref, target_class=target_cls, confounder_class=confounder_cls)
+
+    # n1 should have high target belief after Pass 2
+    n1 = graph.get_node(n1_id)
     assert n1 is not None and n2 is not None
     assert n1.class_belief.probabilities["target"] > 0.6
-    assert n2.class_belief.probabilities["target"] > 0.6
+    # n2 should have decreased target belief (or around 0.5)
+    assert n2.class_belief.probabilities["target"] < 0.7
 
     # Pass 3: Global Confounder Pass (leaf prompt matches n2 strongly, n1 NOT retrieved)
     pass3_action = SensingAction(
@@ -111,6 +118,7 @@ def test_synthetic_multipass_scene_graph_evolution():
         prompt="shiny green leaf",
         family=ActionFamily.CONFOUNDER,
         source=ActionSource.QWEN,
+        semantic_prior={"leaf": 0.9, "target": 0.1}
     )
     semantic_memory.record_execution(pass3_action, "sam3_000003")
 
@@ -142,7 +150,7 @@ def test_synthetic_multipass_scene_graph_evolution():
 
     # Diagnostics check
     assert n1.diagnostics.support_count == 2
-    assert n2.diagnostics.support_count == 3
+    assert n2.diagnostics.support_count == 2
     assert n1.diagnostics.independent_semantic_support_count == 1
     assert n2.diagnostics.independent_semantic_support_count == 2
 

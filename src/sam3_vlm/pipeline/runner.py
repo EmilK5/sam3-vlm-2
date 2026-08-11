@@ -189,6 +189,7 @@ class Runner:
                     
                 # Project absences for unmatched active nodes
                 from sam3_vlm.core.types import ObservationRelation, NodeObservationRef
+                not_retrieved_nodes_count = 0
                 for node in self.scene_state.graph.active_nodes():
                     if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
                         # Determine if node was within search ROI. 
@@ -199,13 +200,15 @@ class Runner:
                         if observation.searched_regions:
                             node_box = node.geometry.bbox()
                             for region in observation.searched_regions:
-                                if region.bbox().iou(node_box) > 0.0 or region.bbox().contains_box(node_box):
+                                if region.bbox().iou(node_box) > 0.0 or region.bbox().intersection(node_box) > 0.0:
                                     relation = ObservationRelation.NOT_RETRIEVED
+                                    not_retrieved_nodes_count += 1
                                     break
                         else:
                             # Fallback for old tests that don't populate searched_regions
                             if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
                                 relation = ObservationRelation.NOT_RETRIEVED
+                                not_retrieved_nodes_count += 1
                             
                         # Append observation
                         obs_ref = NodeObservationRef(
@@ -231,13 +234,17 @@ class Runner:
             discrimination_proxy = max(0.0, pre_entropy - post_entropy)
                     
             # 10. Update semantic memory
+            affected = len(matched_node_ids) + len(new_node_ids)
+            if action.family != ActionFamily.CONTEXT:
+                affected += not_retrieved_nodes_count
+
             self.scene_state.semantic_memory.record_execution(
                 action=action, 
                 sam3_call_id=observation.call_id,
                 new_nodes=new_nodes_count,
                 runtime_ms=observation.runtime_ms,
                 predicted_utility=best_entry.total_utility if best_entry.total_utility else 0.0,
-                affected_nodes=len(matched_node_ids) + len(new_node_ids),
+                affected_nodes=affected,
                 entropy_change=post_entropy - pre_entropy,
                 variance_change=self.scene_state.count_estimate.variance - pre_count.variance if 'pre_count' in locals() else 0.0,
                 realized_discrimination_proxy=discrimination_proxy,

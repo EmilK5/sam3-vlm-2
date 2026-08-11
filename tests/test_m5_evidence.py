@@ -102,22 +102,29 @@ def test_m5_d_not_retrieved():
 
 def test_m5_e_repeated_same_semantic_key():
     updater = BeliefUpdater()
-    node = create_mock_node()
     
-    action = SensingAction(action_id="a1", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY, correlation_group="target")
-    obs = NodeObservationRef("o1", "call1", "a1", "target", correlation_group="target", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+    node_correlated = create_mock_node()
+    node_independent = create_mock_node()
     
-    probs = []
-    for _ in range(10):
-        updater.update_node_belief(node, action, obs, target_class="target", confounder_class="confounder")
-        probs.append(node.class_belief.probabilities["target"])
-        node.observations.append(obs)  # Simulate observation appending
+    # 3 correlated actions
+    for i in range(3):
+        action = SensingAction(action_id=f"a{i}", semantic_key="target", prompt="target", family=ActionFamily.DISCOVERY, correlation_group="group_A")
+        obs = NodeObservationRef(f"o{i}", f"call{i}", f"a{i}", "target", correlation_group="group_A", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+        updater.update_node_belief(node_correlated, action, obs, target_class="target", confounder_class="confounder")
+        node_correlated.observations.append(obs)
         
-    # Diminishing marginal effect
-    deltas = [probs[i+1] - probs[i] for i in range(len(probs)-1)]
-    assert all(d > 0 for d in deltas) # Always increases
-    assert deltas[0] > deltas[-1] # but by less and less
-    assert probs[-1] < 1.0 # Does not explode to 1.0 arbitrarily
+    # 3 independent actions
+    for i in range(3):
+        action = SensingAction(action_id=f"b{i}", semantic_key=f"target_{i}", prompt="target", family=ActionFamily.DISCOVERY, correlation_group=f"group_{i}")
+        obs = NodeObservationRef(f"p{i}", f"call_b{i}", f"b{i}", f"target_{i}", correlation_group=f"group_{i}", relation=ObservationRelation.STRONG_MATCH, score=0.9)
+        updater.update_node_belief(node_independent, action, obs, target_class="target", confounder_class="confounder")
+        node_independent.observations.append(obs)
+        
+    p_corr = node_correlated.class_belief.probabilities["target"]
+    p_indep = node_independent.class_belief.probabilities["target"]
+    
+    # Correlated repeats should accumulate less evidence than independent semantic groups
+    assert p_indep > p_corr
 
 
 def test_m5_f_global_and_tiled_same_key():
@@ -252,7 +259,7 @@ def test_m5_g_post_bootstrap_discovery_confounder():
     node = create_mock_node()
     
     # 1. Post-bootstrap discovery (e.g. from a confounder prompt)
-    action1 = SensingAction(action_id="a1", semantic_key="confounder", prompt="confounder", family=ActionFamily.DISCOVERY, semantic_prior={"confounder": 1.0, "target": -0.5})
+    action1 = SensingAction(action_id="a1", semantic_key="confounder", prompt="confounder", family=ActionFamily.DISCOVERY, semantic_prior={"confounder": 0.8, "target": 0.2})
     obs1 = NodeObservationRef("o1", "call1", "a1", "confounder", relation=ObservationRelation.NEW_DETECTION, score=0.9)
     updater.update_node_belief(node, action1, obs1, target_class="target", confounder_class="confounder")
     
@@ -260,7 +267,7 @@ def test_m5_g_post_bootstrap_discovery_confounder():
     p_conf_after_a1 = node.class_belief.probabilities["confounder"]
     
     # 2. Later receives strong confounder evidence
-    action2 = SensingAction(action_id="a2", semantic_key="confounder", prompt="confounder", family=ActionFamily.CONFOUNDER, semantic_prior={"confounder": 1.0, "target": -1.0})
+    action2 = SensingAction(action_id="a2", semantic_key="confounder", prompt="confounder", family=ActionFamily.CONFOUNDER, semantic_prior={"confounder": 0.95, "target": 0.05})
     obs2 = NodeObservationRef("o2", "call2", "a2", "confounder", relation=ObservationRelation.STRONG_MATCH, score=0.9)
     updater.update_node_belief(node, action2, obs2, target_class="target", confounder_class="confounder")
     
@@ -279,7 +286,7 @@ def test_m5_h_qwen_semantics_prior():
         semantic_key="leaf_foliage", 
         prompt="green leaf foliage", 
         family=ActionFamily.DISCOVERY, 
-        semantic_prior={"leaf": 1.0, "target": -0.2}
+        semantic_prior={"leaf": 0.9, "target": 0.1}
     )
     obs = NodeObservationRef("o1", "call1", "a1", "leaf_foliage", relation=ObservationRelation.STRONG_MATCH, score=0.9)
     
@@ -327,8 +334,70 @@ def test_m5_m_node_to_dict_preserves_correlation_group():
     assert node2.observations[0].correlation_group == "my_group"
 
 def test_m5_n_precise_observability():
-    # We will simulate the runner precise ROI behavior
-    pass # covered by runner integration
+    from sam3_vlm.pipeline.runner import Runner
+    from sam3_vlm.core.config import V4Config
+    from sam3_vlm.sensing.observation import SAM3Observation
+    from sam3_vlm.core.types import Detection
+    from sam3_vlm.scene.state import SceneState
+    from sam3_vlm.scene.graph import SceneGraph
+    from sam3_vlm.scene.belief import SemanticMemory
+    from unittest.mock import MagicMock
+
+    # Setup Runner with one existing active node
+    adapter = MagicMock()
+    planner = MagicMock()
+    runner = Runner(sensor=adapter, planner=planner, config=V4Config())
+    runner.target_class = "target"
+    runner.image = None
+    runner.scene_state = SceneState(
+        image_id="i1", user_prompt="p", target_class="target", 
+        graph=SceneGraph(), semantic_memory=SemanticMemory()
+    )
+    
+    node = create_mock_node() # Box(0, 0, 10, 10)
+    node.node_id = "node1"
+    runner.scene_state.graph.add_node(node)
+    
+    # Create an action that searches a region NOT intersecting the node
+    from sam3_vlm.core.config import TilingConfig
+    action = SensingAction(
+        action_id="a1", semantic_key="target", prompt="target", 
+        family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.TILED,
+        tiling=TilingConfig(grid_rows=1, grid_cols=1)
+    )
+    
+    from sam3_vlm.planning.action_bank import ActionBank, ActionBankEntry
+    runner.scene_state.action_bank = ActionBank(entries=[
+        ActionBankEntry(action=action, total_utility=1.0)
+    ])
+    
+    # Mock observation with a searched region far away from the node
+    obs = SAM3Observation(
+        call_id="call1",
+        action_id=action.action_id,
+        semantic_key=action.semantic_key,
+        detections=[], # No detections
+        searched_regions=[BoxGeometry(Box(100, 100, 110, 110))],
+        runtime_ms=10.0
+    )
+    
+    # Overwrite sensor to return this exact observation
+    adapter.observe.return_value = obs
+    
+    from sam3_vlm.pipeline.runner import RunnerState
+    runner.state = RunnerState.GLOBAL_SENSING
+    
+    # Assert that unexecuted entries works
+    assert len(list(runner.scene_state.action_bank.unexecuted_entries())) == 1
+    
+    # Patch runner to run just the global sensing step
+    runner._step()
+    assert runner.state == RunnerState.GLOBAL_SENSING, f"State changed to {runner.state}!"
+
+    
+    # Node should have a new observation, and it MUST be NOT_OBSERVABLE since the searched region (100,100,110,110) does not intersect (0,0,10,10)
+    assert len(node.observations) == 1
+    assert node.observations[-1].relation == ObservationRelation.NOT_OBSERVABLE
 
 def test_m5_o_count_estimator():
     from sam3_vlm.scene.state import CountEstimator, SceneGraph

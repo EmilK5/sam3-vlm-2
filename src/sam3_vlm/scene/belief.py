@@ -74,12 +74,9 @@ class ProxyEvidenceConfig:
     """Configurable coefficients for uncalibrated sensor likelihood proxy (V4 Design Spec §11)."""
     strong_target_multiplier: float = 1.5
     strong_confounder_multiplier: float = 3.0
-    strong_confounder_target_penalty: float = 0.75
     weak_confounder_multiplier: float = 0.8
-    weak_confounder_target_penalty: float = 0.4
     weak_target_multiplier: float = 0.4
     not_retrieved_penalty: float = 0.15
-    prior_pseudocount: float = 1.0
 
 
 class ProxyEvidenceModel:
@@ -101,21 +98,17 @@ class ProxyEvidenceModel:
         """Compute uncalibrated likelihood multipliers based on observation and semantic prior."""
         likelihoods = {cls: 1.0 for cls in vocabulary}
         
-        # Determine target vs confounder nature from the action
-        semantic_weights = action.semantic_prior if action.semantic_prior else {}
-        
-        # Default behavior if no semantic prior is provided by Qwen
-        if not semantic_weights:
+        semantic_weights = action.semantic_prior
+        if semantic_weights is None:
             if action.family in (ActionFamily.DISCOVERY, ActionFamily.VERIFICATION):
                 if target_class:
                     semantic_weights = {target_class: 1.0}
                 else:
                     semantic_weights = {action.semantic_key: 1.0}
-            elif action.family == ActionFamily.CONFOUNDER:
-                key = confounder_class if confounder_class else action.semantic_key
-                semantic_weights = {key: 1.0}
-                if target_class:
-                    semantic_weights[target_class] = -1.0
+            else:
+                # Safely neutralize: if no prior is provided for CONFOUNDER/CONTEXT, map semantic_key to itself.
+                # We do not infer a confounder mapping or assume negative weights.
+                semantic_weights = {action.semantic_key: 1.0}
 
         is_confounder = action.family == ActionFamily.CONFOUNDER
 
@@ -126,19 +119,13 @@ class ProxyEvidenceModel:
                 if sem_w > 0:
                     mult = self.config.strong_confounder_multiplier if is_confounder else self.config.strong_target_multiplier
                     likelihoods[cls_name] = 1.0 + (mult * score * weight * sem_w)
-                elif sem_w < 0:
-                    # It's a negative prior, meaning a strong match is BAD for this class
-                    likelihoods[cls_name] = max(0.1, 1.0 - (self.config.strong_confounder_target_penalty * score * weight * abs(sem_w)))
             
             elif relation == ObservationRelation.WEAK_MATCH:
                 if sem_w > 0:
                     mult = self.config.weak_confounder_multiplier if is_confounder else self.config.weak_target_multiplier
                     likelihoods[cls_name] = 1.0 + (mult * score * weight * sem_w)
-                elif sem_w < 0:
-                    likelihoods[cls_name] = max(0.1, 1.0 - (self.config.weak_confounder_target_penalty * score * weight * abs(sem_w)))
             
             elif relation == ObservationRelation.NOT_RETRIEVED:
-                # Mild negative evidence for classes this action was searching for (sem_w > 0)
                 if sem_w > 0:
                     likelihoods[cls_name] = max(0.1, likelihoods.get(cls_name, 1.0) - (self.config.not_retrieved_penalty * weight * sem_w))
 

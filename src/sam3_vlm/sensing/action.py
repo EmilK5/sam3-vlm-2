@@ -50,3 +50,9 @@ class SensingAction:
             raise ValueError("SensingAction with TILED spatial_mode must specify tiling configuration.")
         if self.tiling is not None and self.spatial_mode != SpatialMode.TILED:
             raise ValueError("SensingAction with tiling configuration specified must use TILED spatial_mode.")
+
+        # Check semantic prior range
+        if self.semantic_prior:
+            for cls_name, prob in self.semantic_prior.items():
+                if not (0.0 <= prob <= 1.0):
+                    raise ValueError(f"semantic_prior for '{cls_name}' must be in [0, 1], got {prob}")
