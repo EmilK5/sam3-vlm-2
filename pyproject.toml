@@ -16,6 +16,7 @@ dependencies = [
     "scipy",
     "pillow",
     "opencv-python",
+    "openai",
 ]
 
 [project.optional-dependencies]
@@ -29,3 +30,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "real_models: Tests that require actual SAM3/Qwen backends."
+]

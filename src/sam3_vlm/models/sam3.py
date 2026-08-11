@@ -8,7 +8,16 @@ from sam3_vlm.core.types import Detection, SpatialMode
 from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.sensing.observation import SAM3Observation
 from sam3_vlm.sensing.tiling import compute_tiles, tile_box_to_image_box, image_box_to_tile_box
+import logging
+import numpy as np
+try:
+    from PIL import Image
+    import torch
+    from transformers import Sam3Model, Sam3Processor
+except ImportError:
+    pass
 
+logger = logging.getLogger(__name__)
 
 @runtime_checkable
 class SAM3Sensor(Protocol):
@@ -154,3 +163,152 @@ class MockSAM3Adapter:
             runtime_ms=max(1.0, elapsed_ms),
             model_metadata={"mock": True, "spatial_mode": action.spatial_mode.value},
         )
+
+
+class RealSAM3Sensor:
+    """Real SAM3 visual sensor interface (V4 Design Spec §4)."""
+
+    def __init__(
+        self,
+        model_id: str = "facebook/sam3",
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        id_gen: Optional[IDGenerator] = None,
+    ) -> None:
+        self.id_gen = id_gen or IDGenerator()
+        self.call_count = 0
+        self.device = torch.device(device)
+        self.model_id = model_id
+        
+        logger.info(f"Loading real SAM3 model: {model_id} on {self.device}")
+        try:
+            import torch
+            from transformers import Sam3Model, Sam3Processor
+        except ImportError:
+            raise RuntimeError("transformers and torch are required for RealSAM3Sensor")
+
+        if self.device.type == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
+        self.model = Sam3Model.from_pretrained(model_id).to(self.device)
+        self.processor = Sam3Processor.from_pretrained(model_id)
+        self.processor.model = self.model
+
+        if self.device.type == "cuda":
+            logger.info("Compiling SAM3 model graph...")
+            self.model = torch.compile(self.model)
+
+    def _run_inference(self, image_pil: Image.Image, text_prompt: str, threshold: float) -> tuple[np.ndarray, np.ndarray, list]:
+        """Runs a single forward pass."""
+        inputs = self.processor(
+            images=image_pil,
+            text=text_prompt,
+            return_tensors="pt"
+        ).to(self.model.device)
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        results = self.processor.post_process_instance_segmentation(
+            outputs,
+            threshold=float(threshold),
+            mask_threshold=0.5,
+            target_sizes=inputs.get("original_sizes").tolist()
+        )[0]
+
+        raw_boxes = results["boxes"].cpu().numpy() if hasattr(results["boxes"], "cpu") else np.array(results["boxes"])
+        raw_scores = results["scores"].cpu().numpy() if hasattr(results["scores"], "cpu") else np.array(results["scores"])
+        
+        raw_masks = []
+        if "masks" in results and results["masks"] is not None:
+            rm = results["masks"]
+            rm = rm.cpu().numpy() if hasattr(rm, "cpu") else np.array(rm)
+            raw_masks = [np.asarray(rm[k]) > 0.5 for k in range(len(rm))]
+
+        return raw_boxes, raw_scores, raw_masks
+
+    def observe(self, image: Any, action: SensingAction) -> SAM3Observation:
+        action.validate()
+        start_time = time.perf_counter()
+        self.call_count += 1
+        call_id = self.id_gen.next_sam3_call_id()
+
+        if isinstance(image, Image.Image):
+            img_pil = image
+        elif hasattr(image, "shape") and len(image.shape) >= 2:
+            img_pil = Image.fromarray(image)
+        else:
+            raise ValueError(f"RealSAM3Sensor requires PIL Image or Numpy array, got {type(image)}")
+
+        img_w, img_h = img_pil.size
+        detections: List[Detection] = []
+        searched_regions: List[BoxGeometry] = []
+
+        if action.spatial_mode == SpatialMode.TILED and action.tiling:
+            tile_geoms = compute_tiles(img_w, img_h, action.tiling)
+            searched_regions = tile_geoms
+            for tile_idx, tile_geom in enumerate(tile_geoms):
+                tile_box = tile_geom.box
+                tile_id = f"tile_{tile_idx:02d}"
+                
+                # Crop tile
+                crop_box = (int(tile_box.xmin), int(tile_box.ymin), int(tile_box.xmax), int(tile_box.ymax))
+                tile_pil = img_pil.crop(crop_box)
+                
+                boxes, scores, masks = self._run_inference(tile_pil, action.prompt, action.threshold)
+                
+                for i in range(len(boxes)):
+                    b = boxes[i]
+                    s = float(scores[i])
+                    det_id = self.id_gen.next_detection_id()
+                    local_box = Box(float(b[0]), float(b[1]), float(b[2]), float(b[3]), coordinate_space="tile")
+                    global_box = tile_box_to_image_box(local_box, tile_box)
+                    
+                    raw_meta = {}
+                    if masks and i < len(masks):
+                        raw_meta["mask"] = masks[i]
+                        
+                    detections.append(Detection(
+                        detection_id=det_id,
+                        geometry=GeometryRef(box=global_box),
+                        score=s,
+                        source_tile_id=tile_id,
+                        local_geometry=GeometryRef(box=local_box),
+                        raw_metadata=raw_meta
+                    ))
+        else:
+            # Global sensing mode
+            global_region = Box(0.0, 0.0, float(img_w), float(img_h))
+            searched_regions = [BoxGeometry(global_region)]
+            
+            boxes, scores, masks = self._run_inference(img_pil, action.prompt, action.threshold)
+            
+            for i in range(len(boxes)):
+                b = boxes[i]
+                s = float(scores[i])
+                det_id = self.id_gen.next_detection_id()
+                global_box = Box(float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                
+                raw_meta = {}
+                if masks and i < len(masks):
+                    raw_meta["mask"] = masks[i]
+                    
+                detections.append(Detection(
+                    detection_id=det_id,
+                    geometry=GeometryRef(box=global_box),
+                    score=s,
+                    raw_metadata=raw_meta
+                ))
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+        return SAM3Observation(
+            call_id=call_id,
+            action_id=action.action_id,
+            semantic_key=action.semantic_key,
+            detections=detections,
+            searched_regions=searched_regions,
+            runtime_ms=max(1.0, elapsed_ms),
+            model_metadata={"real": True, "spatial_mode": action.spatial_mode.value, "model_id": self.model_id},
+        )
+
