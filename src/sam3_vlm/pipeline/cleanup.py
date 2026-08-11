@@ -15,6 +15,8 @@ class CleanupController:
 
     def __init__(self, id_gen: IDGenerator):
         self.id_gen = id_gen
+        self.batch_attempts = {}
+        self.last_batch_utility = {}
 
     def select_residual_nodes(self, graph: SceneGraph, config: V4Config, target_class: str) -> List[Node]:
         """Select a small subset of highly ambiguous nodes for cleanup."""
@@ -58,20 +60,47 @@ class CleanupController:
             return None
 
         # Partition residual nodes spatially into batches of max roi_batch_size
-        # Sort by X coordinate for simple spatial grouping
         residual_nodes_sorted = sorted(residual_nodes, key=lambda n: n.geometry.bbox().x1)
-        batch = residual_nodes_sorted[:config.cleanup.roi_batch_size]
+        batches = [residual_nodes_sorted[i:i + config.cleanup.roi_batch_size] for i in range(0, len(residual_nodes_sorted), config.cleanup.roi_batch_size)]
 
-        # Calculate utility of this batch
-        total_variance = sum(
-            n.class_belief.probabilities.get(target_class, 0.0) * (1.0 - n.class_belief.probabilities.get(target_class, 0.0))
-            for n in batch
-        )
-        total_entropy = sum(n.class_belief.entropy for n in batch)
-        
-        utility = (total_variance + total_entropy) / (len(batch) + 1)
-        if utility < config.cleanup.cleanup_min_utility:
+        best_batch = None
+        best_utility = -1.0
+        best_raw_utility = -1.0
+
+        for batch in batches:
+            batch_ids = frozenset(n.node_id for n in batch)
+            attempts = self.batch_attempts.get(batch_ids, 0)
+
+            total_variance = sum(
+                n.class_belief.probabilities.get(target_class, 0.0) * (1.0 - n.class_belief.probabilities.get(target_class, 0.0))
+                for n in batch
+            )
+            total_entropy = sum(n.class_belief.entropy for n in batch)
+            raw_utility = (total_variance + total_entropy) / (len(batch) + 1)
+
+            if raw_utility < config.cleanup.cleanup_min_utility:
+                continue
+
+            utility = raw_utility
+            if attempts > 0:
+                last_util = self.last_batch_utility.get(batch_ids, 0.0)
+                gain = last_util - raw_utility
+                if gain < 0.05:
+                    continue
+                utility /= (attempts + 1)
+
+            if utility > best_utility:
+                best_utility = utility
+                best_raw_utility = raw_utility
+                best_batch = batch
+
+        if not best_batch:
             return None
+            
+        batch = best_batch
+        batch_ids = frozenset(n.node_id for n in batch)
+        self.batch_attempts[batch_ids] = self.batch_attempts.get(batch_ids, 0) + 1
+        self.last_batch_utility[batch_ids] = best_raw_utility
 
         # Determine spatial mode based on batch size
         if len(batch) > 1:

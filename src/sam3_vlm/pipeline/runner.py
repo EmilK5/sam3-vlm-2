@@ -132,8 +132,8 @@ class Runner:
             self.state = RunnerState.PLAN
             
         elif self.state == RunnerState.PLAN:
-            self.evidence_pack = self.replan_evidence_builder.build(self.scene_state, self.image)
-            self._execute_replan()
+            # Initial plan uses bootstrap evidence pack
+            self._execute_initial_plan()
             self.state = RunnerState.GLOBAL_SENSING
             
         elif self.state == RunnerState.GLOBAL_SENSING:
@@ -247,21 +247,12 @@ class Runner:
             # Check replanning
             should_replan, replan_reason = self.replanning_policy.should_replan(self.scene_state, self.config)
             if should_replan:
-                if self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
-                    self.scene_state.stop_reason = StopReason.QWEN_BUDGET
-                    self.state = RunnerState.CLEANUP
-                else:
-                    self.evidence_pack = self.replan_evidence_builder.build(self.scene_state, self.image)
-                    self.state = RunnerState.PLAN
+                self.state = RunnerState.REPLAN
             else:
                 self.state = RunnerState.GLOBAL_SENSING
                 
         elif self.state == RunnerState.REPLAN:
-            if self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
-                self.state = RunnerState.CLEANUP
-            else:
-                self._execute_replan()
-                self.state = RunnerState.GLOBAL_SENSING
+            self._request_replan()
                 
         elif self.state == RunnerState.CLEANUP_DECISION:
             # Kept for backward compatibility if needed, but ASSESS handles this now.
@@ -269,19 +260,19 @@ class Runner:
 
         elif self.state == RunnerState.CLEANUP:
             if self.scene_state.budget.cleanup_calls >= getattr(self.config.budget, 'max_cleanup_calls', 5):
+                self.scene_state.stop_reason = StopReason.CLEANUP_BUDGET
                 self.state = RunnerState.FINALIZE
                 return
-            
-            if not getattr(self.scene_state, 'stop_reason', None):
-                self.scene_state.stop_reason = StopReason.CLEANUP_COMPLETE 
 
             residual_nodes = self.cleanup_controller.select_residual_nodes(self.scene_state.graph, self.config, self.target_class)
             if not residual_nodes:
+                self.scene_state.stop_reason = StopReason.CLEANUP_COMPLETE
                 self.state = RunnerState.FINALIZE
                 return
 
             cleanup_action = self.cleanup_controller.generate_cleanup_action(residual_nodes, self.scene_state.graph, self.target_class, self.config)
             if not cleanup_action:
+                self.scene_state.stop_reason = StopReason.CLEANUP_COMPLETE
                 self.state = RunnerState.FINALIZE
                 return
 
@@ -338,6 +329,7 @@ class Runner:
                 realized_discrimination_proxy=max(0.0, pre_entropy - post_entropy)
             )
 
+            self.scene_state.iteration += 1
             self.state = RunnerState.ASSESS_CLEANUP
 
         elif self.state == RunnerState.ASSESS_CLEANUP:
@@ -398,8 +390,24 @@ class Runner:
                 
         return new_nodes_count, not_retrieved_nodes_count
 
+    def _execute_initial_plan(self):
+        """Execute the initial Qwen planning round using bootstrap evidence."""
+        planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
+        valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
+        new_entries = self.bank_generator.generate_entries(
+            planner_output,
+            self.scene_state.semantic_memory,
+            self.scene_state.action_bank,
+            self.id_gen,
+            valid_node_ids=valid_node_ids,
+            config=self.config,
+        )
+        self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
+        self.scene_state.qwen_round += 1
+        self.scene_state.actions_since_replan = 0
+
     def _execute_replan(self):
-        """Execute Qwen planning and update action bank."""
+        """Execute Qwen planning for subsequent rounds and update action bank."""
         planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
         valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
         new_entries = self.bank_generator.generate_entries(
@@ -415,6 +423,30 @@ class Runner:
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
         self.scene_state.replans_executed += 1
+
+    def _request_replan(self):
+        """Centralized handler for all non-initial replan triggers."""
+        # Check hard limits
+        limit_reached = False
+        if self.scene_state.replans_executed >= self.config.replanning.max_replans:
+            limit_reached = True
+        elif self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
+            self.scene_state.stop_reason = StopReason.QWEN_BUDGET
+            limit_reached = True
+
+        if limit_reached:
+            # Fallback: check if we have any valid action left
+            best_entry = self._choose_best_action()
+            if best_entry and best_entry.total_utility and best_entry.total_utility >= self.config.stopping.utility_min_threshold:
+                self.state = RunnerState.GLOBAL_SENSING
+            else:
+                self.state = RunnerState.CLEANUP
+            return
+
+        # Budgets okay, build fresh evidence and call Qwen
+        self.evidence_pack = self.replan_evidence_builder.build(self.scene_state, self.image)
+        self._execute_replan()
+        self.state = RunnerState.GLOBAL_SENSING
 
     def _choose_best_action(self):
         """Recompute utility for all unexecuted actions and return the best."""

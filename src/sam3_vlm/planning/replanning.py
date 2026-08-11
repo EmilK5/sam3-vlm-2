@@ -10,9 +10,6 @@ class ReplanningPolicy:
     """Determines when Qwen should be called based on scene state."""
 
     def should_replan(self, state: SceneState, config: V4Config) -> Tuple[bool, Optional[str]]:
-        # 0. Max replans check
-        if state.replans_executed >= config.replanning.max_replans:
-            return False, None
 
         # Cooldown check
         if state.actions_since_replan < config.replanning.min_actions_between_replans:
@@ -71,9 +68,14 @@ class ReplanEvidenceBuilder:
         history_lines = ["=== SEMANTIC HISTORY ==="]
         for key, record in state.semantic_memory.records.items():
             if record.execution_count > 0:
+                avg_ent = sum(record.entropy_change_by_execution) / record.execution_count
+                avg_var = sum(record.variance_change_by_execution) / record.execution_count
+                avg_disc = sum(record.realized_discrimination_proxy_by_execution) / record.execution_count
                 history_lines.append(
-                    f"- key='{key}': execs={record.execution_count}, nodes_found={sum(record.new_nodes_by_execution)}, "
-                    f"avg_utility={sum(record.realized_utility_by_execution)/record.execution_count:.2f}"
+                    f"- group='{key}': execs={record.execution_count}, nodes_found={sum(record.new_nodes_by_execution)}, "
+                    f"affected={sum(record.affected_nodes_by_execution)}, "
+                    f"avg_ent_red={avg_ent:.2f}, avg_var_red={avg_var:.2f}, avg_disc={avg_disc:.2f}, "
+                    f"avg_util={sum(record.realized_utility_by_execution)/record.execution_count:.2f}"
                 )
         
         scene_summary = "\n".join(history_lines) if len(history_lines) > 1 else "No semantic history yet."
