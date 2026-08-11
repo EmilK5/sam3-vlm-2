@@ -70,16 +70,11 @@ class ReplayEngine:
             etype = event["event_type"]
             data = event.get("data", {})
             
-            if etype == EventKind.QWEN_PLAN_STARTED.value:
+            if etype == EventKind.CONTROLLER_STATE_UPDATED.value:
+                state.iteration = data.get("iteration", state.iteration)
                 state.qwen_round = data.get("qwen_round", state.qwen_round)
-                state.iteration += 1
-                
-            elif etype == EventKind.REPLAN_TRIGGERED.value:
-                state.replans_executed += 1
-                state.actions_since_replan = 0
-                
-            elif etype == EventKind.SAM3_ACTION_COMPLETED.value:
-                state.actions_since_replan += 1
+                state.replans_executed = data.get("replans_executed", state.replans_executed)
+                state.actions_since_replan = data.get("actions_since_replan", state.actions_since_replan)
                 
             elif etype == EventKind.BUDGET_UPDATED.value:
                 state.budget.sam3_calls = data.get("sam3_calls", state.budget.sam3_calls)
@@ -148,3 +143,26 @@ class ReplayEngine:
         from sam3_vlm.scene.state import CountEstimator
         state.count_estimate = CountEstimator.estimate(state.graph, state.target_class)
         return state
+
+def canonical_scene_state(state: SceneState) -> dict:
+    """Extract a canonical representation of scientifically relevant SceneState for deep equality testing."""
+    import dataclasses
+    
+    # Sort graph nodes by ID for determinism
+    sorted_node_dicts = [n.to_dict() for n in sorted(state.graph.active_nodes(), key=lambda x: x.node_id)]
+    
+    return {
+        "user_prompt": state.user_prompt,
+        "target_class": state.target_class,
+        "graph_nodes": sorted_node_dicts,
+        "semantic_memory": state.semantic_memory.to_dict(),
+        "discovery_state": dataclasses.asdict(state.discovery_state),
+        "budget": dataclasses.asdict(state.budget),
+        "iteration": state.iteration,
+        "qwen_round": state.qwen_round,
+        "replans_executed": state.replans_executed,
+        "actions_since_replan": state.actions_since_replan,
+        "count_mean": state.count_estimate.mean_count if state.count_estimate else 0.0,
+        "count_variance": state.count_estimate.variance if state.count_estimate else 0.0,
+        "stop_reason": state.stop_reason.value if state.stop_reason else None
+    }

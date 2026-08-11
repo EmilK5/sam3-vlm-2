@@ -25,6 +25,7 @@ class EventKind(str, Enum):
     BELIEF_UPDATE_COMPLETED = "BELIEF_UPDATE_COMPLETED"
     SEMANTIC_MEMORY_UPDATED = "SEMANTIC_MEMORY_UPDATED"
     DISCOVERY_STATE_UPDATED = "DISCOVERY_STATE_UPDATED"
+    CONTROLLER_STATE_UPDATED = "CONTROLLER_STATE_UPDATED"
     BUDGET_UPDATED = "BUDGET_UPDATED"
     STOP_DECIDED = "STOP_DECIDED"
     QWEN_PLAN_STARTED = "QWEN_PLAN_STARTED"
@@ -55,6 +56,7 @@ class RunManifest:
     image_id: Optional[str] = None
     user_prompt: str = ""
     target_class: str = ""
+    v4_config: Dict[str, Any] = field(default_factory=dict)
     experiment_config: Dict[str, Any] = field(default_factory=dict)
     model_identifiers: Dict[str, str] = field(default_factory=dict)
     seed: Optional[int] = None

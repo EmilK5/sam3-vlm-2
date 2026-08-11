@@ -49,8 +49,8 @@ def test_validator_detects_corruptions():
             json.dump({"nodes": {}}, f)
             
         with open(paths.events_jsonl, "w") as f:
-            f.write(json.dumps({"sequence_number": 1, "event_id": "e1", "event_type": "TEST"}) + "\n")
-            f.write(json.dumps({"sequence_number": 2, "event_id": "e2", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
+            f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 1, "event_id": "e1", "event_type": "RUN_STARTED"}) + "\n")
+            f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 2, "event_id": "e2", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
             
         res = validator.validate()
         assert res.valid

@@ -19,7 +19,7 @@ def test_log_size_and_mask_externalization():
     from sam3_vlm.core.types import Detection
     from sam3_vlm.core.geometry import GeometryRef, Box
     
-    dense_mask = np.ones((50, 50), dtype=bool)
+    dense_mask = np.ones((1024, 1024), dtype=bool)
     synth_det = Detection(
         detection_id="det_with_mask",
         geometry=GeometryRef(box=Box(10.0, 10.0, 60.0, 60.0)),
@@ -52,6 +52,10 @@ def test_log_size_and_mask_externalization():
                 
         # Masks should be externalized
         masks_dir = paths.masks_dir
-        if masks_dir.exists():
-            for npz_file in masks_dir.glob("*.npz"):
-                assert npz_file.stat().st_size > 0
+        assert masks_dir.exists(), "Masks directory was not created!"
+        npz_files = list(masks_dir.glob("*.npz"))
+        assert len(npz_files) > 0, "No mask npz files found!"
+        for npz_file in npz_files:
+            assert npz_file.stat().st_size > 0
+            with np.load(npz_file) as data:
+                assert data["mask"].shape == (1024, 1024)

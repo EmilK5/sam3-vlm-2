@@ -129,6 +129,7 @@ class MockSAM3Adapter:
                                 detection_id=det_id,
                                 geometry=s_det.geometry,
                                 score=s_det.score,
+                                raw_metadata=s_det.raw_metadata,
                             )
                         )
             else:

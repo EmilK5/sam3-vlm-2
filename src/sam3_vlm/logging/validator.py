@@ -55,6 +55,11 @@ class RunValidator:
         last_seq = 0
         qwen_events = 0
         
+        last_budget = {
+            "sam3_calls": 0, "sam3_tiles": 0, "cleanup_calls": 0, "qwen_calls": 0, 
+            "model_runtime_ms": 0.0, "total_runtime_ms": 0.0
+        }
+        
         import hashlib
         
         def verify_artifact(art_dict: Dict[str, Any], path_prefix: str) -> bool:
@@ -73,6 +78,22 @@ class RunValidator:
                         h.update(chunk)
                 if h.hexdigest() != art_dict["sha256"]:
                     errors.append(f"Hash mismatch for {path_str}: expected {art_dict['sha256']}, got {h.hexdigest()}")
+                    return False
+            if art_dict.get("artifact_type") == "mask_npz":
+                try:
+                    import numpy as np
+                    with np.load(full_path) as data:
+                        mask = data["mask"]
+                        expected_shape = tuple(art_dict.get("shape", [])) if art_dict.get("shape") else None
+                        expected_dtype = art_dict.get("dtype")
+                        if expected_shape and mask.shape != expected_shape:
+                            errors.append(f"Mask shape mismatch: expected {expected_shape}, got {mask.shape}")
+                            return False
+                        if expected_dtype and str(mask.dtype) != expected_dtype:
+                            errors.append(f"Mask dtype mismatch: expected {expected_dtype}, got {mask.dtype}")
+                            return False
+                except Exception as e:
+                    errors.append(f"Failed to load mask NPZ {path_str}: {e}")
                     return False
             return True
 
@@ -96,7 +117,26 @@ class RunValidator:
                     errors.append(f"Duplicate event_id: {eid}")
                 event_ids.add(eid)
                 
-                if event.get("event_type") == "QWEN_PLAN_COMPLETED":
+                # Check run_id and schema
+                if event.get("run_id") != manifest.get("run_id"):
+                    errors.append(f"Event run_id {event.get('run_id')} does not match manifest run_id {manifest.get('run_id')}")
+                if event.get("schema_version") != "1.0":
+                    errors.append(f"Event invalid schema version: {event.get('schema_version')}")
+                
+                etype = event.get("event_type")
+                from sam3_vlm.logging.schema import EventKind
+                if etype not in EventKind.__members__.values():
+                    errors.append(f"Unknown event type: {etype}")
+                
+                if etype == "BUDGET_UPDATED":
+                    bdata = event.get("data", {})
+                    for k in last_budget.keys():
+                        if k in bdata:
+                            if bdata[k] < last_budget[k]:
+                                errors.append(f"Budget {k} decreased from {last_budget[k]} to {bdata[k]}")
+                            last_budget[k] = bdata[k]
+                            
+                if etype == "QWEN_PLAN_COMPLETED":
                     qwen_events += 1
                     art_dict = event["data"].get("qwen_artifact")
                     if art_dict:
@@ -154,7 +194,8 @@ class RunValidator:
                             "node_id": nid,
                             "sam3_call_id": obs.get("sam3_call_id"),
                             "action_id": obs.get("action_id"),
-                            "detection_id": obs.get("detection_id")
+                            "detection_id": obs.get("detection_id"),
+                            "relation": obs.get("relation")
                         })
                 elif etype == "NODE_UPDATED":
                     nup = data.get("node_update", {})
@@ -164,7 +205,8 @@ class RunValidator:
                             "node_id": nid,
                             "sam3_call_id": obs.get("sam3_call_id"),
                             "action_id": obs.get("action_id"),
-                            "detection_id": obs.get("detection_id")
+                            "detection_id": obs.get("detection_id"),
+                            "relation": obs.get("relation")
                         })
                 elif etype == "STOP_DECIDED":
                     stop_events += 1
@@ -176,12 +218,21 @@ class RunValidator:
             cid = obs["sam3_call_id"]
             aid = obs["action_id"]
             did = obs["detection_id"]
+            rel = obs["relation"]
+            
+            if rel in ("NOT_RETRIEVED", "NOT_OBSERVABLE"):
+                if did is not None:
+                    errors.append(f"Node Observation has detection_id {did} but relation is {rel}")
+            else:
+                if did is None:
+                    errors.append(f"Node Observation is missing detection_id for positive relation {rel}")
+                    
             if cid not in sam3_calls:
                 errors.append(f"Node Observation references unknown sam3_call_id: {cid}")
             elif sam3_calls[cid] != aid:
                 errors.append(f"Observation mismatch: call {cid} belongs to action {sam3_calls[cid]}, but observation claims action {aid}")
             
-            if (cid, did) not in detections:
+            if did is not None and (cid, did) not in detections:
                 errors.append(f"Node Observation references unknown detection {did} for call {cid}")
                 
         if not run_completed:
@@ -203,7 +254,8 @@ class RunValidator:
                 with open(graph_path, "r") as f:
                     oracle_graph_dict = json.load(f)
                     
-                replayed_graph_dict = replayed_state.graph.to_dict()
+                replayed_graph_dict_raw = replayed_state.graph.to_dict()
+                replayed_graph_dict = json.loads(json.dumps(replayed_graph_dict_raw))
                 
                 oracle_nodes = oracle_graph_dict.get("nodes", {})
                 replayed_nodes = replayed_graph_dict.get("nodes", {})
@@ -211,18 +263,57 @@ class RunValidator:
                 if len(oracle_nodes) != len(replayed_nodes):
                     errors.append(f"Replay mismatch: Oracle graph has {len(oracle_nodes)} nodes, replay produced {len(replayed_nodes)}")
                 else:
-                    for nid in oracle_nodes:
+                    for nid, onode in oracle_nodes.items():
                         if nid not in replayed_nodes:
                             errors.append(f"Replay mismatch: Node {nid} in Oracle but not in replay")
+                        elif onode != replayed_nodes[nid]:
+                            errors.append(f"Replay mismatch: Node {nid} state differs between Oracle and replay")
                             
                 # Check hard budgets
                 from sam3_vlm.core.config import V4Config
-                cfg = V4Config().budget
+                
+                # Try to use persisted config, else default
+                cfg_dict = {}
+                try:
+                    with open(self.paths.run_json, "r") as f:
+                        run_man = json.load(f)
+                        cfg_dict = run_man.get("v4_config", {})
+                except Exception:
+                    pass
+                cfg = V4Config(**cfg_dict).budget if cfg_dict else V4Config().budget
+                
                 b = replayed_state.budget
                 if b.sam3_calls > cfg.max_sam3_calls:
                     errors.append(f"Hard limit exceeded: sam3_calls {b.sam3_calls} > {cfg.max_sam3_calls}")
                 if b.sam3_tiles > cfg.max_sam3_tiles:
                     errors.append(f"Hard limit exceeded: sam3_tiles {b.sam3_tiles} > {cfg.max_sam3_tiles}")
+                if b.qwen_calls > cfg.max_qwen_calls:
+                    errors.append(f"Hard limit exceeded: qwen_calls {b.qwen_calls} > {cfg.max_qwen_calls}")
+                if b.cleanup_calls > getattr(cfg, 'max_cleanup_calls', 5):
+                    errors.append(f"Hard limit exceeded: cleanup_calls {b.cleanup_calls} > {getattr(cfg, 'max_cleanup_calls', 5)}")
+                    
+                # Compare replayed state with summary oracle
+                if 'summary' in locals():
+                    s = summary
+                    if s.get("sam3_calls") != b.sam3_calls:
+                        errors.append(f"Summary mismatch: sam3_calls {s.get('sam3_calls')} != replayed {b.sam3_calls}")
+                    if s.get("qwen_calls") != b.qwen_calls:
+                        errors.append(f"Summary mismatch: qwen_calls {s.get('qwen_calls')} != replayed {b.qwen_calls}")
+                    if s.get("sam3_tiles") != b.sam3_tiles:
+                        errors.append(f"Summary mismatch: sam3_tiles {s.get('sam3_tiles')} != replayed {b.sam3_tiles}")
+                    if s.get("cleanup_calls") != b.cleanup_calls:
+                        errors.append(f"Summary mismatch: cleanup_calls {s.get('cleanup_calls')} != replayed {b.cleanup_calls}")
+                    
+                    rep_mean = replayed_state.count_estimate.mean_count if replayed_state.count_estimate else 0.0
+                    rep_var = replayed_state.count_estimate.variance if replayed_state.count_estimate else 0.0
+                    if abs(s.get("final_soft_count", 0.0) - rep_mean) > 1e-4:
+                        errors.append(f"Summary mismatch: count {s.get('final_soft_count')} != replayed {rep_mean}")
+                    if abs(s.get("count_variance", 0.0) - rep_var) > 1e-4:
+                        errors.append(f"Summary mismatch: variance {s.get('count_variance')} != replayed {rep_var}")
+                    
+                    rep_stop = replayed_state.stop_reason.value if replayed_state.stop_reason else None
+                    if s.get("final_stop_reason") != rep_stop:
+                        errors.append(f"Summary mismatch: stop_reason {s.get('final_stop_reason')} != replayed {rep_stop}")
                     
             except Exception as e:
                 errors.append(f"Replay equivalence failed: {e}")

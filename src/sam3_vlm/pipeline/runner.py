@@ -124,6 +124,15 @@ class Runner:
             
         return final_count
 
+    def _record_controller_state(self):
+        if self.recorder and self.scene_state:
+            self.recorder.record_controller_state_updated({
+                "iteration": self.scene_state.iteration,
+                "qwen_round": self.scene_state.qwen_round,
+                "replans_executed": self.scene_state.replans_executed,
+                "actions_since_replan": self.scene_state.actions_since_replan
+            })
+
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
         from sam3_vlm.core.types import SpatialMode
         if action.spatial_mode == SpatialMode.TILED:
@@ -224,6 +233,7 @@ class Runner:
             observation = self.sensor.observe(self.image, action)
             best_entry.executed = True  # Now it's executed
             self.scene_state.actions_since_replan += 1
+            self._record_controller_state()
             
             budget = self.scene_state.budget
             # Update budgets
@@ -238,7 +248,7 @@ class Runner:
                     if "mask" in det.raw_metadata:
                         art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                         det.mask_artifact = art_ref["relative_path"]
-                        mask_artifacts.append(art_ref["relative_path"])
+                        mask_artifacts.append(art_ref)
                 
                 # Save comprehensive detection metadata
                 compact_detections = []
@@ -342,6 +352,7 @@ class Runner:
             
             # 13. Evaluate replanning triggers & 14. Global stopping
             self.scene_state.iteration += 1
+            self._record_controller_state()
             
             self.state = RunnerState.ASSESS
                 
@@ -424,10 +435,10 @@ class Runner:
             self.scene_state.actions_since_replan += 1
             self.scene_state.budget.sam3_calls += 1
             self.scene_state.budget.cleanup_calls += 1
-            self.scene_state.budget.qwen_calls += 1
             self.scene_state.budget.sam3_tiles += predicted_tiles
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
+            self._record_controller_state()
             
             if self.recorder:
                 mask_artifacts = []
@@ -436,7 +447,7 @@ class Runner:
                     if "mask" in det.raw_metadata:
                         art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                         det.mask_artifact = art_ref["relative_path"]
-                        mask_artifacts.append(art_ref["relative_path"])
+                        mask_artifacts.append(art_ref)
                         
                     box = det.geometry.bbox()
                     compact_detections.append({
@@ -508,6 +519,7 @@ class Runner:
                 self.recorder.record_discovery_state_updated(dataclasses.asdict(self.scene_state.discovery_state))
 
             self.scene_state.iteration += 1
+            self._record_controller_state()
             self.state = RunnerState.ASSESS_CLEANUP
 
         elif self.state == RunnerState.ASSESS_CLEANUP:
@@ -638,6 +650,10 @@ class Runner:
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
+        self._record_controller_state()
+        
+        if self.recorder:
+            self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
 
     def _execute_replan(self):
         """Execute Qwen planning for subsequent rounds and update action bank."""
@@ -683,6 +699,10 @@ class Runner:
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
         self.scene_state.replans_executed += 1
+        self._record_controller_state()
+        
+        if self.recorder:
+            self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
 
     def _request_replan(self):
         """Centralized handler for all non-initial replan triggers."""

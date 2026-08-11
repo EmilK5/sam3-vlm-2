@@ -112,7 +112,7 @@ class BootstrapPipeline:
                 if "mask" in det.raw_metadata:
                     art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                     det.mask_artifact = art_ref["relative_path"]
-                    mask_artifacts.append(art_ref["relative_path"])
+                    mask_artifacts.append(art_ref)
                     
                 box = det.geometry.bbox()
                 compact_detections.append({
@@ -135,6 +135,9 @@ class BootstrapPipeline:
                 }
             )
         semantic_memory.record_execution(global_action, obs_global.call_id)
+        if self.recorder:
+            self.recorder.record_semantic_memory_updated(semantic_memory.to_dict())
+            
         state.budget.sam3_calls += 1
         state.budget.total_runtime_ms += obs_global.runtime_ms
         if self.recorder:
@@ -215,7 +218,7 @@ class BootstrapPipeline:
                     if "mask" in det.raw_metadata:
                         art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
                         det.mask_artifact = art_ref["relative_path"]
-                        mask_artifacts.append(art_ref["relative_path"])
+                        mask_artifacts.append(art_ref)
                     
                     box = det.geometry.bbox()
                     compact_detections.append({
@@ -239,6 +242,9 @@ class BootstrapPipeline:
                 )
             
             semantic_memory.record_execution(tiled_action, obs_tiled.call_id)
+            if self.recorder:
+                self.recorder.record_semantic_memory_updated(semantic_memory.to_dict())
+                
             state.budget.sam3_calls += 1
             state.budget.sam3_tiles += len(tiling_decision.tiles)
             state.budget.total_runtime_ms += obs_tiled.runtime_ms
@@ -279,6 +285,10 @@ class BootstrapPipeline:
                     self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
 
             discovery_state.tiled_bootstrap_gain = float(len(assoc_tiled.new_nodes))
+        
+        if self.recorder:
+            self.recorder.record_discovery_state_updated(discovery_state.to_dict())
+            self.recorder.record_budget_updated(state.budget.__dict__)
 
         # Stage 3: Contact-Sheet & Qwen Evidence Pack Assembly (Spec §5.3 / §6.1)
         contact_sheet = ContactSheetBuilder().build_contact_sheet(

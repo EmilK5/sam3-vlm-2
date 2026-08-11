@@ -229,6 +229,10 @@ class RunRecorder:
         from sam3_vlm.logging.schema import EventKind
         self.record_event(EventKind.DISCOVERY_STATE_UPDATED.value, discovery_dict)
 
+    def record_controller_state_updated(self, state_dict: Dict[str, Any]):
+        from sam3_vlm.logging.schema import EventKind
+        self.record_event(EventKind.CONTROLLER_STATE_UPDATED.value, state_dict)
+
     def record_budget_updated(self, budget_dict: Dict[str, Any]):
         from sam3_vlm.logging.schema import EventKind
         self.record_event(EventKind.BUDGET_UPDATED.value, budget_dict)
@@ -262,10 +266,6 @@ class RunRecorder:
     def record_run_completed(self):
         from sam3_vlm.logging.schema import EventKind
         self.record_event(EventKind.RUN_COMPLETED.value, {})
-        
-    def record_run_failed(self, error_message: str):
-        from sam3_vlm.logging.schema import EventKind
-        self.record_event(EventKind.RUN_FAILED.value, {"error": error_message})
         
     def finalize_success(self, summary: RunSummary, final_graph_dict: Dict):
         """Failure-safe finalization of a successful run."""

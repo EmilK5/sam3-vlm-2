@@ -30,6 +30,17 @@ class DiscoveryState:
     plateau_score: float = 0.0
     unresolved_regions: List[Geometry] = field(default_factory=list)
     qwen_missing_modes: List[str] = field(default_factory=list)
+    
+    def to_dict(self) -> dict:
+        import dataclasses
+        d = dataclasses.asdict(self)
+        # Handle custom serialization for unresolved_regions if they are Geometry objects
+        # asdict usually handles nested dataclasses automatically.
+        if "unresolved_regions" in d and hasattr(self, "unresolved_regions") and self.unresolved_regions:
+            # If Geometry has a to_dict, use it, else asdict is fine.
+            if hasattr(self.unresolved_regions[0], 'to_dict'):
+                d["unresolved_regions"] = [geom.to_dict() for geom in self.unresolved_regions]
+        return d
 
 
 @dataclass

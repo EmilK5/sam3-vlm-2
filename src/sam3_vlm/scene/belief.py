@@ -38,6 +38,14 @@ class SemanticMemory:
     """Persistent history of semantic keys and queries tested."""
 
     records: Dict[str, SemanticRecord] = field(default_factory=dict)
+    
+    def to_dict(self) -> dict:
+        import dataclasses
+        return {
+            "records": {
+                k: dataclasses.asdict(v) for k, v in self.records.items()
+            }
+        }
 
     def record_execution(
         self, 

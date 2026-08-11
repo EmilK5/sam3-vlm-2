@@ -43,11 +43,11 @@ def test_replay_engine():
         assert replayed_state.stop_reason == orig_state.stop_reason
         
         # Graphs should match
-        orig_nodes = {n.node_id: n for n in orig_state.graph.active_nodes()}
-        replayed_nodes = {n.node_id: n for n in replayed_state.graph.active_nodes()}
+        orig_nodes = orig_state.graph.to_dict()["nodes"]
+        replayed_nodes = replayed_state.graph.to_dict()["nodes"]
         
         assert len(orig_nodes) == len(replayed_nodes)
         for nid in orig_nodes:
             assert nid in replayed_nodes
-            # belief probabilities should match
-            assert orig_nodes[nid].class_belief.probabilities == replayed_nodes[nid].class_belief.probabilities
+            # Deep equality
+            assert orig_nodes[nid] == replayed_nodes[nid]
