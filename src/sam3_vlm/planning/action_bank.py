@@ -119,11 +119,11 @@ class ActionBankGenerator:
         # Track historical utility per correlation group
         group_avg_utilities = {}
 
-        for mem_key, record in semantic_memory.records.items():
-            ckey = canonicalize_semantic_key(mem_key)
-            existing_keys.add(ckey)
-            group = derive_correlation_group(mem_key, " ".join(record.prompts))
+        for group, record in semantic_memory.records.items():
             existing_correlation_groups.add(group)
+            for key in record.semantic_keys:
+                ckey = canonicalize_semantic_key(key)
+                existing_keys.add(ckey)
             for prompt in record.prompts:
                 existing_prompts.add(prompt.strip().lower())
                 

@@ -90,6 +90,26 @@ class Runner:
             
         return self._compute_final_count()
 
+    def _check_hard_budgets(self, predicted_tiles: int = 0) -> Optional[StopReason]:
+        """Check all global hard budgets and return a StopReason if any are exhausted."""
+        budget = self.scene_state.budget
+        cfg_budget = self.config.budget
+        
+        # Max iterations is supreme
+        if self.scene_state.iteration >= self.config.stopping.max_iterations:
+            return StopReason.MAX_ITERATIONS
+            
+        if cfg_budget.max_runtime_seconds and (budget.total_runtime_ms / 1000.0) >= cfg_budget.max_runtime_seconds:
+            return StopReason.RUNTIME_BUDGET
+            
+        if budget.sam3_calls >= cfg_budget.max_sam3_calls:
+            return StopReason.SAM3_BUDGET
+            
+        if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
+            return StopReason.TILE_BUDGET
+            
+        return None
+
     def _step(self):
         """Execute one transition of the state machine."""
         if self.state == RunnerState.INITIALIZE:
@@ -112,6 +132,7 @@ class Runner:
             self.state = RunnerState.PLAN
             
         elif self.state == RunnerState.PLAN:
+            self.evidence_pack = self.replan_evidence_builder.build(self.scene_state, self.image)
             self._execute_replan()
             self.state = RunnerState.GLOBAL_SENSING
             
@@ -124,30 +145,24 @@ class Runner:
                 return
                 
             # 3. Validate budget BEFORE execution
-            budget = self.scene_state.budget
-            cfg_budget = self.config.budget
-            if budget.sam3_calls >= cfg_budget.max_sam3_calls:
-                self.state = RunnerState.CLEANUP_DECISION
-                return
-            if cfg_budget.max_runtime_seconds and budget.total_runtime_ms / 1000.0 >= cfg_budget.max_runtime_seconds:
-                self.state = RunnerState.CLEANUP_DECISION
-                return
-                
-            action = best_entry.action
             from sam3_vlm.core.types import SpatialMode, ActionFamily
-            
-            # Predict tiles if tiled (approx for budget check)
+            action = best_entry.action
             predicted_tiles = 1
             if action.spatial_mode == SpatialMode.TILED and action.tiling:
                 predicted_tiles = action.tiling.grid_rows * action.tiling.grid_cols
-                if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
-                    best_entry.invalid_reason = "Budget Exceeded"
-                    return # skip this action because it exceeds tile budget
-                    
+                
+            stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
+            if stop_reason:
+                self.scene_state.stop_reason = stop_reason
+                self.state = RunnerState.CLEANUP
+                return
+                
             # 4. Execute SAM3 once
             observation = self.sensor.observe(self.image, action)
             best_entry.executed = True  # Now it's executed
+            self.scene_state.actions_since_replan += 1
             
+            budget = self.scene_state.budget
             # Update budgets
             budget.sam3_calls += 1
             if action.spatial_mode == SpatialMode.TILED:
@@ -179,61 +194,9 @@ class Runner:
                     config=self.config.association
                 )
                 
-                new_nodes_count = len(assoc_result.new_nodes)
-                
-                # Scene-wide projection (M4/M5 interface)
-                # First, collect matched node IDs and new node IDs
-                matched_node_ids = {nid for nid, _ in assoc_result.matched_observations}
-                new_node_ids = {n.node_id for n in assoc_result.new_nodes}
-                
-                for node_id, obs_ref in assoc_result.matched_observations:
-                    node = self.scene_state.graph.get_node(node_id)
-                    if node:
-                        self.belief_updater.update_node_belief(
-                            node, action, obs_ref, target_class=self.target_class
-                        )
-                for new_node in assoc_result.new_nodes:
-                    self.belief_updater.update_node_belief(
-                        new_node, action, new_node.observations[-1], target_class=self.target_class
-                    )
-                    
-                # Project absences for unmatched active nodes
-                from sam3_vlm.core.types import ObservationRelation, NodeObservationRef
-                not_retrieved_nodes_count = 0
-                for node in self.scene_state.graph.active_nodes():
-                    if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
-                        # Determine if node was within search ROI. 
-                        # Use SAM3Observation.searched_regions for precise observability.
-                        relation = ObservationRelation.NOT_OBSERVABLE
-                        
-                        # If the node's center or bounding box intersects any searched region, it was retrievable
-                        if observation.searched_regions:
-                            node_box = node.geometry.bbox()
-                            for region in observation.searched_regions:
-                                if region.bbox().iou(node_box) > 0.0 or region.bbox().intersection(node_box) > 0.0:
-                                    relation = ObservationRelation.NOT_RETRIEVED
-                                    not_retrieved_nodes_count += 1
-                                    break
-                        else:
-                            # Fallback for old tests that don't populate searched_regions
-                            if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
-                                relation = ObservationRelation.NOT_RETRIEVED
-                                not_retrieved_nodes_count += 1
-                            
-                        # Append observation
-                        obs_ref = NodeObservationRef(
-                            observation_id=self.id_gen.next_observation_id(),
-                            sam3_call_id=observation.call_id,
-                            action_id=action.action_id,
-                            semantic_key=action.semantic_key,
-                            correlation_group=action.correlation_group,
-                            relation=relation,
-                            score=0.0
-                        )
-                        node.observations.append(obs_ref)
-                        self.belief_updater.update_node_belief(
-                            node, action, obs_ref, target_class=self.target_class
-                        )
+                new_nodes_count, not_retrieved_nodes_count = self._project_observations(
+                    action, observation, assoc_result
+                )
 
             # Recompute soft count and variance
             self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
@@ -244,9 +207,11 @@ class Runner:
             discrimination_proxy = max(0.0, pre_entropy - post_entropy)
                     
             # 10. Update semantic memory
-            affected = len(matched_node_ids) + len(new_node_ids)
-            if action.family != ActionFamily.CONTEXT:
-                affected += not_retrieved_nodes_count
+            affected = 0
+            if action.family == ActionFamily.CONTEXT:
+                affected = 0
+            else:
+                affected = len(assoc_result.matched_observations) + len(assoc_result.new_nodes) + not_retrieved_nodes_count
 
             self.scene_state.semantic_memory.record_execution(
                 action=action, 
@@ -261,7 +226,8 @@ class Runner:
             )
             
             # 11. Update discovery state
-            self.scene_state.discovery_state.recent_new_node_counts.append(float(new_nodes_count))
+            if action.family == ActionFamily.DISCOVERY:
+                self.scene_state.discovery_state.recent_new_node_counts.append(float(new_nodes_count))
             if new_nodes_count > 0 and action.family != ActionFamily.CONTEXT: # skip context for recent_new_nodes
                 self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
             
@@ -314,15 +280,23 @@ class Runner:
                 self.state = RunnerState.FINALIZE
                 return
 
-            cleanup_action = self.cleanup_controller.generate_cleanup_action(residual_nodes, self.config)
+            cleanup_action = self.cleanup_controller.generate_cleanup_action(residual_nodes, self.scene_state.graph, self.target_class, self.config)
             if not cleanup_action:
                 self.state = RunnerState.FINALIZE
                 return
 
-            # Execute cleanup
             from sam3_vlm.core.types import SpatialMode
             
+            predicted_tiles = 1 if cleanup_action.spatial_mode == SpatialMode.TILED else 0
+            stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
+            if stop_reason:
+                self.scene_state.stop_reason = stop_reason
+                self.state = RunnerState.FINALIZE
+                return
+
+            # Execute cleanup
             observation = self.sensor.observe(self.image, cleanup_action)
+            self.scene_state.actions_since_replan += 1
             self.scene_state.budget.sam3_calls += 1
             self.scene_state.budget.cleanup_calls += 1
             if cleanup_action.spatial_mode == SpatialMode.TILED:
@@ -341,14 +315,29 @@ class Runner:
                 config=self.config.association
             )
 
-            for node_id, obs_ref in assoc_result.matched_observations:
-                node = self.scene_state.graph.get_node(node_id)
-                if node:
-                    self.belief_updater.update_node_belief(node, cleanup_action, obs_ref, target_class=self.target_class)
-            for new_node in assoc_result.new_nodes:
-                self.belief_updater.update_node_belief(new_node, cleanup_action, new_node.observations[-1], target_class=self.target_class)
+            new_nodes_count, not_retrieved_nodes_count = self._project_observations(
+                cleanup_action, observation, assoc_result
+            )
 
+            # Compute stats
+            pre_count = self.scene_state.count_estimate
+            pre_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
+            
             self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
+            
+            self.scene_state.semantic_memory.record_execution(
+                action=cleanup_action,
+                sam3_call_id=observation.call_id,
+                new_nodes=new_nodes_count,
+                runtime_ms=observation.runtime_ms,
+                predicted_utility=0.0,
+                affected_nodes=len(assoc_result.matched_observations) + new_nodes_count + not_retrieved_nodes_count,
+                entropy_change=post_entropy - pre_entropy,
+                variance_change=self.scene_state.count_estimate.variance - pre_count.variance,
+                realized_discrimination_proxy=max(0.0, pre_entropy - post_entropy)
+            )
+
             self.state = RunnerState.ASSESS_CLEANUP
 
         elif self.state == RunnerState.ASSESS_CLEANUP:
@@ -357,6 +346,57 @@ class Runner:
             
         elif self.state == RunnerState.FINALIZE:
             self.state = RunnerState.DONE
+
+    def _project_observations(self, action, observation, assoc_result) -> tuple[int, int]:
+        """Project observations to the graph and update beliefs (M4/M5 interface)."""
+        new_nodes_count = len(assoc_result.new_nodes)
+        matched_node_ids = {nid for nid, _ in assoc_result.matched_observations}
+        new_node_ids = {n.node_id for n in assoc_result.new_nodes}
+        
+        for node_id, obs_ref in assoc_result.matched_observations:
+            node = self.scene_state.graph.get_node(node_id)
+            if node:
+                self.belief_updater.update_node_belief(
+                    node, action, obs_ref, target_class=self.target_class
+                )
+        for new_node in assoc_result.new_nodes:
+            self.belief_updater.update_node_belief(
+                new_node, action, new_node.observations[-1], target_class=self.target_class
+            )
+            
+        from sam3_vlm.core.types import ObservationRelation, NodeObservationRef, SpatialMode
+        not_retrieved_nodes_count = 0
+        for node in self.scene_state.graph.active_nodes():
+            if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
+                relation = ObservationRelation.NOT_OBSERVABLE
+                
+                if observation.searched_regions:
+                    node_box = node.geometry.bbox()
+                    for region in observation.searched_regions:
+                        if region.bbox().iou(node_box) > 0.0 or region.bbox().intersection(node_box) > 0.0:
+                            relation = ObservationRelation.NOT_RETRIEVED
+                            not_retrieved_nodes_count += 1
+                            break
+                else:
+                    if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
+                        relation = ObservationRelation.NOT_RETRIEVED
+                        not_retrieved_nodes_count += 1
+                    
+                obs_ref = NodeObservationRef(
+                    observation_id=self.id_gen.next_observation_id(),
+                    sam3_call_id=observation.call_id,
+                    action_id=action.action_id,
+                    semantic_key=action.semantic_key,
+                    correlation_group=action.correlation_group,
+                    relation=relation,
+                    score=0.0
+                )
+                node.observations.append(obs_ref)
+                self.belief_updater.update_node_belief(
+                    node, action, obs_ref, target_class=self.target_class
+                )
+                
+        return new_nodes_count, not_retrieved_nodes_count
 
     def _execute_replan(self):
         """Execute Qwen planning and update action bank."""
@@ -372,8 +412,9 @@ class Runner:
         )
         # Purge stale unexecuted actions based on min_utility
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
-        
         self.scene_state.qwen_round += 1
+        self.scene_state.actions_since_replan = 0
+        self.scene_state.replans_executed += 1
 
     def _choose_best_action(self):
         """Recompute utility for all unexecuted actions and return the best."""

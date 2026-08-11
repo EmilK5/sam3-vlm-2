@@ -141,12 +141,12 @@ def test_m6_cleanup_controller_batching():
     residuals = cleanup_controller.select_residual_nodes(graph, config, "target")
     assert len(residuals) == 2
     
-    action = cleanup_controller.generate_cleanup_action(residuals, config)
+    action = cleanup_controller.generate_cleanup_action(residuals, graph, "target", config)
     assert action is not None
     assert action.spatial_mode == SpatialMode.ROI_BATCH
     assert action.roi.x1 == 10
     assert action.roi.y2 == 40
-    assert len(action.positive_exemplar_ids) == 2
+    assert len(action.positive_exemplar_ids) == 0
 
 
 def test_m6_f_empirical_history_overrides_qwen():

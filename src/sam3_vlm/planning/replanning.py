@@ -10,8 +10,12 @@ class ReplanningPolicy:
     """Determines when Qwen should be called based on scene state."""
 
     def should_replan(self, state: SceneState, config: V4Config) -> Tuple[bool, Optional[str]]:
+        # 0. Max replans check
+        if state.replans_executed >= config.replanning.max_replans:
+            return False, None
+
         # Cooldown check
-        if state.iteration < config.replanning.min_actions_between_replans:
+        if state.actions_since_replan < config.replanning.min_actions_between_replans:
             if state.action_bank and list(state.action_bank.unexecuted_entries()):
                 # Give the current bank a chance unless it's exhausted
                 return False, None
@@ -79,7 +83,7 @@ class ReplanEvidenceBuilder:
             user_prompt=state.user_prompt,
             target_class=state.target_class,
             contact_sheet=contact_sheet,
-            image_path=None,  # typically managed elsewhere or populated by caller
+            image_path=state.image_path,
             scene_summary=scene_summary,
             discovery_diagnostics={
                 "recent_new_nodes_count": len(state.discovery_state.recent_new_nodes),

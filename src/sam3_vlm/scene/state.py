@@ -67,6 +67,7 @@ class SceneState:
     target_class: str
     graph: SceneGraph
     semantic_memory: SemanticMemory
+    image_path: Optional[str] = None
     discovery_state: DiscoveryState = field(default_factory=DiscoveryState)
     count_estimate: CountEstimate = field(default_factory=CountEstimate)
     action_bank: Optional["ActionBank"] = None
@@ -74,4 +75,6 @@ class SceneState:
     iteration: int = 0
     qwen_round: int = 0
     stop_reason: Optional[StopReason] = None
+    actions_since_replan: int = 0
+    replans_executed: int = 0
 

@@ -18,7 +18,8 @@ from sam3_vlm.sensing.action import SensingAction
 class SemanticRecord:
     """Tracking structure for attempted semantic experiments (V4 Design Spec §3.5)."""
 
-    semantic_key: str
+    correlation_group: str
+    semantic_keys: List[str] = field(default_factory=list)
     prompts: List[str] = field(default_factory=list)
     family: ActionFamily = ActionFamily.DISCOVERY
     execution_count: int = 0
@@ -50,12 +51,19 @@ class SemanticMemory:
         variance_change: float = 0.0,
         realized_discrimination_proxy: float = 0.0,
     ) -> SemanticRecord:
-        if action.semantic_key not in self.records:
-            self.records[action.semantic_key] = SemanticRecord(
-                semantic_key=action.semantic_key,
+        
+        group = action.correlation_group or action.semantic_key
+        
+        if group not in self.records:
+            self.records[group] = SemanticRecord(
+                correlation_group=group,
                 family=action.family,
             )
-        rec = self.records[action.semantic_key]
+        rec = self.records[group]
+        
+        if action.semantic_key not in rec.semantic_keys:
+            rec.semantic_keys.append(action.semantic_key)
+            
         if action.prompt not in rec.prompts:
             rec.prompts.append(action.prompt)
         rec.execution_count += 1

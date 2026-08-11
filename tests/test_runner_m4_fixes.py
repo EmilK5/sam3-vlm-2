@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from sam3_vlm.core.config import V4Config, BudgetConfig, StoppingConfig, ActionSelectionConfig, ReplanningConfig
-from sam3_vlm.core.types import ActionFamily, SpatialMode
+from sam3_vlm.core.types import ActionFamily, SpatialMode, StopReason
 from sam3_vlm.pipeline.runner import Runner, RunnerState
 from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.planning.action_bank import ActionBankEntry
@@ -197,15 +197,16 @@ def test_runner_budgets_enforced():
     runner.scene_state.action_bank.entries.append(entry2)
     
     runner._step() # Executes ASSESS -> GLOBAL_SENSING
-    runner._step() # Executes GLOBAL_SENSING -> ASSESS (skips execution due to budget)
+    runner._step() # Executes GLOBAL_SENSING -> FINALIZE (due to budget stop reason)
     
-    # Action should NOT be executed, but invalid
+    # Action should NOT be executed, and state should be FINALIZE
     assert not entry2.executed
-    assert entry2.invalid_reason is not None
+    assert runner.scene_state.stop_reason == StopReason.TILE_BUDGET
+    assert runner.state == RunnerState.CLEANUP
     
-    # Try another loop step, it should execute ASSESS -> CLEANUP_DECISION or FINALIZE or REPLAN
+    # Try another loop step, it should execute CLEANUP -> ASSESS_CLEANUP or FINALIZE
     runner._step()
-    assert runner.state in (RunnerState.REPLAN, RunnerState.CLEANUP, RunnerState.PLAN)
+    assert runner.state in (RunnerState.ASSESS_CLEANUP, RunnerState.FINALIZE)
 
 
 def test_runner_context_action_nodes():

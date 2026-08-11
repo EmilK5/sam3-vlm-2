@@ -35,38 +35,70 @@ class CleanupController:
         # Take the top N
         return [x[0] for x in ambiguous[:config.cleanup.cleanup_residual_max_nodes]]
 
-    def generate_cleanup_action(self, residual_nodes: List[Node], config: V4Config) -> Optional[SensingAction]:
+    def _select_trusted_exemplars(self, graph: SceneGraph, target_class: str, residual_nodes: List[Node]) -> tuple[str, ...]:
+        """Select trusted positive exemplars from already-resolved nodes outside the residual set."""
+        trusted = []
+        residual_ids = {n.node_id for n in residual_nodes}
+        for node in graph.active_nodes():
+            if node.node_id in residual_ids:
+                continue
+            
+            p = node.class_belief.probabilities.get(target_class, 0.0)
+            entropy = node.class_belief.entropy
+            
+            # Trusted if high probability and low entropy
+            if p > 0.8 and entropy < 0.2:
+                trusted.append(node.node_id)
+                
+        return tuple(trusted)
+
+    def generate_cleanup_action(self, residual_nodes: List[Node], graph: SceneGraph, target_class: str, config: V4Config) -> Optional[SensingAction]:
         """Generate a batched or local cleanup action for the residual nodes."""
         if not residual_nodes:
             return None
 
-        # Prioritize batched if more than 1 node, otherwise LOCAL
-        if len(residual_nodes) > 1:
+        # Partition residual nodes spatially into batches of max roi_batch_size
+        # Sort by X coordinate for simple spatial grouping
+        residual_nodes_sorted = sorted(residual_nodes, key=lambda n: n.geometry.bbox().x1)
+        batch = residual_nodes_sorted[:config.cleanup.roi_batch_size]
+
+        # Calculate utility of this batch
+        total_variance = sum(
+            n.class_belief.probabilities.get(target_class, 0.0) * (1.0 - n.class_belief.probabilities.get(target_class, 0.0))
+            for n in batch
+        )
+        total_entropy = sum(n.class_belief.entropy for n in batch)
+        
+        utility = (total_variance + total_entropy) / (len(batch) + 1)
+        if utility < config.cleanup.cleanup_min_utility:
+            return None
+
+        # Determine spatial mode based on batch size
+        if len(batch) > 1:
             mode = SpatialMode.ROI_BATCH
-            # Create a bounding box covering all residual nodes
-            min_x = min(n.geometry.bbox().x1 for n in residual_nodes)
-            min_y = min(n.geometry.bbox().y1 for n in residual_nodes)
-            max_x = max(n.geometry.bbox().x2 for n in residual_nodes)
-            max_y = max(n.geometry.bbox().y2 for n in residual_nodes)
+            min_x = min(n.geometry.bbox().x1 for n in batch)
+            min_y = min(n.geometry.bbox().y1 for n in batch)
+            max_x = max(n.geometry.bbox().x2 for n in batch)
+            max_y = max(n.geometry.bbox().y2 for n in batch)
             roi = Box(x1=min_x, y1=min_y, x2=max_x, y2=max_y)
-            # Use positive_exemplar_ids to pass the individual nodes being checked for batched
-            exemplars = tuple(n.node_id for n in residual_nodes)
         else:
             mode = SpatialMode.LOCAL
-            roi = residual_nodes[0].geometry.bbox()
-            exemplars = (residual_nodes[0].node_id,)
+            roi = batch[0].geometry.bbox()
 
-        # In a real implementation, Qwen might propose the semantic key for the residual.
-        # For M6 infrastructure, we generate a generic verification action.
+        trusted_exemplars = self._select_trusted_exemplars(graph, target_class, batch)
+
+        # Dataset-independent cleanup prior
+        semantic_prior = {target_class: 0.9}
+
         return SensingAction(
             action_id=self.id_gen.next_action_id(),
-            semantic_key="cleanup_verification",
-            prompt="verify target objects",
+            semantic_key=f"cleanup_{target_class}",
+            prompt=f"verify {target_class}",
             family=ActionFamily.VERIFICATION,
             spatial_mode=mode,
             source=ActionSource.CLEANUP,
             roi=roi,
-            positive_exemplar_ids=exemplars,
+            positive_exemplar_ids=trusted_exemplars,
             qwen_priority=1.0,
-            semantic_prior={"target": 0.8, "leaf": 0.2} # Generic prior
+            semantic_prior=semantic_prior
         )
