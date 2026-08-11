@@ -79,6 +79,9 @@ class RunValidator:
                 if h.hexdigest() != art_dict["sha256"]:
                     errors.append(f"Hash mismatch for {path_str}: expected {art_dict['sha256']}, got {h.hexdigest()}")
                     return False
+            if "size_bytes" in art_dict and full_path.stat().st_size != art_dict["size_bytes"]:
+                errors.append(f"Size mismatch for {path_str}: expected {art_dict['size_bytes']}, got {full_path.stat().st_size}")
+                return False
             if art_dict.get("artifact_type") == "mask_npz":
                 try:
                     import numpy as np
@@ -162,7 +165,10 @@ class RunValidator:
         node_observations = [] # list of dicts
         nodes_created_by = {}
         stop_events = 0
-        run_completed = False
+        run_started_events = 0
+        run_completed_events = 0
+        run_failed_events = 0
+        final_count_events = 0
         
         with open(self.paths.events_jsonl, "r") as f:
             for line in f:
@@ -171,11 +177,16 @@ class RunValidator:
                 etype = event.get("event_type")
                 data = event.get("data", {})
                 
-                if etype == "SAM3_ACTION_SELECTED":
+                if etype == "RUN_STARTED":
+                    run_started_events += 1
+                elif etype == "SAM3_ACTION_SELECTED":
                     actions.add(data["action_id"])
                 elif etype == "SAM3_ACTION_COMPLETED":
                     call_id = data["sam3_call_id"]
-                    sam3_calls[call_id] = data["action_id"]
+                    aid = data["action_id"]
+                    if aid not in actions:
+                        errors.append(f"SAM3 call {call_id} references unknown action {aid}")
+                    sam3_calls[call_id] = aid
                     obs = data.get("observation", {})
                     if "detections" in obs:
                         for d in obs["detections"]:
@@ -200,6 +211,8 @@ class RunValidator:
                 elif etype == "NODE_UPDATED":
                     nup = data.get("node_update", {})
                     nid = nup.get("node_id")
+                    if nid not in nodes_created_by:
+                        errors.append(f"NODE_UPDATED references node {nid} which was not previously created.")
                     for obs in nup.get("observations", []):
                         node_observations.append({
                             "node_id": nid,
@@ -210,8 +223,12 @@ class RunValidator:
                         })
                 elif etype == "STOP_DECIDED":
                     stop_events += 1
+                elif etype == "FINAL_COUNT":
+                    final_count_events += 1
                 elif etype == "RUN_COMPLETED":
-                    run_completed = True
+                    run_completed_events += 1
+                elif etype == "RUN_FAILED":
+                    run_failed_events += 1
                     
         # Check integrity
         for obs in node_observations:
@@ -235,10 +252,14 @@ class RunValidator:
             if did is not None and (cid, did) not in detections:
                 errors.append(f"Node Observation references unknown detection {did} for call {cid}")
                 
-        if not run_completed:
-            errors.append("RUN_COMPLETED event is missing (strict boundary validation failed).")
-        if stop_events == 0:
-            warnings.append("No STOP_DECIDED event recorded.")
+        if run_started_events != 1:
+            errors.append(f"Expected exactly 1 RUN_STARTED event, got {run_started_events}")
+        if run_completed_events != 1 and run_failed_events == 0:
+            errors.append(f"Expected exactly 1 RUN_COMPLETED event, got {run_completed_events}")
+        if final_count_events != 1 and run_failed_events == 0:
+            errors.append(f"Expected exactly 1 FINAL_COUNT event, got {final_count_events}")
+        if stop_events == 0 and run_failed_events == 0:
+            errors.append("No STOP_DECIDED event recorded.")
             
         # 3. Check final graph
         graph_path = self.paths.base_dir / "artifacts" / "graph" / "final_graph.json"
@@ -280,7 +301,10 @@ class RunValidator:
                         cfg_dict = run_man.get("v4_config", {})
                 except Exception:
                     pass
-                cfg = V4Config(**cfg_dict).budget if cfg_dict else V4Config().budget
+                
+                cfg = V4Config().budget
+                if cfg_dict and "budget" in cfg_dict:
+                    cfg.__dict__.update(cfg_dict["budget"])
                 
                 b = replayed_state.budget
                 if b.sam3_calls > cfg.max_sam3_calls:

@@ -59,7 +59,7 @@ class ReplayEngine:
         from sam3_vlm.logging.schema import EventKind
         state = SceneState(
             image_id=self.manifest.image_id,
-            user_prompt="<replay>",
+            user_prompt=self.manifest.user_prompt or "<replay>",
             target_class=self.manifest.target_class,
             graph=SceneGraph(),
             semantic_memory=SemanticMemory(),

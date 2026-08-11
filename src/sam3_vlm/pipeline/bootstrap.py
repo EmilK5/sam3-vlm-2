@@ -162,6 +162,15 @@ class BootstrapPipeline:
                 self.belief_updater.update_node_belief(
                     node, global_action, obs_ref, target_class=target_class, confounder_class=confounder_class
                 )
+                if self.recorder:
+                    prov = {
+                        "action_id": global_action.action_id,
+                        "sam3_call_id": obs_global.call_id,
+                        "detection_id": obs_ref.detection_id,
+                        "observation_id": obs_ref.observation_id,
+                        "semantic_key": global_action.semantic_key
+                    }
+                    self.recorder.record_node_updated(node.node_id, {"node_id": node.node_id, **node.to_dict(), "provenance": prov})
 
         for new_node in assoc_global.new_nodes:
             self.belief_updater.update_node_belief(
@@ -269,6 +278,15 @@ class BootstrapPipeline:
                     self.belief_updater.update_node_belief(
                         node, tiled_action, obs_ref, target_class=target_class, confounder_class=confounder_class
                     )
+                    if self.recorder:
+                        prov = {
+                            "action_id": tiled_action.action_id,
+                            "sam3_call_id": obs_tiled.call_id,
+                            "detection_id": obs_ref.detection_id,
+                            "observation_id": obs_ref.observation_id,
+                            "semantic_key": tiled_action.semantic_key
+                        }
+                        self.recorder.record_node_updated(node.node_id, {"node_id": node.node_id, **node.to_dict(), "provenance": prov})
 
             for new_node in assoc_tiled.new_nodes:
                 self.belief_updater.update_node_belief(

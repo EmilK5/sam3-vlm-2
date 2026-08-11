@@ -39,7 +39,10 @@ def test_m7_2_acceptance():
         recorder = RunRecorder(paths, manifest)
         
         runner = Runner(config, sensor, planner, recorder=recorder)
-        runner.run(image="mock", image_id="test.jpg", user_prompt="Find target", target_class="target")
+        # Ensure the final count is evaluated
+        final_count = runner.run(image="mock", image_id="test.jpg", user_prompt="Find target", target_class="target")
+        
+        orig_state = runner.scene_state
         
         validator = RunValidator(paths)
         result = validator.validate()
@@ -51,3 +54,23 @@ def test_m7_2_acceptance():
                 print(f.read())
                 
         assert result.valid, f"Run validation failed: {result.errors}"
+        
+        # Test 100% Replay equivalence
+        # Delete Oracle files to ensure no leakage
+        if paths.run_json.exists():
+            pass # Keep run.json for config
+        if paths.summary_json.exists():
+            paths.summary_json.unlink()
+        graph_path = paths.base_dir / "artifacts" / "graph" / "final_graph.json"
+        if graph_path.exists():
+            graph_path.unlink()
+            
+        from sam3_vlm.logging.replay import ReplayEngine, canonical_scene_state
+        engine = ReplayEngine(paths)
+        replayed_state = engine.replay_state()
+        
+        c_orig = canonical_scene_state(orig_state)
+        c_repl = canonical_scene_state(replayed_state)
+        
+        # We need to manually fix float differences if any, but they should be exactly equal
+        assert c_orig == c_repl

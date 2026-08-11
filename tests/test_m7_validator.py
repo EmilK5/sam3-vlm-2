@@ -32,6 +32,8 @@ def test_validator_detects_corruptions():
                 "schema_version": "1.0",
                 "run_id": "test_run",
                 "final_soft_count": 0.0,
+                "count_variance": 0.0,
+                "final_stop_reason": "MAX_ITERATIONS",
                 "node_count": 0,
                 "qwen_calls": 0,
                 "sam3_calls": 0,
@@ -50,7 +52,9 @@ def test_validator_detects_corruptions():
             
         with open(paths.events_jsonl, "w") as f:
             f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 1, "event_id": "e1", "event_type": "RUN_STARTED"}) + "\n")
-            f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 2, "event_id": "e2", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
+            f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 2, "event_id": "e2", "event_type": "STOP_DECIDED", "data": {"reason": "MAX_ITERATIONS"}}) + "\n")
+            f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 3, "event_id": "e3", "event_type": "FINAL_COUNT", "data": {"mean_count": 0.0, "variance": 0.0}}) + "\n")
+            f.write(json.dumps({"schema_version": "1.0", "run_id": "test_run", "sequence_number": 4, "event_id": "e4", "event_type": "RUN_COMPLETED", "data": {}}) + "\n")
             
         res = validator.validate()
         assert res.valid

@@ -39,6 +39,13 @@ class RunRecorder:
             os.fsync(f.fileno())
         os.replace(tmp_path, path)
 
+    def update_manifest(self, updates: Dict[str, Any]):
+        """Update manifest fields and rewrite run.json."""
+        for k, v in updates.items():
+            if hasattr(self.manifest, k):
+                setattr(self.manifest, k, v)
+        self._write_json_atomic(self.paths.run_json, self.manifest.__dict__)
+
     def record_event(self, event_type: str, data: Dict[str, Any], parent_event_id: Optional[str] = None) -> Event:
         """Record a structured event and flush to disk."""
         from sam3_vlm.logging.schema import EventKind

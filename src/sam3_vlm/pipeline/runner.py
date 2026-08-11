@@ -87,42 +87,50 @@ class Runner:
         self.image_id = image_id
         
         if self.recorder:
+            import dataclasses
+            self.recorder.update_manifest({
+                "image_id": image_id,
+                "user_prompt": user_prompt,
+                "target_class": target_class,
+                "v4_config": dataclasses.asdict(self.config)
+            })
             self.recorder.record_run_started()
             self.recorder.record_bootstrap_started()
             
         try:
             while self.state != RunnerState.DONE:
                 self._step()
+                
+            final_count = self._compute_final_count()
+            if self.recorder:
+                from sam3_vlm.logging.schema import RunSummary
+                summary = RunSummary(
+                    run_id=self.recorder.manifest.run_id,
+                    final_soft_count=final_count,
+                    count_variance=self.scene_state.count_estimate.variance,
+                    final_stop_reason=self.scene_state.stop_reason.value if self.scene_state.stop_reason else None,
+                    node_count=len(self.scene_state.graph.nodes),
+                    qwen_calls=self.scene_state.budget.qwen_calls,
+                    sam3_calls=self.scene_state.budget.sam3_calls,
+                    sam3_tiles=self.scene_state.budget.sam3_tiles,
+                    cleanup_calls=self.scene_state.budget.cleanup_calls,
+                    runtime_ms=self.scene_state.budget.total_runtime_ms,
+                    number_of_replans=self.scene_state.replans_executed,
+                    discovery_statistics={
+                        "coverage_ratio": getattr(self.scene_state.discovery_state.spatial_coverage, "coverage_ratio", 0.0) if hasattr(self.scene_state.discovery_state, "spatial_coverage") else 0.0,
+                        "saturated": getattr(self.scene_state.discovery_state, "saturated", False)
+                    }
+                )
+                # Serialize graph properly
+                final_graph_dict = self.scene_state.graph.to_dict()
+                self.recorder.finalize_success(summary, final_graph_dict)
+                
+            return final_count
+            
         except Exception as e:
             if self.recorder:
                 self.recorder.record_run_failed(str(e))
             raise e
-            
-        final_count = self._compute_final_count()
-        if self.recorder:
-            from sam3_vlm.logging.schema import RunSummary
-            summary = RunSummary(
-                run_id=self.recorder.manifest.run_id,
-                final_soft_count=final_count,
-                count_variance=self.scene_state.count_estimate.variance,
-                final_stop_reason=self.scene_state.stop_reason.value if self.scene_state.stop_reason else None,
-                node_count=len(self.scene_state.graph.nodes),
-                qwen_calls=self.scene_state.budget.qwen_calls,
-                sam3_calls=self.scene_state.budget.sam3_calls,
-                sam3_tiles=self.scene_state.budget.sam3_tiles,
-                cleanup_calls=self.scene_state.budget.cleanup_calls,
-                runtime_ms=self.scene_state.budget.total_runtime_ms,
-                number_of_replans=self.scene_state.replans_executed,
-                discovery_statistics={
-                    "coverage_ratio": getattr(self.scene_state.discovery_state.spatial_coverage, "coverage_ratio", 0.0) if hasattr(self.scene_state.discovery_state, "spatial_coverage") else 0.0,
-                    "saturated": getattr(self.scene_state.discovery_state, "saturated", False)
-                }
-            )
-            # Serialize graph properly
-            final_graph_dict = self.scene_state.graph.to_dict()
-            self.recorder.finalize_success(summary, final_graph_dict)
-            
-        return final_count
 
     def _record_controller_state(self):
         if self.recorder and self.scene_state:
