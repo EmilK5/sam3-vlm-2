@@ -88,9 +88,14 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path):
     with open(report_p) as f:
         report = json.load(f)
         
-    assert len(report) == 6 # 3 variants * 2 images (limit enforced)
+    assert "metadata" in report
+    assert "aggregates" in report
+    assert "samples" in report
     
-    one_shot = [r for r in report if r["variant"] == "A_OneShot"]
+    samples = report["samples"]
+    assert len(samples) == 6 # 3 variants * 2 images (limit enforced)
+    
+    one_shot = [r for r in samples if r["variant"] == "A_OneShot"]
     assert len(one_shot) == 2
     for r in one_shot:
         assert r["sam3_calls"] == 1

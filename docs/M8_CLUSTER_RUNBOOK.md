@@ -1,64 +1,149 @@
-# SAM3-VLM V4 GPU Cluster Runbook (M8.8)
+# SAM3-VLM V4 GPU Cluster Runbook (M8.9)
 
-This is the definitive guide for executing real-model validation of the V4 controller on the GPU cluster.
+This is the definitive, from-scratch guide for executing real-model validation of the V4 controller on the GPU cluster.
 
-**PREREQUISITE:** The repository is fully configured for cluster execution. You DO NOT need to write any new tests or change any source code before running this validation sequence.
+## 1. Initial Setup
 
-## 1. Environment and Configuration
-
-You must export your runtime credentials. **Never check API keys into version control.**
-
+### 1.1 Clone the Repository
 ```bash
-# 1. Hugging Face Authentication for SAM3 weights (requires accepted license)
-export HF_TOKEN="your_hf_read_token_here"
+git clone https://github.com/EmilK5/sam3-vlm-2.git
+cd sam3-vlm-2
+```
 
-# 2. Qwen Inference Endpoint
+### 1.2 Python Environment
+Install a PyTorch build compatible with the cluster CUDA/toolchain first if the cluster requires a specific build. Then create your environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
+```
+
+### 1.3 Verify Transformers Version
+The system requires `transformers>=5.0.0` for SAM3 access. Verify your installation:
+```bash
+python - <<'PY'
+import transformers
+from transformers import Sam3Model, Sam3Processor
+print("transformers:", transformers.__version__)
+print("SAM3 imports OK")
+PY
+```
+
+### 1.4 Hugging Face & SAM3 Access
+You MUST have accepted the model license for `facebook/sam3` on Hugging Face.
+```bash
+huggingface-cli login
+# Or use the environment variable for read access:
+export HF_TOKEN="your_hf_read_token_here"
+```
+
+### 1.5 Qwen Endpoints
+Export exactly the following variables for your local cluster vLLM deployment:
+```bash
 export QWEN_BASE_URL="http://your.cluster.ip:8000/v1"
 export QWEN_MODEL="qwen2.5-vl-72b-instruct"
 export QWEN_API_KEY="your_api_key_or_EMPTY_if_vllm"
-
-# 3. Enable Strict Real Model Testing
-export RUN_REAL_MODELS=1
 ```
 
-Configuration precedence is strict:
-`CLI Overrides` > `Environment Variables` > `configs/m8_real_smoke.json` > `Code Defaults`.
+---
 
-## 2. Stage 1: Smoke Testing (Fail-Fast)
+## 2. Validation & Safety Checks
 
-Before running a long pilot, you must prove the system works structurally. We provide a single Slurm script that executes preflight checks, real adapter unit tests, and a single-image end-to-end run.
-
+### 2.1 Release Check & Dry-Run
+Before you submit jobs to the GPU, run the laptop-safe local readiness check. This automatically compiles the code, runs the test suite, parses the config, and executes a dry-run of the CLI.
 ```bash
+bash scripts/check_m8_cluster_ready.sh
+```
+If this fails, STOP. Do not submit jobs.
+
+### 2.2 Gating Real Models
+Enable the real model testing flag:
+```bash
+export RUN_REAL_MODELS=1
+```
+*Note: Unsetting this variable skips gated real-model unit tests.*
+
+---
+
+## 3. The Smoke Test (Fail-Fast)
+
+The smoke test requires a real, representative image. It never fabricates fallback data.
+
+Submit the smoke job:
+```bash
+export M8_IMAGE="/path/to/representative_image.jpg"
+export M8_TARGET="green citrus"
+export M8_OUTPUT_ROOT="runs/cluster_m8_smoke"
+
 sbatch scripts/m8_cluster_smoke.slurm
 ```
 
-This script will run:
-1. `pytest -m real_models` (Verifies adapters)
-2. `python -m sam3_vlm.experiments.m8_smoke --stage all` (Runs Preflight -> M8.0 -> M8.1 -> M8.2 -> M8.3)
+This Slurm script strictly executes:
+1. `preflight`:
+   ```bash
+   python -m sam3_vlm.experiments.m8_smoke --stage preflight --require-cuda --image "$M8_IMAGE" --target "$M8_TARGET" --output_dir "$M8_OUTPUT_ROOT"
+   ```
+2. Real Models Pytest Suite:
+   ```bash
+   pytest -q -m real_models
+   ```
+3. Bounded Sequence (SAM3 Smoke, Qwen Smoke, Bounded E2E):
+   ```bash
+   python -m sam3_vlm.experiments.m8_smoke --stage all --require-cuda --image "$M8_IMAGE" --target "$M8_TARGET" --output_dir "$M8_OUTPUT_ROOT"
+   ```
 
-**Crucial Behavior:** `--stage all` STOPS BEFORE the pilot. It is strictly bounded. If any stage fails, the script will abort immediately with a non-zero exit code to prevent wasting GPU allocation.
+**Important:** The `--stage all` command STOPS before the pilot. It will NOT run the pilot automatically.
 
-Check `logs/m8_smoke_*.out`. If this succeeds, you are ready for the pilot.
+---
 
-## 3. Stage 2: The Pilot
+## 4. The Pilot Experiment
 
-Once the smoke test succeeds, run the pilot experiment.
+Once the smoke test passes cleanly, submit the pilot job separately. The pilot strictly requires a JSON manifest.
 
+Example Manifest (`pilot_manifest.json`):
+```json
+[
+  {
+    "sample_id": "image_001",
+    "image_path": "/data/image_001.jpg",
+    "target": "green citrus",
+    "gt_count": 17
+  }
+]
+```
+
+Submit the pilot job:
 ```bash
+export M8_MANIFEST="/path/to/pilot_manifest.json"
+export M8_OUTPUT_ROOT="runs/cluster_m8_pilot"
+
 sbatch scripts/m8_cluster_pilot.slurm
 ```
 
-This script will run:
+This executes:
 ```bash
-python -m sam3_vlm.experiments.m8_smoke --stage pilot --image /path/to/pilot/dataset --target "green citrus"
+python -m sam3_vlm.experiments.m8_smoke \
+    --stage pilot \
+    --require-cuda \
+    --manifest "$M8_MANIFEST" \
+    --output_dir "$M8_OUTPUT_ROOT"
 ```
 
-The pilot executes three variants (A_OneShot, B_FixedBank, C_V4_NoExemplarCleanup).
-Results are written to `runs/cluster_m8_pilot/pilot_report.json`.
+---
 
-## 4. Diagnostics
+## 5. Artifact Inspection & Diagnostics
 
-If something fails:
-- Review `pilot_report.json` for per-sample error strings.
-- The `m8_smoke.py` script automatically verifies that `canonical_scene_state` matches during ReplayEngine serialization checks. If this fails, there is a divergence between runtime and disk state.
-- `UnsupportedRealSAM3ActionError` is currently mitigated by disabling `cleanup` (`max_cleanup_calls = 0`) via `configs/m8_real_smoke.json`. Do not re-enable it until visual prompting is implemented.
+### Artifact Locations
+- **Aggregated Pilot Results:** `runs/cluster_m8_pilot/pilot_report.json`. This contains exact JSON schema fields for `.metadata`, `.samples`, and `.aggregates`.
+- **E2E Runs:** Located in `runs/cluster_m8_smoke/M8.3/` or `runs/cluster_m8_pilot/pilot/<variant>/<run_id>/`.
+  - `run.json` (Full manifest & config)
+  - `events.jsonl` (State machine transitions)
+  - `final_graph.json` (Detected semantics)
+  - `summary.json` (E2E metrics)
+
+### Diagnosing Pilot Failures
+Open `pilot_report.json`. Look in `.samples` for any sample where `"success": false`.
+- If `failure_category` is present, look at `failure_message` for infrastructure crashes (e.g., CUDA OOM or Qwen payload errors).
+- If `validator_status` is FAIL, the state machine produced corrupted semantic memory.
+- If `replay_status` is FAIL, the runtime execution diverged from canonical replay constraints.

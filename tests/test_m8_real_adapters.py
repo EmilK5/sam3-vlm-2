@@ -129,12 +129,12 @@ def test_real_e2e_bounded(tmp_path):
     from sam3_vlm.logging.replay import ReplayEngine
     
     config = V4Config(
-        budget=BudgetConfig(max_qwen_calls=1, max_sam3_calls=3, max_sam3_tiles=4),
+        budget=BudgetConfig(max_qwen_calls=1, max_sam3_calls=3, max_sam3_tiles=4, max_cleanup_calls=0),
         stopping=StoppingConfig(max_iterations=1),
         replanning=ReplanningConfig(max_replans=0)
     )
     
-    from sam3_vlm.experiments.m8_smoke import assemble_e2e_runner
+    from sam3_vlm.experiments.m8_smoke import assemble_e2e_runner, _run_validator_and_replay
     
     run_id = f"test_{uuid.uuid4().hex[:6]}"
     paths = RunArtifactPaths(base_dir=Path(os.path.join(tmp_path, run_id)))
@@ -146,12 +146,6 @@ def test_real_e2e_bounded(tmp_path):
     
     assert count >= 0
     
-    # Validator
-    validator = RunValidator(paths)
-    res = validator.validate()
-    assert res.valid
-    
-    # Replay
-    engine = ReplayEngine(paths)
-    replayed = engine.replay_state()
-    assert len(replayed.graph.nodes) == len(runner.scene_state.graph.nodes)
+    # Use production validator and replay helper
+    valid_run = _run_validator_and_replay(paths, runner.scene_state)
+    assert valid_run, "Validator or canonical replay equality failed"

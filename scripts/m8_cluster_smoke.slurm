@@ -8,29 +8,40 @@
 #SBATCH --mem=32G
 #SBATCH --time=00:30:00
 
-# Exit on error immediately
-set -e
+set -euo pipefail
 
 echo "Starting M8 Smoke Test Sequence..."
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 
-if [ -z "$QWEN_BASE_URL" ] || [ -z "$QWEN_MODEL" ]; then
-    echo "ERROR: QWEN_BASE_URL and QWEN_MODEL must be set in the environment"
+: "${M8_IMAGE:?Set M8_IMAGE to a real representative image}"
+: "${M8_TARGET:?Set M8_TARGET}"
+: "${M8_OUTPUT_ROOT:?Set M8_OUTPUT_ROOT}"
+
+if [ ! -f "$M8_IMAGE" ]; then
+    echo "M8_IMAGE does not exist: $M8_IMAGE" >&2
     exit 1
 fi
 
 export RUN_REAL_MODELS=1
 
-# 1. Run real model unit tests first
-echo "--- Running pytest -m real_models ---"
+echo "--- 1. Running Preflight ---"
+python -m sam3_vlm.experiments.m8_smoke \
+    --stage preflight \
+    --require-cuda \
+    --image "$M8_IMAGE" \
+    --target "$M8_TARGET" \
+    --output_dir "$M8_OUTPUT_ROOT"
+
+echo "--- 2. Running Real Models Pytest Suite ---"
 pytest -q -m real_models
 
-# 2. Run the bounded smoke sequence (preflight -> M8.3)
-echo "--- Running bounded smoke sequence ---"
-# Create a dummy image for smoke testing
-python -c "from PIL import Image; Image.new('RGB', (1024, 1024), color='green').save('smoke_test.jpg')"
-
-python -m sam3_vlm.experiments.m8_smoke --stage all --require-cuda --image smoke_test.jpg --target "green citrus" --output_dir "runs/cluster_m8_smoke"
+echo "--- 3. Running Bounded Smoke Sequence ---"
+python -m sam3_vlm.experiments.m8_smoke \
+    --stage all \
+    --require-cuda \
+    --image "$M8_IMAGE" \
+    --target "$M8_TARGET" \
+    --output_dir "$M8_OUTPUT_ROOT"
 
 echo "Smoke test complete and successful! Ready for Pilot."

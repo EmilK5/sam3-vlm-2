@@ -162,7 +162,7 @@ class RealQwenPlanner:
                 return "image/png"
             elif ext == ".webp":
                 return "image/webp"
-            return "image/jpeg"
+            raise ValueError(f"Unsupported image extension for Qwen: {ext}")
 
         import base64
         

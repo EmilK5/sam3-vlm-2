@@ -376,11 +376,20 @@ def m8_4_and_5_pilot(args):
         "C_V4_NoExemplarCleanup": base_config
     }
     
-    report = []
     pilot_success = True
+    report = {
+        "metadata": {
+            "experiment": "M8_Pilot",
+            "target": args.target,
+            "resolved_config": dataclasses.asdict(dep.v4_config),
+            "variants": ["A_OneShot", "B_FixedBank", "C_V4_NoExemplarCleanup"]
+        },
+        "samples": [],
+        "aggregates": {}
+    }
     
     for var_name, config in variants.items():
-        logger.info(f"\\n--- Running Variant: {var_name} ---")
+        logger.info(f"\n--- Running Variant: {var_name} ---")
         metrics_list = []
         for sample in samples:
             img_path = sample["image_path"]
@@ -399,6 +408,14 @@ def m8_4_and_5_pilot(args):
                 valid_run = True
                 sam3_c, qwen_c, clean_c, rep_c, it_c = 0, 0, 0, 0, 0
                 
+                
+                stop_reason = None
+                validator_status = None
+                replay_status = None
+                sam3_t = 0
+                failure_category = None
+                failure_message = None
+                
                 if var_name == "A_OneShot":
                     cfg = dataclasses.replace(base_config, bootstrap=BootstrapConfig(enable_tiled_bootstrap=False))
                     manifest = RunManifest(run_id=run_id, user_prompt=prompt, target_class="target", image_id=img_name)
@@ -412,6 +429,8 @@ def m8_4_and_5_pilot(args):
                     calls_after = getattr(sam3, "call_count", 1)
                     count = float(len(result.state.graph.nodes))
                     sam3_c = calls_after - calls_before
+                    sam3_t = 0
+                    stop_reason = "ONE_SHOT_COMPLETE"
                     
                     # Create a mock summary to finalize cleanly
                     summary = RunSummary(
@@ -424,6 +443,10 @@ def m8_4_and_5_pilot(args):
                     runner, recorder = assemble_e2e_runner(paths, config, sam3, qwen, run_id, prompt, "target", img_name)
                     count = runner.run(image=img_pil, user_prompt=prompt, target_class="target", image_id=img_name)
                     valid_run = _run_validator_and_replay(paths, runner.scene_state)
+                    stop_reason = runner.scene_state.stop_reason.name if runner.scene_state.stop_reason else "UNKNOWN"
+                    sam3_t = runner.scene_state.budget.sam3_tiles
+                    validator_status = "PASS" if valid_run else "FAIL"
+                    replay_status = "PASS" if valid_run else "FAIL"
                     
                 runtime = time.time() - start_t
                 
@@ -462,15 +485,24 @@ def m8_4_and_5_pilot(args):
                     "predicted_count": count,
                     "count_type": "hard_one_shot" if var_name == "A_OneShot" else "posterior",
                     "gt_count": gt_count,
-                    "runtime_s": runtime,
-                    "status": "SUCCESS" if valid_run else "FAILED",
+                    "runtime_ms": runtime * 1000,
+                    "success": valid_run,
                     "run_id": run_id,
                     "storage_bytes": total_bytes,
                     "sam3_calls": sam3_c,
+                    "sam3_tiles": sam3_t,
                     "qwen_calls": qwen_c,
                     "cleanup_calls": clean_c,
                     "replans": rep_c,
-                    "iterations": it_c
+                    "iterations": it_c,
+                    "stop_reason": stop_reason,
+                    "validator_status": validator_status,
+                    "replay_status": replay_status,
+                    "failure_category": failure_category,
+                    "failure_message": failure_message,
+                    "artifact_directory": str(paths.base_dir),
+                    "experiment_id": "M8_Pilot",
+                    "resolved_config_reference": "m8_real_smoke"
                 }
                 
                 if gt_count is not None:
@@ -479,17 +511,22 @@ def m8_4_and_5_pilot(args):
                     entry["squared_error"] = cm.squared_error
                     entry["relative_error"] = cm.relative_error
                     
-                report.append(entry)
+                report["samples"].append(entry)
                 if not valid_run: pilot_success = False
                     
             except Exception as e:
                 logger.error(f"Error on {img_name}: {e}")
-                report.append({"variant": var_name, "sample_id": img_name, "status": "FAILED", "error": str(e)})
+                report["samples"].append({
+                    "variant": var_name, "sample_id": img_name, "success": False,
+                    "failure_category": "INFRASTRUCTURE_FAILURE",
+                    "failure_message": str(e)
+                })
                 pilot_success = False
                 
         # Calculate agg report
         agg = aggregate_count_metrics(metrics_list)
         logger.info(f"Aggregate for {var_name}: {agg}")
+        report["aggregates"][var_name] = agg
                 
     report_path = os.path.join(dep.output_root, "pilot_report.json")
     with open(report_path, "w") as f: json.dump(report, f, indent=2)

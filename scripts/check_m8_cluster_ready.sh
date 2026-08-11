@@ -1,30 +1,58 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 echo "Checking M8 Cluster Readiness..."
 
-# Check Transformers Version
-TRANSFORMERS_VER=$(python -c "import transformers; print(transformers.__version__)")
-echo "Transformers version: $TRANSFORMERS_VER"
+# Block accidental live model calls
+unset RUN_REAL_MODELS || true
 
-# Check pytest -m real_models with dry-run env vars
-export RUN_REAL_MODELS=1
-echo "Dry running pytest..."
-# We can't actually run it because models would load. We just collect to ensure syntactical validity.
-pytest -q -m real_models --collect-only
+# 1. Ensure Python files compile
+echo "--- Compiling source and tests ---"
+python -m compileall src tests
 
-# Check configuration loads cleanly
-python -c "
+# 2. Run laptop-safe test suite
+echo "--- Running pytest (mocked adapters) ---"
+pytest -q tests/
+
+# 3. Validate committed configuration parses successfully
+echo "--- Validating M8 Config Parsing ---"
+python - <<'PY'
+import sys
 from sam3_vlm.experiments.m8_smoke import load_m8_config
-import os
 
 class DummyArgs:
     require_cuda = False
     output_dir = 'runs/test'
 
-c = load_m8_config(DummyArgs())
-assert c.v4_config.budget.max_cleanup_calls == 0, 'Cleanup must be disabled in config'
-"
-echo "Config parsed correctly, cleanup disabled."
+try:
+    c = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
+    assert c.v4_config.budget.max_cleanup_calls == 0, "Cleanup must be disabled in config for M8"
+    print("M8 Config parsed successfully, constraints verified.")
+except Exception as e:
+    print(f"Config parsing failed: {e}", file=sys.stderr)
+    sys.exit(1)
+PY
 
-echo "Readiness check passed!"
+# 4. Dry-run the M8 smoke script (preflight -> M8.3 bounding)
+echo "--- Dry-running M8 Smoke (stage: all) ---"
+# We create a tiny /tmp file to satisfy the image path check without leaving a repo trace
+DRY_RUN_IMG="/tmp/m8_dry_run_image.jpg"
+python -c "from PIL import Image; Image.new('RGB', (10, 10), color='green').save('$DRY_RUN_IMG')"
+
+python -m sam3_vlm.experiments.m8_smoke \
+    --dry-run \
+    --stage all \
+    --image "$DRY_RUN_IMG" \
+    --target "dry-run target" \
+    --output_dir "runs/cluster_m8_smoke_dry" \
+    --allow-cpu \
+    --qwen-base-url "http://fake"
+
+rm "$DRY_RUN_IMG"
+
+# 5. Check real model test suite discoverability
+echo "--- Checking real test collection ---"
+# We enable RUN_REAL_MODELS strictly for collection, no execution
+RUN_REAL_MODELS=1 pytest -q -m real_models --collect-only
+
+echo "Readiness check passed! Repository is ready for the GPU cluster."

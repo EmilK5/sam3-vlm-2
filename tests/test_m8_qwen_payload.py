@@ -115,3 +115,20 @@ def test_qwen_payload_missing_image_strict(mock_openai_client, tmp_path):
     with pytest.raises(ValueError, match="Original image not found at"):
         planner.plan_scene(evidence, BudgetState(), V4Config())
 
+def test_qwen_payload_unsupported_mime(mock_openai_client, tmp_path):
+    planner = RealQwenPlanner(base_url="http://fake", model="fake", strict_model_errors=True)
+    
+    evidence = QwenEvidencePack(
+        original_image_id="test",
+        user_prompt="prompt",
+        target_class="target",
+        image_path=str(tmp_path / "img.bmp"),
+        contact_sheet=ContactSheet(crops=[], total_candidates=0)
+    )
+    
+    Image.new("RGB", (10, 10)).save(evidence.image_path)
+    
+    with pytest.raises(ValueError, match="Unsupported image extension for Qwen: .bmp"):
+        planner.plan_scene(evidence, BudgetState(), V4Config())
+
+

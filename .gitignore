@@ -7,7 +7,7 @@ dist/
 build/
 out/
 
-assets/
+assets/crops/*
 contact_sheets/
 runs/
 
