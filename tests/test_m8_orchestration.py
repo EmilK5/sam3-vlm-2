@@ -19,13 +19,16 @@ from sam3_vlm.models.qwen import MockQwenPlanner
 def mock_models():
     sam3 = MockSAM3Adapter()
     qwen = MockQwenPlanner()
-    with patch("sam3_vlm.experiments.m8_smoke._get_models", return_value=(sam3, qwen)):
+    with patch("sam3_vlm.experiments.m8_smoke._get_models", return_value=(sam3, qwen)), \
+         patch("sam3_vlm.experiments.m8_smoke._get_sam3_only", return_value=sam3), \
+         patch("sam3_vlm.experiments.m8_smoke._get_qwen_only", return_value=qwen):
         yield sam3, qwen
 
 class DummyArgs:
     def __init__(self, **kwargs):
         self.require_cuda = False
         self.compile_sam3 = False
+        self.dry_run = False
         self.sam3_model = "fake"
         self.qwen_model = "fake"
         self.qwen_base_url = "fake"

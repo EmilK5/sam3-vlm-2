@@ -12,7 +12,7 @@ license = {text = "MIT"}
 dependencies = [
     "numpy",
     "torch",
-    "transformers",
+    "transformers>=4.48.0",
     "scipy",
     "pillow",
     "opencv-python",

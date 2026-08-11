@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import tempfile
 import uuid
+from pathlib import Path
 
 # M8 STRICT GATE
 RUN_REAL_MODELS = os.environ.get("RUN_REAL_MODELS") == "1"
@@ -108,12 +109,12 @@ def test_real_e2e_bounded(tmp_path):
         replanning=ReplanningConfig(max_replans=0)
     )
     
-    run_id = f"test_{uuid.uuid4().hex[:6]}"
-    paths = RunArtifactPaths(run_dir=os.path.join(tmp_path, run_id))
-    manifest = RunManifest(run_id=run_id, user_prompt="green square", target_class="target", dataset_name="test")
-    recorder = RunRecorder(paths, manifest)
+    from sam3_vlm.experiments.m8_smoke import assemble_e2e_runner
     
-    runner = Runner(sensor, planner, config=config, recorder=recorder)
+    run_id = f"test_{uuid.uuid4().hex[:6]}"
+    paths = RunArtifactPaths(base_dir=Path(os.path.join(tmp_path, run_id)))
+    
+    runner, recorder = assemble_e2e_runner(paths, config, sensor, planner, run_id, "green square", "target", "test")
     
     img = Image.new("RGB", (256, 256), color="black")
     count = runner.run(image=img, user_prompt="green square", target_class="target", image_id="test")

@@ -261,7 +261,7 @@ class RealSAM3Sensor:
                 tile_id = f"tile_{tile_idx:02d}"
                 
                 # Crop tile
-                crop_box = (int(tile_box.xmin), int(tile_box.ymin), int(tile_box.xmax), int(tile_box.ymax))
+                crop_box = (int(tile_box.x1), int(tile_box.y1), int(tile_box.x2), int(tile_box.y2))
                 tile_pil = img_pil.crop(crop_box)
                 
                 boxes, scores, masks = self._run_inference(tile_pil, action.prompt, action.threshold)
@@ -292,14 +292,14 @@ class RealSAM3Sensor:
             roi_box = action.roi
             if hasattr(roi_box, "bbox"):
                 roi_box = roi_box.bbox()
-            elif hasattr(roi_box, "xmin"):
+            elif hasattr(roi_box, "x1"):
                 pass
             else:
                 # If it's a BoxGeometry
                 if hasattr(roi_box, "box"):
                     roi_box = roi_box.box
                     
-            crop_box = (int(roi_box.xmin), int(roi_box.ymin), int(roi_box.xmax), int(roi_box.ymax))
+            crop_box = (int(roi_box.x1), int(roi_box.y1), int(roi_box.x2), int(roi_box.y2))
             
             # Ensure crop box is within bounds
             crop_box = (
@@ -313,7 +313,6 @@ class RealSAM3Sensor:
             tile_pil = img_pil.crop(crop_box)
             boxes, scores, masks = self._run_inference(tile_pil, action.prompt, action.threshold)
             
-            from sam3_vlm.core.geometry import BoxGeometry, Box
             searched_regions = [BoxGeometry(Box(float(crop_box[0]), float(crop_box[1]), float(crop_box[2]), float(crop_box[3])))]
             
             for i in range(len(boxes)):

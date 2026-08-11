@@ -16,12 +16,11 @@
     "tile_min_size": 256
   },
   "cleanup": {
-    "max_cleanup_calls": 5,
-    "low_utility_threshold": 0.05
+    "cleanup_min_utility": 0.05
   },
   "replanning": {
     "max_replans": 3,
-    "replan_cooldown_actions": 2
+    "min_actions_between_replans": 2
   },
   "seed": 42,
   "output_root": "runs/m8_real_smoke",
