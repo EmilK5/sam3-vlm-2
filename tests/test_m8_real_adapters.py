@@ -20,31 +20,56 @@ from sam3_vlm.core.config import V4Config
 from sam3_vlm.core.geometry import Box
 
 @pytest.mark.real_models
-def test_real_sam3_tiled_and_local():
+def test_real_sam3_global():
     sensor = RealSAM3Sensor(compile_model=False)
     
     img = np.zeros((1024, 1024, 3), dtype=np.uint8)
-    img[100:200, 100:200] = [0, 255, 0] # Top left
-    img[800:900, 800:900] = [0, 255, 0] # Bottom right
     img_pil = Image.fromarray(img)
     
-    # TILED
-    action_tiled = SensingAction(
+    action = SensingAction(
+        action_id="global_01",
+        semantic_key="test_target",
+        prompt="green object",
+        family=ActionFamily.DISCOVERY,
+        threshold=0.1,
+        spatial_mode=SpatialMode.GLOBAL
+    )
+    
+    obs = sensor.observe(img_pil, action)
+    assert obs.model_metadata["spatial_mode"] == "GLOBAL"
+    assert len(obs.searched_regions) == 1
+    assert obs.searched_regions[0].box.x2 == 1024
+
+@pytest.mark.real_models
+def test_real_sam3_tiled():
+    from sam3_vlm.core.config import TilingConfig
+    sensor = RealSAM3Sensor(compile_model=False)
+    
+    img = np.zeros((1024, 1024, 3), dtype=np.uint8)
+    img_pil = Image.fromarray(img)
+    
+    action = SensingAction(
         action_id="tiled_01",
         semantic_key="test_target",
         prompt="green object",
         family=ActionFamily.DISCOVERY,
         threshold=0.1,
         spatial_mode=SpatialMode.TILED,
-        tiling={"grid_rows": 2, "grid_cols": 2, "overlap_ratio": 0.0, "tile_min_size": 256}
+        tiling=TilingConfig(grid_rows=2, grid_cols=2, overlap_ratio=0.0, tile_min_size=256)
     )
     
-    obs_tiled = sensor.observe(img_pil, action_tiled)
-    assert obs_tiled.model_metadata["spatial_mode"] == "TILED"
-    assert len(obs_tiled.searched_regions) == 4
+    obs = sensor.observe(img_pil, action)
+    assert obs.model_metadata["spatial_mode"] == "TILED"
+    assert len(obs.searched_regions) == 4
+
+@pytest.mark.real_models
+def test_real_sam3_local():
+    sensor = RealSAM3Sensor(compile_model=False)
     
-    # LOCAL
-    action_local = SensingAction(
+    img = np.zeros((1024, 1024, 3), dtype=np.uint8)
+    img_pil = Image.fromarray(img)
+    
+    action = SensingAction(
         action_id="local_01",
         semantic_key="test_target",
         prompt="green object",
@@ -54,10 +79,10 @@ def test_real_sam3_tiled_and_local():
         roi=Box(x1=50, y1=50, x2=250, y2=250)
     )
     
-    obs_local = sensor.observe(img_pil, action_local)
-    assert obs_local.model_metadata["spatial_mode"] == "LOCAL"
-    assert len(obs_local.searched_regions) == 1
-    assert obs_local.searched_regions[0].box.x1 == 50
+    obs = sensor.observe(img_pil, action)
+    assert obs.model_metadata["spatial_mode"] == "LOCAL"
+    assert len(obs.searched_regions) == 1
+    assert obs.searched_regions[0].box.x1 == 50
 
 @pytest.mark.real_models
 def test_real_qwen_multimodal():

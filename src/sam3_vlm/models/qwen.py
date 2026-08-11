@@ -167,7 +167,13 @@ class RealQwenPlanner:
         import base64
         
         orig_path = evidence_pack.image_path
-        if orig_path and os.path.exists(orig_path):
+        if not orig_path:
+            if self.strict_model_errors:
+                raise ValueError("Original image is strictly required for M8 real Qwen planning.")
+        elif not os.path.exists(orig_path):
+            if self.strict_model_errors:
+                raise ValueError(f"Original image not found at {orig_path}")
+        else:
             with open(orig_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("ascii")
             mime = get_mime_type(orig_path)

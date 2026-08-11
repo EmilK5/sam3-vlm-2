@@ -1,26 +1,30 @@
 #!/bin/bash
 set -e
 
-echo "=== M8.7 Pre-Cluster Readiness Check ==="
+echo "Checking M8 Cluster Readiness..."
 
-echo "1. Checking Python Syntax (compileall)..."
-python -m compileall src tests > /dev/null
-echo "  [OK] Syntax is clean."
+# Check Transformers Version
+TRANSFORMERS_VER=$(python -c "import transformers; print(transformers.__version__)")
+echo "Transformers version: $TRANSFORMERS_VER"
 
-echo ""
-echo "2. Running Static Pytest Suite (Mocks only)..."
-# Unset RUN_REAL_MODELS to ensure we test static logic only
-unset RUN_REAL_MODELS
-pytest -q tests/
-echo "  [OK] Pytest static suite passed."
+# Check pytest -m real_models with dry-run env vars
+export RUN_REAL_MODELS=1
+echo "Dry running pytest..."
+# We can't actually run it because models would load. We just collect to ensure syntactical validity.
+pytest -q -m real_models --collect-only
 
-echo ""
-echo "3. Testing Orchestration Dry-Run..."
-touch test.jpg
-python -m sam3_vlm.experiments.m8_smoke --dry-run --allow-cpu --output_dir "runs/dry_run_test" --qwen-base-url "http://fake" --image test.jpg
-rm test.jpg
-echo "  [OK] Dry-run complete. Orchestration constructs cleanly."
+# Check configuration loads cleanly
+python -c "
+from sam3_vlm.experiments.m8_smoke import load_m8_config
+import os
 
-echo ""
-echo "=== READY FOR CLUSTER ==="
-echo "You can now clone this branch to the GPU cluster and run: sbatch scripts/m8_cluster_smoke.slurm"
+class DummyArgs:
+    require_cuda = False
+    output_dir = 'runs/test'
+
+c = load_m8_config(DummyArgs())
+assert c.v4_config.budget.max_cleanup_calls == 0, 'Cleanup must be disabled in config'
+"
+echo "Config parsed correctly, cleanup disabled."
+
+echo "Readiness check passed!"

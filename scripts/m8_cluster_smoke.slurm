@@ -6,34 +6,31 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time=02:00:00
+#SBATCH --time=00:30:00
 
-# Exit on error
+# Exit on error immediately
 set -e
 
-# Load necessary modules (adjust to your cluster environment)
-# module load cuda/12.1
-# module load anaconda3
-
-# Activate your environment
-# source activate sam3-vlm
-
-echo "Starting M8.7 Pre-Cluster Smoke Test..."
+echo "Starting M8 Smoke Test Sequence..."
 echo "Node: $(hostname)"
 echo "Date: $(date)"
 
-# Export Qwen endpoint config (must be set by user or environment)
-if [ -z "$QWEN_BASE_URL" ]; then
-    echo "ERROR: QWEN_BASE_URL is not set"
+if [ -z "$QWEN_BASE_URL" ] || [ -z "$QWEN_MODEL" ]; then
+    echo "ERROR: QWEN_BASE_URL and QWEN_MODEL must be set in the environment"
     exit 1
 fi
 
-if [ -z "$QWEN_MODEL" ]; then
-    echo "ERROR: QWEN_MODEL is not set"
-    exit 1
-fi
+export RUN_REAL_MODELS=1
 
-# Run the complete sequence
-python -m sam3_vlm.experiments.m8_smoke --stage all --require-cuda --target "green citrus" --output_dir "runs/cluster_m8_smoke"
+# 1. Run real model unit tests first
+echo "--- Running pytest -m real_models ---"
+pytest -q -m real_models
 
-echo "Smoke test complete. Check pilot_report.json in runs/cluster_m8_smoke/"
+# 2. Run the bounded smoke sequence (preflight -> M8.3)
+echo "--- Running bounded smoke sequence ---"
+# Create a dummy image for smoke testing
+python -c "from PIL import Image; Image.new('RGB', (1024, 1024), color='green').save('smoke_test.jpg')"
+
+python -m sam3_vlm.experiments.m8_smoke --stage all --require-cuda --image smoke_test.jpg --target "green citrus" --output_dir "runs/cluster_m8_smoke"
+
+echo "Smoke test complete and successful! Ready for Pilot."

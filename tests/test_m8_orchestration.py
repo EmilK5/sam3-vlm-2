@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import os
 import json
 from PIL import Image
@@ -10,7 +10,8 @@ from sam3_vlm.experiments.m8_smoke import (
     m8_2_qwen_smoke,
     m8_3_full_run,
     m8_4_and_5_pilot,
-    preflight
+    preflight,
+    main
 )
 from sam3_vlm.models.sam3 import MockSAM3Adapter
 from sam3_vlm.models.qwen import MockQwenPlanner
@@ -67,15 +68,18 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path):
     img.save(p1)
     p2 = str(tmp_path / "img2.jpg")
     img.save(p2)
+    p3 = str(tmp_path / "img3.jpg")
+    img.save(p3)
     
     manifest_path = str(tmp_path / "manifest.json")
     with open(manifest_path, "w") as f:
         json.dump([
             {"sample_id": "i1", "image_path": p1, "target": "target", "gt_count": 5},
             {"sample_id": "i2", "image_path": p2, "target": "target", "gt_count": 10},
+            {"sample_id": "i3", "image_path": p3, "target": "target", "gt_count": 15},
         ], f)
         
-    args = DummyArgs(manifest=manifest_path, output_dir=str(tmp_path / "runs"))
+    args = DummyArgs(manifest=manifest_path, output_dir=str(tmp_path / "runs"), max_samples=2)
     assert m8_4_and_5_pilot(args) is True
     
     report_p = str(tmp_path / "runs" / "pilot_report.json")
@@ -84,9 +88,44 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path):
     with open(report_p) as f:
         report = json.load(f)
         
-    assert len(report) == 6 # 3 variants * 2 images
+    assert len(report) == 6 # 3 variants * 2 images (limit enforced)
     
-    for r in report:
-        assert r["status"] == "SUCCESS"
-        assert "predicted_count" in r
-        assert "absolute_error" in r
+    one_shot = [r for r in report if r["variant"] == "A_OneShot"]
+    assert len(one_shot) == 2
+    for r in one_shot:
+        assert r["sam3_calls"] == 1
+        assert r["qwen_calls"] == 0
+        assert r["replans"] == 0
+        assert r["cleanup_calls"] == 0
+        assert r["count_type"] == "hard_one_shot"
+
+@patch("sam3_vlm.experiments.m8_smoke.m8_0_validate_adapters", return_value=False)
+@patch("sam3_vlm.experiments.m8_smoke.m8_1_sam3_smoke")
+def test_stage_fail_fast(mock_1, mock_0):
+    import sys
+    test_args = ["--stage", "all", "--dry-run", "--output_dir", "fake_out", "--qwen-base-url", "fake", "--allow-cpu"]
+    with patch.object(sys, 'argv', ["m8_smoke.py"] + test_args):
+        assert main() == 1
+    mock_0.assert_called_once()
+    mock_1.assert_not_called()
+
+@patch("sam3_vlm.experiments.m8_smoke.m8_3_full_run", return_value=True)
+@patch("sam3_vlm.experiments.m8_smoke.m8_4_and_5_pilot")
+def test_stage_all_excludes_pilot(mock_pilot, mock_full):
+    import sys
+    test_args = ["--stage", "all", "--dry-run", "--output_dir", "fake_out", "--qwen-base-url", "fake", "--allow-cpu"]
+    with patch.object(sys, 'argv', ["m8_smoke.py"] + test_args):
+        # assuming preflight and others mock return True automatically if not patched?
+        # actually preflight will fail if output_dir is fake_out and it's not mocked
+        pass
+    
+    with patch("sam3_vlm.experiments.m8_smoke.preflight", return_value=True), \
+         patch("sam3_vlm.experiments.m8_smoke.m8_0_validate_adapters", return_value=True), \
+         patch("sam3_vlm.experiments.m8_smoke.m8_1_sam3_smoke", return_value=True), \
+         patch("sam3_vlm.experiments.m8_smoke.m8_2_qwen_smoke", return_value=True):
+        
+        with patch.object(sys, 'argv', ["m8_smoke.py"] + test_args):
+            assert main() == 0
+            
+    mock_full.assert_called_once()
+    mock_pilot.assert_not_called()

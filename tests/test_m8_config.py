@@ -1,35 +1,53 @@
 import pytest
 import json
 import os
-from sam3_vlm.experiments.m8_smoke import load_m8_config
+from sam3_vlm.experiments.m8_smoke import load_m8_config, M8DeploymentConfig
 
 class DummyArgs:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-def test_load_m8_config_valid(tmp_path):
+def test_load_m8_config_precedence(tmp_path):
     config_dict = {
-        "budgets": {"max_qwen_calls": 10},
-        "tiling": {"grid_rows": 3},
-        "seed": 123
+        "sam3_model": "json_sam3",
+        "qwen_model": "json_qwen",
+        "require_cuda": True,
+        "seed": 100,
+        "pilot_sample_limit": 5,
+        "budget": {"max_qwen_calls": 2},
+        "tiling": {"grid_rows": 4}
     }
     
     p = tmp_path / "valid.json"
     with open(p, "w") as f:
         json.dump(config_dict, f)
         
-    args = DummyArgs(require_cuda=False, output_dir="test_out")
+    os.environ["QWEN_MODEL"] = "env_qwen"
+    os.environ["QWEN_BASE_URL"] = "env_url"
+    
+    # CLI takes precedence over all
+    args = DummyArgs(require_cuda=False, output_dir="cli_out", max_samples=3)
     cfg = load_m8_config(args, config_path=str(p))
     
-    assert cfg.budget.max_qwen_calls == 10
-    assert cfg.tiling.grid_rows == 3
-    assert cfg.device == "cpu"
-    assert cfg.output_dir == "test_out"
+    assert cfg.sam3_model == "json_sam3"
+    assert cfg.qwen_model == "env_qwen" # Env over JSON
+    assert cfg.qwen_base_url == "env_url"
+    assert cfg.require_cuda is False # CLI over JSON
+    assert cfg.seed == 100
+    assert cfg.pilot_sample_limit == 3 # CLI over JSON
+    assert cfg.output_root == "cli_out" # CLI over Defaults
+    
+    assert cfg.v4_config.budget.max_qwen_calls == 2
+    assert cfg.v4_config.tiling.grid_rows == 4
+    assert cfg.v4_config.device == "cpu"
+    
+    del os.environ["QWEN_MODEL"]
+    del os.environ["QWEN_BASE_URL"]
 
 def test_load_m8_config_invalid_key(tmp_path):
     config_dict = {
-        "budgets": {"max_qwen_calls": 10},
+        "budget": {"max_qwen_calls": 10},
         "unknown_key": "bad"
     }
     
@@ -45,4 +63,7 @@ def test_load_m8_config_missing_file():
     args = DummyArgs(require_cuda=True)
     cfg = load_m8_config(args, config_path="does_not_exist.json")
     
-    assert cfg.device == "cuda"
+    assert cfg.v4_config.device == "cuda"
+    assert cfg.require_cuda is True
+    assert cfg.sam3_model == "facebook/sam3"
+    assert cfg.pilot_sample_limit == 10

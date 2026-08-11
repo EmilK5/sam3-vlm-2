@@ -1,14 +1,15 @@
-# SAM3-VLM V4 Cluster Validation (M8)
+# SAM3-VLM V4 GPU Cluster Runbook (M8.8)
 
-This guide defines the explicit sequence of operations to perform real-model validation of the V4 controller on a Slurm/GPU instance.
+This is the definitive guide for executing real-model validation of the V4 controller on the GPU cluster.
 
-## 1. Environment Setup
+**PREREQUISITE:** The repository is fully configured for cluster execution. You DO NOT need to write any new tests or change any source code before running this validation sequence.
 
-Before attempting to execute real models, you must inject the necessary runtime variables. **Never check in API keys or passwords to version control.**
+## 1. Environment and Configuration
+
+You must export your runtime credentials. **Never check API keys into version control.**
 
 ```bash
-# 1. Hugging Face Authentication for SAM3 access
-# Note: You MUST have accepted the model license for facebook/sam3 on HF.
+# 1. Hugging Face Authentication for SAM3 weights (requires accepted license)
 export HF_TOKEN="your_hf_read_token_here"
 
 # 2. Qwen Inference Endpoint
@@ -20,55 +21,44 @@ export QWEN_API_KEY="your_api_key_or_EMPTY_if_vllm"
 export RUN_REAL_MODELS=1
 ```
 
-## 2. Cluster Execution Order
+Configuration precedence is strict:
+`CLI Overrides` > `Environment Variables` > `configs/m8_real_smoke.json` > `Code Defaults`.
 
-Execute the following commands sequentially. **Stop immediately if any stage returns a non-zero exit code.** 
-Each command leverages the strict testing logic defined in `m8_smoke.py`.
+## 2. Stage 1: Smoke Testing (Fail-Fast)
 
-### Step 1: Preflight
-Check that PyTorch sees your GPU, dependencies exist, and output directories are writable.
+Before running a long pilot, you must prove the system works structurally. We provide a single Slurm script that executes preflight checks, real adapter unit tests, and a single-image end-to-end run.
+
 ```bash
-python -m sam3_vlm.experiments.m8_smoke --stage preflight
+sbatch scripts/m8_cluster_smoke.slurm
 ```
 
-### Step 2: Gated Regression Verification
-Run the standard validation suite explicitly checking real dependencies. **Ensure no tests are unexpectedly skipped.**
+This script will run:
+1. `pytest -m real_models` (Verifies adapters)
+2. `python -m sam3_vlm.experiments.m8_smoke --stage all` (Runs Preflight -> M8.0 -> M8.1 -> M8.2 -> M8.3)
+
+**Crucial Behavior:** `--stage all` STOPS BEFORE the pilot. It is strictly bounded. If any stage fails, the script will abort immediately with a non-zero exit code to prevent wasting GPU allocation.
+
+Check `logs/m8_smoke_*.out`. If this succeeds, you are ready for the pilot.
+
+## 3. Stage 2: The Pilot
+
+Once the smoke test succeeds, run the pilot experiment.
+
 ```bash
-pytest -q -m real_models
+sbatch scripts/m8_cluster_pilot.slurm
 ```
 
-### Step 3: SAM3 Global Smoke
-Validates the fundamental `RealSAM3Sensor` GLOBAL invocation without engaging Qwen.
+This script will run:
 ```bash
-python -m sam3_vlm.experiments.m8_smoke --stage M8.1 --image /path/to/test.jpg
+python -m sam3_vlm.experiments.m8_smoke --stage pilot --image /path/to/pilot/dataset --target "green citrus"
 ```
 
-### Step 4: Qwen Multimodal Smoke
-Verifies that the `RealQwenPlanner` correctly assembles the multimodal prompt (text, scene image, contact sheet) and receives a strictly valid JSON response.
-```bash
-python -m sam3_vlm.experiments.m8_smoke --stage M8.2
-```
+The pilot executes three variants (A_OneShot, B_FixedBank, C_V4_NoExemplarCleanup).
+Results are written to `runs/cluster_m8_pilot/pilot_report.json`.
 
-### Step 5: M8.3 One Full Real Image
-Executes one complete pass of the V4 dynamic pipeline, forcing `RunRecorder` to trace the state and instantly following up with `RunValidator` and `ReplayEngine` fidelity checks.
-```bash
-python -m sam3_vlm.experiments.m8_smoke --stage M8.3 --image /path/to/test.jpg --target "green citrus"
-```
+## 4. Diagnostics
 
-### Step 6: Multi-Image Pilot (A/B/C)
-Runs all three validation variants on a sequence of images or a provided JSON manifest, outputting the results into `pilot_report.json`.
-```bash
-# Using a directory of images
-python -m sam3_vlm.experiments.m8_smoke --stage pilot --image /path/to/images/ --target "green citrus"
-
-# Or using a pilot manifest
-python -m sam3_vlm.experiments.m8_smoke --stage pilot --manifest pilot_manifest.json
-```
-
-## 3. Artifact Inspection
-
-Artifacts are written sequentially into `runs/m8_real_smoke/`. If an error occurs, inspect:
-1. `events.jsonl` to pinpoint the last emitted state-machine transition.
-2. `pilot_report.json` for structured error string bubbling.
-3. If SAM3 initialization fails, review your HF permissions.
-4. If Qwen fails with `Raw output unparseable`, verify your backend endpoint respects strictly constrained JSON schema prompting.
+If something fails:
+- Review `pilot_report.json` for per-sample error strings.
+- The `m8_smoke.py` script automatically verifies that `canonical_scene_state` matches during ReplayEngine serialization checks. If this fails, there is a divergence between runtime and disk state.
+- `UnsupportedRealSAM3ActionError` is currently mitigated by disabling `cleanup` (`max_cleanup_calls = 0`) via `configs/m8_real_smoke.json`. Do not re-enable it until visual prompting is implemented.

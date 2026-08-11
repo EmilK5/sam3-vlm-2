@@ -77,17 +77,41 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     assert content[2]["type"] == "image_url"
     assert content[2]["image_url"]["url"].startswith("data:image/webp;base64,")
 
-def test_qwen_strict_error_propagation(mock_openai_client):
+def test_qwen_strict_error_propagation(mock_openai_client, tmp_path):
     planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)
     mock_openai_client.chat.completions.create.side_effect = RuntimeError("Connection refused")
+    
+    img_path = str(tmp_path / "img1.png")
+    Image.new("RGB", (10, 10)).save(img_path)
     
     pack = QwenEvidencePack(
         original_image_id="img_1",
         user_prompt="find target",
         target_class="target",
-        image_path=None,
+        image_path=img_path,
         contact_sheet=ContactSheet(crops=[], total_candidates=0)
     )
     
     with pytest.raises(RuntimeError, match="Strict Qwen execution failed: Connection refused"):
         planner.plan_scene(pack, BudgetState(), V4Config())
+
+def test_qwen_payload_missing_image_strict(mock_openai_client, tmp_path):
+    planner = RealQwenPlanner(base_url="http://fake", model="fake", strict_model_errors=True)
+    
+    # Missing path
+    evidence = QwenEvidencePack(
+        original_image_id="test",
+        user_prompt="prompt",
+        target_class="target",
+        image_path=None,
+        contact_sheet=ContactSheet(crops=[], total_candidates=0)
+    )
+    
+    with pytest.raises(ValueError, match="Original image is strictly required"):
+        planner.plan_scene(evidence, BudgetState(), V4Config())
+        
+    # Non-existent path
+    evidence.image_path = str(tmp_path / "does_not_exist.jpg")
+    with pytest.raises(ValueError, match="Original image not found at"):
+        planner.plan_scene(evidence, BudgetState(), V4Config())
+
