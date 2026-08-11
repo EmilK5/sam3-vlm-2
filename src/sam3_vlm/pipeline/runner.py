@@ -90,6 +90,15 @@ class Runner:
             
         return self._compute_final_count()
 
+    def _estimated_tile_count(self, action: 'SensingAction') -> int:
+        from sam3_vlm.core.types import SpatialMode
+        if action.spatial_mode == SpatialMode.TILED:
+            if action.tiling:
+                return action.tiling.grid_rows * action.tiling.grid_cols
+            else:
+                return self.config.tiling.grid_rows * self.config.tiling.grid_cols
+        return 0
+
     def _check_hard_budgets(self, predicted_tiles: int = 0) -> Optional[StopReason]:
         """Check all global hard budgets and return a StopReason if any are exhausted."""
         budget = self.scene_state.budget
@@ -144,15 +153,13 @@ class Runner:
                 return
                 
             # 3. Validate budget BEFORE execution
-            from sam3_vlm.core.types import SpatialMode, ActionFamily
+            from sam3_vlm.core.types import ActionFamily
             action = best_entry.action
-            predicted_tiles = 1
-            if action.spatial_mode == SpatialMode.TILED and action.tiling:
-                predicted_tiles = action.tiling.grid_rows * action.tiling.grid_cols
+            predicted_tiles = self._estimated_tile_count(action)
                 
             stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
             if stop_reason:
-                self.scene_state.stop_reason = stop_reason
+                self.scene_state.set_stop_reason(stop_reason)
                 self.state = RunnerState.CLEANUP
                 return
                 
@@ -164,8 +171,7 @@ class Runner:
             budget = self.scene_state.budget
             # Update budgets
             budget.sam3_calls += 1
-            if action.spatial_mode == SpatialMode.TILED:
-                budget.sam3_tiles += predicted_tiles
+            budget.sam3_tiles += predicted_tiles
             budget.model_runtime_ms += observation.runtime_ms
             budget.total_runtime_ms += observation.runtime_ms
             
@@ -239,7 +245,7 @@ class Runner:
             # Check stopping
             stop_reason = self.stopping_condition.should_stop(self.scene_state, self.config)
             if stop_reason:
-                self.scene_state.stop_reason = stop_reason
+                self.scene_state.set_stop_reason(stop_reason)
                 self.state = RunnerState.CLEANUP
                 return
 
@@ -257,8 +263,15 @@ class Runner:
             # Kept for backward compatibility if needed, but ASSESS handles this now.
             self.state = RunnerState.CLEANUP
         elif self.state == RunnerState.CLEANUP:
+            # First evaluate global hard budgets!
+            hard_reason = self._check_hard_budgets(predicted_tiles=0)
+            if hard_reason:
+                self.scene_state.set_stop_reason(hard_reason)
+                self.state = RunnerState.FINALIZE
+                return
+                
             if self.scene_state.budget.cleanup_calls >= getattr(self.config.budget, 'max_cleanup_calls', 5):
-                self.scene_state.stop_reason = StopReason.CLEANUP_BUDGET
+                self.scene_state.set_stop_reason(StopReason.CLEANUP_BUDGET)
                 self.state = RunnerState.FINALIZE
                 return
 
@@ -271,18 +284,16 @@ class Runner:
             )
             
             if not decision.action:
-                self.scene_state.stop_reason = decision.reason
+                self.scene_state.set_stop_reason(decision.reason)
                 self.state = RunnerState.FINALIZE
                 return
             
             cleanup_action = decision.action
             
-            from sam3_vlm.core.types import SpatialMode
-            
-            predicted_tiles = 1 if cleanup_action.spatial_mode == SpatialMode.LOCAL else 4
+            predicted_tiles = self._estimated_tile_count(cleanup_action)
             stop_reason = self._check_hard_budgets(predicted_tiles=predicted_tiles)
             if stop_reason:
-                self.scene_state.stop_reason = stop_reason
+                self.scene_state.set_stop_reason(stop_reason)
                 self.state = RunnerState.FINALIZE
                 return
 
@@ -291,8 +302,7 @@ class Runner:
             self.scene_state.actions_since_replan += 1
             self.scene_state.budget.sam3_calls += 1
             self.scene_state.budget.cleanup_calls += 1
-            if cleanup_action.spatial_mode == SpatialMode.TILED:
-                 self.scene_state.budget.sam3_tiles += 1 # approx
+            self.scene_state.budget.sam3_tiles += predicted_tiles
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
 

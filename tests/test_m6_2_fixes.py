@@ -218,6 +218,7 @@ def test_m6_2_i_and_j_cleanup_stop_reasons():
     
     # Now give budget back but remove residual
     runner.scene_state.budget.cleanup_calls = 0
+    runner.scene_state.stop_reason = None
     node.class_belief = ClassBelief({"t": 0.99, "other": 0.01}) # not ambiguous
     runner.state = RunnerState.CLEANUP
     runner._step()

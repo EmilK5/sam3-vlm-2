@@ -78,3 +78,29 @@ class SceneState:
     actions_since_replan: int = 0
     replans_executed: int = 0
 
+    def set_stop_reason(self, candidate: StopReason) -> None:
+        """Sets the stop reason enforcing deterministic precedence."""
+        if self.stop_reason is None:
+            self.stop_reason = candidate
+            return
+            
+        precedence = {
+            StopReason.SAM3_BUDGET: 100,
+            StopReason.TILE_BUDGET: 90,
+            StopReason.RUNTIME_BUDGET: 80,
+            StopReason.MAX_ITERATIONS: 70,
+            StopReason.CLEANUP_BUDGET: 60,
+            StopReason.NO_VALID_ACTIONS: 50,
+            StopReason.LOW_MARGINAL_UTILITY: 40,
+            StopReason.CLEANUP_COMPLETE: 30,
+            StopReason.DISCOVERY_AND_UNCERTAINTY_SATURATED: 20,
+            StopReason.ACTION_BANK_EXHAUSTED: 10,
+            StopReason.QWEN_BUDGET: 0,
+        }
+        
+        current_prio = precedence.get(self.stop_reason, -1)
+        candidate_prio = precedence.get(candidate, -1)
+        
+        if candidate_prio > current_prio:
+            self.stop_reason = candidate
+
