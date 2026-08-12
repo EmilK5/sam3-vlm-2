@@ -175,22 +175,28 @@ class RealSAM3Sensor:
     def __init__(
         self,
         model_id: str = "facebook/sam3",
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        device: str | None = None,
         id_gen: Optional[IDGenerator] = None,
         compile_model: bool = False,
     ) -> None:
+        try:
+            import torch
+            from transformers import Sam3Model, Sam3Processor
+        except ImportError as e:
+            raise RuntimeError(
+                "transformers and torch are required for RealSAM3Sensor"
+            ) from e
+
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+
         self.id_gen = id_gen or IDGenerator()
         self.call_count = 0
         self.device = torch.device(device)
         self.model_id = model_id
         self.compile_model = compile_model
-        
+
         logger.info(f"Loading real SAM3 model: {model_id} on {self.device}")
-        try:
-            import torch
-            from transformers import Sam3Model, Sam3Processor
-        except ImportError:
-            raise RuntimeError("transformers and torch are required for RealSAM3Sensor")
 
         if self.device.type == "cuda":
             torch.backends.cuda.matmul.allow_tf32 = True
@@ -202,7 +208,7 @@ class RealSAM3Sensor:
 
         if self.device.type == "cuda" and self.compile_model:
             logger.info("Compiling SAM3 model graph...")
-            self.model = torch.compile(self.model)
+            self.model = torch.compile(self.model) 
 
     def _run_inference(self, image_pil: Image.Image, text_prompt: str, threshold: float) -> tuple[np.ndarray, np.ndarray, list]:
         """Runs a single forward pass."""

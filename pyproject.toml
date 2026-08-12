@@ -17,6 +17,7 @@ dependencies = [
     "pillow",
     "opencv-python",
     "openai",
+    "torchvision",
 ]
 
 [project.optional-dependencies]
