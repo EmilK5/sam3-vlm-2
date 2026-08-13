@@ -16,6 +16,14 @@
     "overlap_ratio": 0.15,
     "tile_min_size": 256
   },
+  "bootstrap": {
+    "locked_context_prompt": "tree canopy",
+    "locked_context_threshold": 0.4,
+    "locked_context_fallback_full_image": true
+  },
+  "belief": {
+    "num_confounders": 2
+  },
   "cleanup": {
     "cleanup_min_utility": 0.05
   },

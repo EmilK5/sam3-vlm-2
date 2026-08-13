@@ -1,22 +1,26 @@
-"""Qwen Planner schemas, output contracts, and service wrapper (V4 Design Spec §6 / §21.7)."""
+"""Qwen planner schemas, output contracts, and budgeted service wrapper."""
 
 from dataclasses import dataclass, field
 import json
+import time
 from typing import Any, Dict, List, Optional, Protocol
 from sam3_vlm.core.config import V4Config
 from sam3_vlm.core.types import ActionFamily, BudgetState, SpatialMode
+from sam3_vlm.sensing.action import validate_sam3_prompt_contract
 from sam3_vlm.sensing.evidence import QwenEvidencePack
 
 
 class BudgetExceededError(RuntimeError):
-    """Raised when a Qwen call attempt exceeds hard budget limits (V4 Design Spec §6.4 / §15)."""
-
-    pass
+    """Raised when a Qwen call attempt exceeds its hard call budget."""
 
 
 @dataclass
 class ProposedAction:
-    """Individual action proposal returned by Qwen scene planner (V4 Design Spec §6.2)."""
+    """Individual scene-level experiment proposed by Qwen.
+
+    ``prompt`` remains the internal compatibility name.  Persistent Qwen JSON
+    uses ``sam3_prompt`` to make the planner/reasoner separation explicit.
+    """
 
     semantic_key: str
     prompt: str
@@ -33,10 +37,14 @@ class ProposedAction:
     negative_exemplar_ids: List[str] = field(default_factory=list)
     tiling: Optional[Dict[str, Any]] = None
 
+    @property
+    def sam3_prompt(self) -> str:
+        return self.prompt
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "semantic_key": self.semantic_key,
-            "prompt": self.prompt,
+            "sam3_prompt": self.prompt,
             "family": self.family.value,
             "priority": self.priority,
             "semantic_prior": dict(self.semantic_prior),
@@ -53,9 +61,12 @@ class ProposedAction:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ProposedAction":
+        prompt = data.get("sam3_prompt", data.get("prompt"))
+        if prompt is None:
+            raise KeyError("sam3_prompt")
         return cls(
             semantic_key=data["semantic_key"],
-            prompt=data["prompt"],
+            prompt=prompt,
             family=ActionFamily(data["family"]),
             priority=float(data.get("priority", 1.0)),
             semantic_prior=dict(data.get("semantic_prior", {})),
@@ -73,8 +84,6 @@ class ProposedAction:
 
 @dataclass
 class PlannerOutput:
-    """Constrained structured object returned by Qwen scene planner (V4 Design Spec §6.2)."""
-
     scene_summary: str = ""
     proposed_actions: List[ProposedAction] = field(default_factory=list)
     missing_appearance_modes: List[str] = field(default_factory=list)
@@ -90,10 +99,9 @@ class PlannerOutput:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PlannerOutput":
-        actions = [ProposedAction.from_dict(a) for a in data.get("proposed_actions", [])]
         return cls(
             scene_summary=data.get("scene_summary", ""),
-            proposed_actions=actions,
+            proposed_actions=[ProposedAction.from_dict(a) for a in data.get("proposed_actions", [])],
             missing_appearance_modes=list(data.get("missing_appearance_modes", [])),
             likely_confounders=list(data.get("likely_confounders", [])),
         )
@@ -107,8 +115,6 @@ class PlannerOutput:
 
 
 class PlannerService(Protocol):
-    """High-level planning service contract."""
-
     def plan_scene(
         self,
         evidence: QwenEvidencePack,
@@ -119,10 +125,28 @@ class PlannerService(Protocol):
 
 
 class QwenPlannerService:
-    """Planner service wrapper enforcing Qwen call budget, defensive validation, and error repair (V4 Design Spec §6.4)."""
+    """Budgeted Qwen service with measured latency and one repair attempt."""
 
     def __init__(self, planner_backend: Any) -> None:
         self.planner_backend = planner_backend
+        self.last_repair_attempted = False
+        self.last_fallback_used = False
+        self.last_call_runtime_ms = 0.0
+
+    def _invoke_backend(self, evidence: QwenEvidencePack, budget: BudgetState, config: V4Config) -> Any:
+        start = time.perf_counter()
+        try:
+            if hasattr(self.planner_backend, "plan_scene"):
+                return self.planner_backend.plan_scene(evidence, budget, config)
+            if hasattr(self.planner_backend, "plan_actions"):
+                return self.planner_backend.plan_actions(evidence)
+            return None
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            self.last_call_runtime_ms += elapsed_ms
+            budget.qwen_runtime_ms += elapsed_ms
+            budget.model_runtime_ms += elapsed_ms
+            budget.total_runtime_ms += elapsed_ms
 
     def plan_scene(
         self,
@@ -130,76 +154,71 @@ class QwenPlannerService:
         budget: BudgetState,
         config: V4Config = V4Config(),
     ) -> PlannerOutput:
-        """Execute Qwen planning pass if within budget, with defensive validation and deterministic capping."""
         if budget.qwen_calls >= config.budget.max_qwen_calls:
             raise BudgetExceededError(
                 f"Qwen call budget exhausted ({budget.qwen_calls}/{config.budget.max_qwen_calls})."
             )
 
+        self.last_repair_attempted = False
+        self.last_fallback_used = False
+        self.last_call_runtime_ms = 0.0
         budget.qwen_calls += 1
-
         raw_output = None
         try:
-            if hasattr(self.planner_backend, "plan_scene"):
-                raw_output = self.planner_backend.plan_scene(evidence, budget, config)
-            elif hasattr(self.planner_backend, "plan_actions"):
-                raw_output = self.planner_backend.plan_actions(evidence)
-        except Exception as e:
+            raw_output = self._invoke_backend(evidence, budget, config)
+        except Exception as exc:
             if getattr(self.planner_backend, "strict_model_errors", False):
-                raise e
-            # Defensive fallback on model call failure
+                raise
             return PlannerOutput(
-                scene_summary=f"Model call failed ({type(e).__name__}: {e}). Using deterministic fallback.",
+                scene_summary=f"Model call failed ({type(exc).__name__}: {exc}).",
                 proposed_actions=[],
             )
 
         output = self._coerce_to_planner_output(raw_output)
-        
-        # Single repair attempt
         if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
             if budget.qwen_calls < config.budget.max_qwen_calls:
+                self.last_repair_attempted = True
                 budget.qwen_calls += 1
                 try:
-                    # Append repair instruction to prompt
                     import copy
                     repair_evidence = copy.deepcopy(evidence)
-                    repair_evidence.user_prompt += "\n\nYour previous output was invalid. Return ONLY JSON matching this schema."
-                    
-                    if hasattr(self.planner_backend, "plan_scene"):
-                        raw_output = self.planner_backend.plan_scene(repair_evidence, budget, config)
-                    elif hasattr(self.planner_backend, "plan_actions"):
-                        raw_output = self.planner_backend.plan_actions(repair_evidence)
-                        
+                    repair_evidence.scene_summary += (
+                        "\nPrevious output was malformed. Return only the required JSON schema."
+                    )
+                    raw_output = self._invoke_backend(repair_evidence, budget, config)
                     output = self._coerce_to_planner_output(raw_output)
                 except Exception:
                     pass
-        
-        # In strict mode, malformed output is a hard failure, not a fallback
+
         if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
             if getattr(self.planner_backend, "strict_model_errors", False):
-                raise ValueError(f"Strict Qwen execution failed: Unparseable or malformed response: {raw_output}")
-
-        # Deterministic fallback if still invalid (Spec M3.5 Phase 3)
-        if not output.proposed_actions and output.scene_summary == "Raw output unparseable.":
+                raise ValueError(f"Strict Qwen execution failed: malformed response: {raw_output}")
+            self.last_fallback_used = True
+            fallback_prompt = evidence.user_prompt or "visible object"
+            try:
+                validate_sam3_prompt_contract(fallback_prompt)
+            except ValueError:
+                fallback_prompt = "visible object"
             output = PlannerOutput(
-                scene_summary="Deterministic fallback due to repeated model failure.",
+                scene_summary="Deterministic fallback due to repeated planner parse failure.",
                 proposed_actions=[
                     ProposedAction(
                         semantic_key="target_fallback",
-                        prompt=evidence.user_prompt or (evidence.target_class or "target"),
+                        prompt=fallback_prompt,
                         family=ActionFamily.DISCOVERY,
                         priority=1.0,
+                        semantic_prior={"target": 1.0},
                         suggested_threshold=0.25,
                         suggested_spatial_mode=SpatialMode.GLOBAL,
                     )
-                ]
+                ],
             )
 
-        max_actions = config.planner.max_actions_per_prompt
-        return self._validate_and_normalize_output(output, max_actions=max_actions)
+        return self._validate_and_normalize_output(
+            output, max_actions=config.planner.max_actions_per_prompt
+        )
 
     def _coerce_to_planner_output(self, raw_output: Any) -> PlannerOutput:
-        """Coerce raw backend response (dict, json string, or PlannerOutput) into a typed PlannerOutput."""
         if isinstance(raw_output, PlannerOutput):
             return raw_output
         if isinstance(raw_output, dict):
@@ -214,30 +233,27 @@ class QwenPlannerService:
                 pass
         return PlannerOutput(scene_summary="Raw output unparseable.", proposed_actions=[])
 
-    def _validate_and_normalize_output(
-        self, output: PlannerOutput, max_actions: int = 5
-    ) -> PlannerOutput:
-        """Defensively clamp numerical values and cap action count to max_actions."""
+    def _validate_and_normalize_output(self, output: PlannerOutput, max_actions: int = 5) -> PlannerOutput:
+        # Do not silently drop semantically invalid actions here.  ActionBankGenerator
+        # records explicit rejection codes so real runs explain why a bank became empty.
         normalized_actions: List[ProposedAction] = []
         for action in output.proposed_actions:
-            clamped_priority = max(0.0, min(1.0, float(action.priority if action.priority is not None else 0.5)))
-            clamped_threshold = (
+            priority = max(0.0, min(1.0, float(action.priority if action.priority is not None else 0.5)))
+            threshold = (
                 max(0.0, min(1.0, float(action.suggested_threshold)))
-                if action.suggested_threshold is not None
-                else 0.25
+                if action.suggested_threshold is not None else 0.25
             )
-            clamped_priors = {
-                k: max(0.0, min(1.0, float(v))) for k, v in action.semantic_prior.items()
-            } if action.semantic_prior is not None else None
-
+            priors = {
+                k: max(0.0, min(1.0, float(v))) for k, v in (action.semantic_prior or {}).items()
+            }
             normalized_actions.append(
                 ProposedAction(
                     semantic_key=action.semantic_key,
                     prompt=action.prompt,
                     family=action.family,
-                    priority=clamped_priority,
-                    semantic_prior=clamped_priors,
-                    suggested_threshold=clamped_threshold,
+                    priority=priority,
+                    semantic_prior=priors,
+                    suggested_threshold=threshold,
                     suggested_spatial_mode=action.suggested_spatial_mode,
                     exemplar_policy=action.exemplar_policy,
                     rationale=action.rationale,
@@ -248,14 +264,10 @@ class QwenPlannerService:
                     tiling=action.tiling,
                 )
             )
-
-        # Sort actions by priority descending and cap at max_actions
         normalized_actions.sort(key=lambda a: a.priority, reverse=True)
-        capped_actions = normalized_actions[:max_actions]
-
         return PlannerOutput(
             scene_summary=output.scene_summary,
-            proposed_actions=capped_actions,
+            proposed_actions=normalized_actions[:max_actions],
             missing_appearance_modes=list(output.missing_appearance_modes),
             likely_confounders=list(output.likely_confounders),
         )

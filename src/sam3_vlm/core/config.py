@@ -37,10 +37,19 @@ class StoppingConfig:
 
 @dataclass(frozen=True)
 class BootstrapConfig:
-    """Bootstrap pipeline configuration (V4 Design Spec §5)."""
+    """Bootstrap pipeline configuration (V4 Design Spec §5).
+
+    ``locked_context_prompt`` is deliberately generic.  Dataset/deployment
+    configuration may use it to establish one SAM3-grounded search domain
+    before target bootstrap.  For the green-citrus deployment this is
+    ``"tree canopy"``.  The core controller never hard-codes that concept.
+    """
 
     enable_tiled_bootstrap: bool = True
     tiled_bootstrap_min_candidates: int = 5
+    locked_context_prompt: Optional[str] = None
+    locked_context_threshold: float = 0.40
+    locked_context_fallback_full_image: bool = True
 
 
 @dataclass(frozen=True)
@@ -81,10 +90,16 @@ class AssociationConfig:
 
 @dataclass(frozen=True)
 class BeliefConfig:
-    """Belief & evidence update configuration (V4 Design Spec §11)."""
+    """Belief & evidence update configuration (V4 Design Spec §11).
+
+    The posterior ontology is intentionally anonymous and frozen.  The only
+    legal dimensions are ``target`` plus ``confounder1..N``.  Human-readable
+    Qwen labels live in planner metadata, never in the probability vector.
+    """
 
     prior_pseudocount: float = 1.0
     discount_repeat_weight: float = 0.8
+    num_confounders: int = 2
 
 
 @dataclass(frozen=True)
@@ -103,7 +118,7 @@ class CleanupConfig:
     """Residual cleanup configuration (V4 Design Spec §13)."""
 
     cleanup_residual_max_nodes: int = 10
-    cleanup_ambiguity_threshold: float = 0.8  # e.g., entropy > 0.8 is ambiguous
+    cleanup_ambiguity_threshold: float = 0.8
     cleanup_min_utility: float = 0.05
     roi_batch_size: int = 4
 
@@ -136,4 +151,3 @@ class V4Config:
     device: str = "cuda"
     output_dir: str = "out"
     assets_dir: str = "assets"
-

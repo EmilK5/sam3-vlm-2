@@ -74,7 +74,14 @@ class BudgetState:
     sam3_calls: int = 0
     sam3_tiles: int = 0
     cleanup_calls: int = 0
+    # Backward-compatible aggregate model runtime.  It is now the sum of
+    # SAM3 and Qwen latency rather than SAM3-only latency.
     model_runtime_ms: float = 0.0
+    sam3_runtime_ms: float = 0.0
+    qwen_runtime_ms: float = 0.0
+    controller_runtime_ms: float = 0.0
+    wall_runtime_ms: float = 0.0
+    # Kept for schema compatibility; finalized to wall-clock runtime.
     total_runtime_ms: float = 0.0
 
 

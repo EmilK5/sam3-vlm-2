@@ -76,6 +76,10 @@ class RunSummary:
     sam3_tiles: int = 0
     cleanup_calls: int = 0
     runtime_ms: float = 0.0
+    wall_runtime_ms: float = 0.0
+    sam3_runtime_ms: float = 0.0
+    qwen_runtime_ms: float = 0.0
+    controller_runtime_ms: float = 0.0
     number_of_replans: int = 0
     discovery_statistics: Dict[str, Any] = field(default_factory=dict)
     evaluation_fields: Dict[str, Any] = field(default_factory=dict)

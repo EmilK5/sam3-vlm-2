@@ -54,7 +54,10 @@ class CleanupController:
                 
         return tuple(trusted)
 
-    def generate_cleanup_action(self, residual_nodes: List[Node], graph: SceneGraph, target_class: str, config: V4Config) -> "CleanupDecision":
+    def generate_cleanup_action(
+        self, residual_nodes: List[Node], graph: SceneGraph, target_class: str,
+        config: V4Config, user_prompt: Optional[str] = None
+    ) -> "CleanupDecision":
         """Generate a batched or local cleanup action for the residual nodes."""
         from sam3_vlm.core.types import CleanupDecision, StopReason
         
@@ -130,7 +133,7 @@ class CleanupController:
         action = SensingAction(
             action_id=self.id_gen.next_action_id(),
             semantic_key=f"cleanup_{target_class}",
-            prompt=f"verify {target_class}",
+            prompt=user_prompt or "ambiguous object",
             family=ActionFamily.VERIFICATION,
             spatial_mode=mode,
             source=ActionSource.CLEANUP,

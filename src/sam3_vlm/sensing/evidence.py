@@ -86,6 +86,8 @@ class QwenEvidencePack:
     image_path: Optional[str] = None
     scene_summary: str = ""
     discovery_diagnostics: Dict[str, Any] = field(default_factory=dict)
+    belief_classes: List[str] = field(default_factory=list)
+    confounder_labels: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -96,6 +98,8 @@ class QwenEvidencePack:
             "image_path": self.image_path,
             "scene_summary": self.scene_summary,
             "discovery_diagnostics": dict(self.discovery_diagnostics),
+            "belief_classes": list(self.belief_classes),
+            "confounder_labels": dict(self.confounder_labels),
         }
 
     @classmethod
@@ -110,6 +114,8 @@ class QwenEvidencePack:
             image_path=data.get("image_path"),
             scene_summary=data.get("scene_summary", ""),
             discovery_diagnostics=dict(data.get("discovery_diagnostics", {})),
+            belief_classes=list(data.get("belief_classes", [])),
+            confounder_labels=dict(data.get("confounder_labels", {})),
         )
 
     def to_json(self, indent: int = 2) -> str:
@@ -132,7 +138,10 @@ class QwenEvidencePack:
             f"Image ID: {self.original_image_id}",
             f"Image Path: {self.image_path or 'Not provided'}",
             f"Contact Sheet Image: {self.contact_sheet.contact_sheet_image_path or 'Not rendered'}",
-            f"User Target Concept: '{self.user_prompt}' (Class: {self.target_class})",
+            f"User Target Concept: '{self.user_prompt}' (posterior class: target)",
+            f"Frozen Belief Classes: {self.belief_classes or ['target']}",
+            f"Frozen Confounder Slot Labels: {self.confounder_labels or 'not assigned yet'}",
+            f"Discovery Diagnostics: {self.discovery_diagnostics}",
             f"Summary: {self.scene_summary or 'Initial bootstrap candidates.'}",
             f"Total Candidates Found: {self.contact_sheet.total_candidates}",
             f"Sampled Contact Sheet Crops ({len(self.contact_sheet.crops)} crops):",

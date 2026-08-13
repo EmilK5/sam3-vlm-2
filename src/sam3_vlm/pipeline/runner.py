@@ -1,10 +1,11 @@
 """Runner state machine definitions and implementation (V4 Design Spec §24)."""
 
+import dataclasses
 import time
 from enum import Enum
 from typing import Any, List, Optional
 from sam3_vlm.core.config import V4Config
-from sam3_vlm.core.types import ActionSource
+from sam3_vlm.core.types import ActionSource, SpatialMode
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.models.sam3 import SAM3Sensor
 from sam3_vlm.models.qwen import QwenPlanner
@@ -27,6 +28,7 @@ from sam3_vlm.pipeline.bootstrap import BootstrapPipeline
 from sam3_vlm.sensing.evidence import ContactSheetBuilder
 from sam3_vlm.sensing.tiling import TilingPolicy
 from sam3_vlm.core.types import StopReason
+from sam3_vlm.core.geometry import Box
 
 
 class RunnerState(str, Enum):
@@ -81,13 +83,15 @@ class Runner:
 
     def run(self, image: Any, user_prompt: str, target_class: str = "target", image_id: str = "img1") -> float:
         """Execute the active perception state machine until DONE."""
+        if target_class != "target":
+            raise ValueError("V4 posterior ontology requires canonical target_class='target'.")
+        self._run_start_perf = time.perf_counter()
         self.image = image
         self.user_prompt = user_prompt
-        self.target_class = target_class
+        self.target_class = "target"
         self.image_id = image_id
         
         if self.recorder:
-            import dataclasses
             self.recorder.update_manifest({
                 "image_id": image_id,
                 "user_prompt": user_prompt,
@@ -102,6 +106,7 @@ class Runner:
                 self._step()
                 
             final_count = self._compute_final_count()
+            self._finalize_runtime_accounting()
             if self.recorder:
                 from sam3_vlm.logging.schema import RunSummary
                 summary = RunSummary(
@@ -114,7 +119,11 @@ class Runner:
                     sam3_calls=self.scene_state.budget.sam3_calls,
                     sam3_tiles=self.scene_state.budget.sam3_tiles,
                     cleanup_calls=self.scene_state.budget.cleanup_calls,
-                    runtime_ms=self.scene_state.budget.total_runtime_ms,
+                    runtime_ms=self.scene_state.budget.wall_runtime_ms,
+                    wall_runtime_ms=self.scene_state.budget.wall_runtime_ms,
+                    sam3_runtime_ms=self.scene_state.budget.sam3_runtime_ms,
+                    qwen_runtime_ms=self.scene_state.budget.qwen_runtime_ms,
+                    controller_runtime_ms=self.scene_state.budget.controller_runtime_ms,
                     number_of_replans=self.scene_state.replans_executed,
                     discovery_statistics={
                         "coverage_ratio": getattr(self.scene_state.discovery_state.spatial_coverage, "coverage_ratio", 0.0) if hasattr(self.scene_state.discovery_state, "spatial_coverage") else 0.0,
@@ -138,7 +147,12 @@ class Runner:
                 "iteration": self.scene_state.iteration,
                 "qwen_round": self.scene_state.qwen_round,
                 "replans_executed": self.scene_state.replans_executed,
-                "actions_since_replan": self.scene_state.actions_since_replan
+                "actions_since_replan": self.scene_state.actions_since_replan,
+                "last_plan_accepted_actions": self.scene_state.last_plan_accepted_actions,
+                "search_region": self.scene_state.search_region.bbox().as_tuple() if self.scene_state.search_region else None,
+                "search_region_locked": self.scene_state.search_region_locked,
+                "search_region_source": self.scene_state.search_region_source,
+                "confounder_labels": dict(self.scene_state.confounder_labels),
             })
 
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
@@ -161,7 +175,8 @@ class Runner:
         if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
             return StopReason.TILE_BUDGET
             
-        if cfg_budget.max_runtime_seconds and (budget.total_runtime_ms / 1000.0) >= cfg_budget.max_runtime_seconds:
+        elapsed_wall_ms = self._elapsed_wall_ms()
+        if cfg_budget.max_runtime_seconds and (elapsed_wall_ms / 1000.0) >= cfg_budget.max_runtime_seconds:
             return StopReason.RUNTIME_BUDGET
             
         if self.scene_state.iteration >= self.config.stopping.max_iterations:
@@ -218,7 +233,7 @@ class Runner:
                 return
                 
             from sam3_vlm.core.types import ActionFamily
-            action = best_entry.action
+            action = self._constrain_action_to_search_region(best_entry.action)
             
             if self.recorder:
                 self.recorder.record_sam3_action_selected(action.action_id, action.semantic_key)
@@ -247,6 +262,7 @@ class Runner:
             # Update budgets
             budget.sam3_calls += 1
             budget.sam3_tiles += predicted_tiles
+            budget.sam3_runtime_ms += observation.runtime_ms
             budget.model_runtime_ms += observation.runtime_ms
             budget.total_runtime_ms += observation.runtime_ms
             
@@ -349,14 +365,20 @@ class Runner:
                 records_dict = {k: dataclasses.asdict(v) for k, v in self.scene_state.semantic_memory.records.items()}
                 self.recorder.record_semantic_memory_updated({"records": records_dict})
             
-            # 11. Update discovery state
+            # 11. Update spatial coverage for every non-context sensor search.
+            if action.family != ActionFamily.CONTEXT:
+                self.scene_state.discovery_state.record_search(
+                    observation.searched_regions, self.scene_state.search_region
+                )
+            # Discovery plateau history MUST include zero-gain discovery executions.
             if action.family == ActionFamily.DISCOVERY:
-                self.scene_state.discovery_state.recent_new_node_counts.append(float(new_nodes_count))
-            if new_nodes_count > 0 and action.family != ActionFamily.CONTEXT: # skip context for recent_new_nodes
-                self.scene_state.discovery_state.recent_new_nodes.extend([n.node_id for n in assoc_result.new_nodes])
+                self.scene_state.discovery_state.record_discovery_gain(
+                    new_nodes_count,
+                    [n.node_id for n in assoc_result.new_nodes],
+                    plateau_window=self.config.replanning.discovery_plateau_steps + 1,
+                )
             if self.recorder:
-                import dataclasses
-                self.recorder.record_discovery_state_updated(dataclasses.asdict(self.scene_state.discovery_state))
+                self.recorder.record_discovery_state_updated(self.scene_state.discovery_state.to_dict())
             
             # 13. Evaluate replanning triggers & 14. Global stopping
             self.scene_state.iteration += 1
@@ -400,7 +422,17 @@ class Runner:
                 self.state = RunnerState.FINALIZE
                 return
                 
-            if self.scene_state.budget.cleanup_calls >= getattr(self.config.budget, 'max_cleanup_calls', 5):
+            max_cleanup_calls = getattr(self.config.budget, "max_cleanup_calls", 5)
+            if max_cleanup_calls <= 0:
+                # Cleanup is intentionally disabled in current real M8.  Do not
+                # misreport that configuration choice as budget exhaustion.
+                if self.scene_state.stop_reason is None:
+                    self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
+                if self.recorder:
+                    self.recorder.record_stop_decided(self.scene_state.stop_reason.value)
+                self.state = RunnerState.FINALIZE
+                return
+            if self.scene_state.budget.cleanup_calls >= max_cleanup_calls:
                 if self.recorder:
                     self.recorder.record_stop_decided(StopReason.CLEANUP_BUDGET.value)
                 self.scene_state.set_stop_reason(StopReason.CLEANUP_BUDGET)
@@ -412,7 +444,8 @@ class Runner:
             )
             
             decision = self.cleanup_controller.generate_cleanup_action(
-                residual_nodes, self.scene_state.graph, self.target_class, self.config
+                residual_nodes, self.scene_state.graph, self.target_class, self.config,
+                user_prompt=self.user_prompt,
             )
             
             if not decision.action:
@@ -422,7 +455,7 @@ class Runner:
                 self.state = RunnerState.FINALIZE
                 return
             
-            cleanup_action = decision.action
+            cleanup_action = self._constrain_action_to_search_region(decision.action)
             if self.recorder:
                 self.recorder.record_sam3_action_selected(cleanup_action.action_id, cleanup_action.semantic_key)
             
@@ -444,6 +477,7 @@ class Runner:
             self.scene_state.budget.sam3_calls += 1
             self.scene_state.budget.cleanup_calls += 1
             self.scene_state.budget.sam3_tiles += predicted_tiles
+            self.scene_state.budget.sam3_runtime_ms += observation.runtime_ms
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
             self._record_controller_state()
@@ -524,7 +558,7 @@ class Runner:
                 import dataclasses
                 records_dict = {k: dataclasses.asdict(v) for k, v in self.scene_state.semantic_memory.records.items()}
                 self.recorder.record_semantic_memory_updated({"records": records_dict})
-                self.recorder.record_discovery_state_updated(dataclasses.asdict(self.scene_state.discovery_state))
+                self.recorder.record_discovery_state_updated(self.scene_state.discovery_state.to_dict())
 
             self.scene_state.iteration += 1
             self._record_controller_state()
@@ -547,7 +581,8 @@ class Runner:
             node = self.scene_state.graph.get_node(node_id)
             if node:
                 self.belief_updater.update_node_belief(
-                    node, action, obs_ref, target_class=self.target_class
+                    node, action, obs_ref, target_class=self.target_class,
+                    config=self.config.belief, class_vocabulary=self.scene_state.belief_classes,
                 )
                 if self.recorder:
                     prov = {
@@ -560,7 +595,8 @@ class Runner:
                     self.recorder.record_node_updated(node_id, node.to_dict(), prov)
         for new_node in assoc_result.new_nodes:
             self.belief_updater.update_node_belief(
-                new_node, action, new_node.observations[-1], target_class=self.target_class
+                new_node, action, new_node.observations[-1], target_class=self.target_class,
+                config=self.config.belief, class_vocabulary=self.scene_state.belief_classes,
             )
             if self.recorder:
                 prov = {
@@ -601,7 +637,8 @@ class Runner:
                 )
                 node.observations.append(obs_ref)
                 self.belief_updater.update_node_belief(
-                    node, action, obs_ref, target_class=self.target_class
+                    node, action, obs_ref, target_class=self.target_class,
+                    config=self.config.belief, class_vocabulary=self.scene_state.belief_classes,
                 )
                 if self.recorder:
                     prov = {
@@ -628,6 +665,7 @@ class Runner:
             self.id_gen,
             valid_node_ids=valid_node_ids,
             config=self.config,
+            search_region=self.scene_state.search_region,
         )
         
         if self.recorder:
@@ -647,14 +685,22 @@ class Runner:
                 },
                 "output": planner_output.to_dict(),
                 "metadata": {
-                    "repair_attempted": False,
-                    "fallback_used": False
+                    "repair_attempted": self.planner_service.last_repair_attempted,
+                    "fallback_used": self.planner_service.last_fallback_used,
+                    "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
+                    "rejections": [r.to_dict() for r in self.bank_generator.last_rejections],
                 }
             }
             path = self.recorder.save_qwen_artifact(call_id, payload)
             action_ids = [e.action.action_id for e in new_entries]
             self.recorder.record_qwen_plan_completed(path, action_ids)
             
+        self._freeze_confounder_labels(planner_output)
+        self.scene_state.last_plan_accepted_actions = len(new_entries)
+        if self.recorder:
+            invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
+            invalid_total += len(self.bank_generator.last_rejections)
+            self.recorder.record_action_bank_refreshed(len(self.scene_state.action_bank.entries), invalid_total)
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
@@ -676,6 +722,7 @@ class Runner:
             self.id_gen,
             valid_node_ids=valid_node_ids,
             config=self.config,
+            search_region=self.scene_state.search_region,
         )
         
         if self.recorder:
@@ -695,14 +742,22 @@ class Runner:
                 },
                 "output": planner_output.to_dict(),
                 "metadata": {
-                    "repair_attempted": False,
-                    "fallback_used": False
+                    "repair_attempted": self.planner_service.last_repair_attempted,
+                    "fallback_used": self.planner_service.last_fallback_used,
+                    "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
+                    "rejections": [r.to_dict() for r in self.bank_generator.last_rejections],
                 }
             }
             path = self.recorder.save_qwen_artifact(call_id, payload)
             action_ids = [e.action.action_id for e in new_entries]
             self.recorder.record_qwen_plan_completed(path, action_ids)
             
+        self._freeze_confounder_labels(planner_output)
+        self.scene_state.last_plan_accepted_actions = len(new_entries)
+        if self.recorder:
+            invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
+            invalid_total += len(self.bank_generator.last_rejections)
+            self.recorder.record_action_bank_refreshed(len(self.scene_state.action_bank.entries), invalid_total)
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
@@ -713,27 +768,42 @@ class Runner:
             self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
 
     def _request_replan(self):
-        """Centralized handler for all non-initial replan triggers."""
-        # Check hard limits
-        limit_reached = False
-        if self.scene_state.replans_executed >= self.config.replanning.max_replans:
-            limit_reached = True
-        elif self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls:
-            limit_reached = True
+        """Centralized handler that prevents evidence-free empty replan loops."""
+        qwen_exhausted = self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls
+        replans_exhausted = self.scene_state.replans_executed >= self.config.replanning.max_replans
 
-        if limit_reached:
-            # Fallback: check if we have any valid action left
+        if qwen_exhausted or replans_exhausted:
             best_entry = self._choose_best_action()
-            if best_entry and best_entry.total_utility and best_entry.total_utility >= self.config.stopping.utility_min_threshold:
+            if best_entry is not None:
                 self.state = RunnerState.GLOBAL_SENSING
             else:
+                self.scene_state.set_stop_reason(
+                    StopReason.QWEN_BUDGET if qwen_exhausted else StopReason.NO_VALID_ACTIONS
+                )
                 self.state = RunnerState.CLEANUP
             return
 
-        # Budgets okay, build fresh evidence and call Qwen
-        self.evidence_pack = self.replan_evidence_builder.build(self.scene_state, self.image)
+        # If the previous *replan* produced no executable action and no SAM3
+        # evidence has been gathered since it, another immediate Qwen call has
+        # no changed state to reason over.  Stop instead of burning replans.
+        if (
+            self.scene_state.replans_executed > 0
+            and self.scene_state.last_plan_accepted_actions == 0
+            and self.scene_state.actions_since_replan == 0
+        ):
+            self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
+            self.state = RunnerState.CLEANUP
+            return
+
+        self.evidence_pack = self.replan_evidence_builder.build(
+            self.scene_state, self.image, assets_dir=self.config.assets_dir
+        )
         self._execute_replan()
-        self.state = RunnerState.GLOBAL_SENSING
+        if self.scene_state.last_plan_accepted_actions == 0:
+            self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
+            self.state = RunnerState.CLEANUP
+        else:
+            self.state = RunnerState.GLOBAL_SENSING
 
     def _choose_best_action(self):
         """Recompute utility for all unexecuted actions and return the best."""
@@ -759,6 +829,47 @@ class Runner:
             return None
             
         return best_entry
+
+    def _elapsed_wall_ms(self) -> float:
+        start = getattr(self, "_run_start_perf", None)
+        if start is None:
+            return 0.0
+        return max(0.0, (time.perf_counter() - start) * 1000.0)
+
+    def _finalize_runtime_accounting(self) -> None:
+        if not self.scene_state:
+            return
+        budget = self.scene_state.budget
+        budget.wall_runtime_ms = self._elapsed_wall_ms()
+        budget.model_runtime_ms = budget.sam3_runtime_ms + budget.qwen_runtime_ms
+        budget.controller_runtime_ms = max(0.0, budget.wall_runtime_ms - budget.model_runtime_ms)
+        budget.total_runtime_ms = budget.wall_runtime_ms
+
+    def _freeze_confounder_labels(self, planner_output) -> None:
+        """Bind generic confounder slots once; replans may not rename them."""
+        slots = [c for c in self.scene_state.belief_classes if c != "target"]
+        for slot, label in zip(slots, planner_output.likely_confounders):
+            if slot not in self.scene_state.confounder_labels and label:
+                self.scene_state.confounder_labels[slot] = str(label)
+        if hasattr(self, "evidence_pack"):
+            self.evidence_pack.belief_classes = list(self.scene_state.belief_classes)
+            self.evidence_pack.confounder_labels = dict(self.scene_state.confounder_labels)
+
+    def _constrain_action_to_search_region(self, action):
+        """Enforce the immutable run-level spatial search domain."""
+        if not self.scene_state or not self.scene_state.search_region:
+            return action
+        domain = self.scene_state.search_region.bbox()
+        if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
+            return dataclasses.replace(action, roi=self.scene_state.search_region)
+        if action.roi is None:
+            return action
+        roi = action.roi.bbox() if hasattr(action.roi, "bbox") else action.roi
+        x1, y1 = max(domain.x1, roi.x1), max(domain.y1, roi.y1)
+        x2, y2 = min(domain.x2, roi.x2), min(domain.y2, roi.y2)
+        if x2 <= x1 or y2 <= y1:
+            raise ValueError("Controller cleanup ROI lies outside the locked search region.")
+        return dataclasses.replace(action, roi=Box(x1=x1, y1=y1, x2=x2, y2=y2))
 
     def _compute_final_count(self) -> float:
         """Compute the final soft count from graph beliefs."""

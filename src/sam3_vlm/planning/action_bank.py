@@ -1,33 +1,57 @@
-"""Action bank container, entry lifecycle management, and action bank generation with deduplication (V4 Design Spec §7 / §24.1)."""
+"""Action bank lifecycle, validation, deduplication, and rejection telemetry."""
 
 from dataclasses import dataclass, field
+from enum import Enum
 import re
-from typing import List, Optional, Set, Any
+from typing import Any, List, Optional, Set
 from sam3_vlm.core.id_generator import IDGenerator
-from sam3_vlm.core.types import ActionSource
-from sam3_vlm.planning.qwen_planner import PlannerOutput
-from sam3_vlm.scene.belief import SemanticMemory
-from sam3_vlm.sensing.action import SensingAction
+from sam3_vlm.core.types import ActionSource, SpatialMode
+from sam3_vlm.planning.qwen_planner import PlannerOutput, ProposedAction
+from sam3_vlm.scene.belief import SemanticMemory, canonical_belief_classes
+from sam3_vlm.sensing.action import SensingAction, validate_sam3_prompt_contract
 
 
 def canonicalize_semantic_key(key: str) -> str:
-    """Canonicalize a semantic key string for deduplication (V4 Design Spec §7.1)."""
     if not key:
         return ""
-    clean = re.sub(r"[^\w]+", "_", key.lower()).strip("_")
-    return clean
+    return re.sub(r"[^\w]+", "_", key.lower()).strip("_")
 
 
 def derive_correlation_group(semantic_key: str, prompt: str) -> str:
-    """Derive correlation group for near-paraphrase grouping (V4 Design Spec §7.1)."""
     return canonicalize_semantic_key(semantic_key)
 
+
+class ActionRejectionReason(str, Enum):
+    INVALID_SPATIAL_MODE = "INVALID_SPATIAL_MODE"
+    MISSING_ROI = "MISSING_ROI"
+    DUPLICATE_SEMANTIC_KEY = "DUPLICATE_SEMANTIC_KEY"
+    CORRELATED_DUPLICATE = "CORRELATED_DUPLICATE"
+    SCHEMA_INVALID = "SCHEMA_INVALID"
+    EMPTY_PROMPT = "EMPTY_PROMPT"
+    INVALID_GROUNDING_PROMPT = "INVALID_GROUNDING_PROMPT"
+    UNKNOWN_CLASS_PRIOR = "UNKNOWN_CLASS_PRIOR"
+
+
+@dataclass
+class ActionRejection:
+    semantic_key: str
+    sam3_prompt: str
+    reason: str
+    detail: str
+    suggested_spatial_mode: str
+
+    def to_dict(self) -> dict:
+        return {
+            "semantic_key": self.semantic_key,
+            "sam3_prompt": self.sam3_prompt,
+            "reason": self.reason,
+            "detail": self.detail,
+            "suggested_spatial_mode": self.suggested_spatial_mode,
+        }
 
 
 @dataclass
 class ActionBankEntry:
-    """Tracked unit within the action bank holding action state and metadata."""
-
     action: SensingAction
     qwen_priority: Optional[float] = None
     predicted_discovery_value: Optional[float] = None
@@ -36,39 +60,30 @@ class ActionBankEntry:
     estimated_cost: float = 1.0
     executed: bool = False
     invalid_reason: Optional[str] = None
+    invalid_detail: Optional[str] = None
     total_utility: Optional[float] = None
 
 
 @dataclass
 class ActionBank:
-    """Active bank of proposed sensing action entries."""
-
     entries: List[ActionBankEntry] = field(default_factory=list)
 
-    def add_action(
-        self, action: SensingAction, qwen_priority: Optional[float] = None
-    ) -> Optional[ActionBankEntry]:
-        """Validate action and append entry to the bank.
-
-        Invalid actions are recorded with an invalid_reason rather than crashing.
-        """
+    def add_action(self, action: SensingAction, qwen_priority: Optional[float] = None) -> Optional[ActionBankEntry]:
         entry = ActionBankEntry(
             action=action,
             qwen_priority=qwen_priority if qwen_priority is not None else action.qwen_priority,
         )
-
         try:
             action.validate()
-        except ValueError as e:
-            entry.invalid_reason = str(e)
+        except ValueError as exc:
+            entry.invalid_reason = ActionRejectionReason.SCHEMA_INVALID.value
+            entry.invalid_detail = str(exc)
             self.entries.append(entry)
             return None
-
         self.entries.append(entry)
         return entry
 
     def pop_next(self) -> Optional[ActionBankEntry]:
-        """Pop the next valid, unexecuted entry and mark it executed."""
         for entry in self.entries:
             if not entry.executed and entry.invalid_reason is None:
                 entry.executed = True
@@ -82,23 +97,30 @@ class ActionBank:
         return [e for e in self.entries if e.executed]
 
     def purge_stale_actions(self, min_utility: float):
-        """Remove unexecuted actions whose total utility has fallen below threshold."""
-        retained = []
         for entry in self.entries:
             if entry.executed or entry.invalid_reason is not None:
-                retained.append(entry)
-            else:
-                if entry.total_utility is None or entry.total_utility >= min_utility:
-                    retained.append(entry)
-                else:
-                    # Mark invalid rather than deleting to preserve provenance if needed
-                    entry.invalid_reason = "Purged: Stale/Low Utility"
-                    retained.append(entry)
-        self.entries = retained
+                continue
+            if entry.total_utility is not None and entry.total_utility < min_utility:
+                entry.invalid_reason = "LOW_UTILITY"
+                entry.invalid_detail = f"utility={entry.total_utility:.6f} < {min_utility:.6f}"
 
 
 class ActionBankGenerator:
-    """Converts structured Qwen planner outputs into deduplicated ActionBank entries (V4 Design Spec §7.1)."""
+    """Turn Qwen proposals into executable scene-level actions with auditable rejections."""
+
+    def __init__(self) -> None:
+        self.last_rejections: List[ActionRejection] = []
+
+    def _reject(self, proposal: ProposedAction, reason: ActionRejectionReason, detail: str) -> None:
+        self.last_rejections.append(
+            ActionRejection(
+                semantic_key=proposal.semantic_key,
+                sam3_prompt=proposal.prompt,
+                reason=reason.value,
+                detail=detail,
+                suggested_spatial_mode=proposal.suggested_spatial_mode.value,
+            )
+        )
 
     def generate_entries(
         self,
@@ -108,119 +130,179 @@ class ActionBankGenerator:
         id_gen: IDGenerator,
         valid_node_ids: Optional[Set[str]] = None,
         config: Optional[Any] = None,
+        search_region: Optional[Any] = None,
     ) -> List[ActionBankEntry]:
-        """Convert proposed actions into ActionBankEntry objects with deduplication and correlation grouping."""
+        self.last_rejections = []
         added_entries: List[ActionBankEntry] = []
-
         existing_keys: Set[str] = set()
-        existing_correlation_groups: Set[str] = set()
+        existing_groups: Set[str] = set()
         existing_prompts: Set[str] = set()
-        
-        # Track historical utility per correlation group
         group_avg_utilities = {}
 
         for group, record in semantic_memory.records.items():
-            existing_correlation_groups.add(group)
-            for key in record.semantic_keys:
-                ckey = canonicalize_semantic_key(key)
-                existing_keys.add(ckey)
-            for prompt in record.prompts:
-                existing_prompts.add(prompt.strip().lower())
-                
+            existing_groups.add(group)
+            existing_keys.update(canonicalize_semantic_key(k) for k in record.semantic_keys)
+            existing_prompts.update(p.strip().lower() for p in record.prompts)
             if record.execution_count > 0:
-                avg_utility = sum(record.realized_utility_by_execution) / record.execution_count
-                group_avg_utilities[group] = avg_utility
+                group_avg_utilities[group] = (
+                    sum(record.realized_utility_by_execution) / record.execution_count
+                )
 
         for entry in action_bank.entries:
-            ckey = canonicalize_semantic_key(entry.action.semantic_key)
-            existing_keys.add(ckey)
-            group = entry.action.correlation_group or derive_correlation_group(
-                entry.action.semantic_key, entry.action.prompt
+            existing_keys.add(canonicalize_semantic_key(entry.action.semantic_key))
+            existing_groups.add(
+                entry.action.correlation_group
+                or derive_correlation_group(entry.action.semantic_key, entry.action.prompt)
             )
-            existing_correlation_groups.add(group)
             existing_prompts.add(entry.action.prompt.strip().lower())
 
-        for p_action in planner_output.proposed_actions:
-            canonical_key = canonicalize_semantic_key(p_action.semantic_key)
+        allowed_classes = set(
+            canonical_belief_classes(config.belief.num_confounders if config else 2)
+        )
+
+        for proposal in planner_output.proposed_actions:
+            canonical_key = canonicalize_semantic_key(proposal.semantic_key)
             if not canonical_key:
-                canonical_key = "unnamed_action"
+                self._reject(proposal, ActionRejectionReason.SCHEMA_INVALID, "empty semantic_key")
+                continue
 
-            # Check exact key deduplication
+            if not proposal.prompt or not proposal.prompt.strip():
+                self._reject(proposal, ActionRejectionReason.EMPTY_PROMPT, "sam3_prompt is empty")
+                continue
+            try:
+                validate_sam3_prompt_contract(proposal.prompt)
+            except ValueError as exc:
+                self._reject(proposal, ActionRejectionReason.INVALID_GROUNDING_PROMPT, str(exc))
+                continue
+
+            unknown_prior = set(proposal.semantic_prior or {}) - allowed_classes
+            if unknown_prior:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.UNKNOWN_CLASS_PRIOR,
+                    f"only {sorted(allowed_classes)} are legal; got {sorted(unknown_prior)}",
+                )
+                continue
+
+            # Scene-level Qwen does not own geometry.  LOCAL/ROI_BATCH belong to
+            # controller cleanup; the persistent run search region is injected below.
+            if proposal.suggested_spatial_mode not in (SpatialMode.GLOBAL, SpatialMode.TILED):
+                reason = (
+                    ActionRejectionReason.MISSING_ROI
+                    if proposal.suggested_spatial_mode in (SpatialMode.LOCAL, SpatialMode.ROI_BATCH)
+                    and not proposal.roi
+                    else ActionRejectionReason.INVALID_SPATIAL_MODE
+                )
+                self._reject(
+                    proposal,
+                    reason,
+                    "Qwen scene actions may use only GLOBAL or TILED; controller owns local ROIs.",
+                )
+                continue
+            if proposal.roi is not None:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.INVALID_SPATIAL_MODE,
+                    "Qwen may not provide geometry; the controller injects the locked search region.",
+                )
+                continue
+
             if canonical_key in existing_keys:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
+                    f"semantic key {canonical_key!r} already exists",
+                )
                 continue
-
-            # Check exact prompt deduplication (Spec M3.5 Phase 3)
-            clean_prompt = p_action.prompt.strip().lower()
+            clean_prompt = proposal.prompt.strip().lower()
             if clean_prompt in existing_prompts:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
+                    "exact SAM3 prompt already exists",
+                )
                 continue
 
-            # Validate exemplars if valid_node_ids is provided (Spec M3.5 Phase 3)
+            corr_group = proposal.correlation_group or derive_correlation_group(
+                canonical_key, proposal.prompt
+            )
+            if corr_group in existing_groups:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.CORRELATED_DUPLICATE,
+                    f"correlation group {corr_group!r} already searched/proposed",
+                )
+                continue
+
             if valid_node_ids is not None:
-                invalid_exemplars = False
-                for ex_id in p_action.positive_exemplar_ids:
-                    if ex_id not in valid_node_ids:
-                        invalid_exemplars = True
-                        break
-                for ex_id in p_action.negative_exemplar_ids:
-                    if ex_id not in valid_node_ids:
-                        invalid_exemplars = True
-                        break
-                if invalid_exemplars:
+                referenced = set(proposal.positive_exemplar_ids) | set(proposal.negative_exemplar_ids)
+                missing = referenced - valid_node_ids
+                if missing:
+                    self._reject(
+                        proposal,
+                        ActionRejectionReason.SCHEMA_INVALID,
+                        f"unknown exemplar node ids: {sorted(missing)}",
+                    )
                     continue
 
-            corr_group = p_action.correlation_group or derive_correlation_group(
-                canonical_key, p_action.prompt
-            )
-
-            roi_geom = None
-            if p_action.roi and len(p_action.roi) == 4:
-                from sam3_vlm.core.geometry import Box
-                roi_geom = Box(x1=p_action.roi[0], y1=p_action.roi[1], x2=p_action.roi[2], y2=p_action.roi[3])
-
             tiling_cfg = None
-            if p_action.tiling:
-                from sam3_vlm.core.config import TilingConfig
-                tiling_cfg = TilingConfig(**p_action.tiling)
+            if proposal.suggested_spatial_mode == SpatialMode.TILED:
+                if proposal.tiling:
+                    from sam3_vlm.core.config import TilingConfig
+                    try:
+                        tiling_cfg = TilingConfig(**proposal.tiling)
+                    except Exception as exc:
+                        self._reject(proposal, ActionRejectionReason.SCHEMA_INVALID, str(exc))
+                        continue
+                elif config is not None:
+                    tiling_cfg = config.tiling
 
-            # Adjust priority based on empirical history
-            adjusted_priority = p_action.priority
+            adjusted_priority = proposal.priority
             if corr_group in group_avg_utilities:
                 avg_utility = group_avg_utilities[corr_group]
-                utility_threshold = config.stopping.utility_min_threshold if config else 0.05
-                if avg_utility < utility_threshold:
-                    # Penalize priority strongly if history shows low utility
-                    adjusted_priority *= 0.1
-                else:
-                    # Boost priority slightly if history shows good utility
-                    adjusted_priority = min(1.0, adjusted_priority * 1.2)
-
-            is_correlated = corr_group in existing_correlation_groups
+                threshold = config.stopping.utility_min_threshold if config else 0.05
+                adjusted_priority *= 0.1 if avg_utility < threshold else 1.2
+                adjusted_priority = min(1.0, adjusted_priority)
 
             action = SensingAction(
                 action_id=id_gen.next_action_id(),
                 semantic_key=canonical_key,
-                prompt=p_action.prompt,
-                family=p_action.family,
-                threshold=p_action.suggested_threshold if p_action.suggested_threshold is not None else 0.25,
-                spatial_mode=p_action.suggested_spatial_mode,
+                prompt=proposal.prompt,
+                family=proposal.family,
+                threshold=proposal.suggested_threshold if proposal.suggested_threshold is not None else 0.25,
+                spatial_mode=proposal.suggested_spatial_mode,
                 source=ActionSource.QWEN,
                 qwen_priority=adjusted_priority,
-                semantic_prior=p_action.semantic_prior,
+                semantic_prior=proposal.semantic_prior,
                 correlation_group=corr_group,
-                roi=roi_geom,
-                positive_exemplar_ids=tuple(p_action.positive_exemplar_ids),
-                negative_exemplar_ids=tuple(p_action.negative_exemplar_ids),
+                roi=search_region,
+                positive_exemplar_ids=tuple(proposal.positive_exemplar_ids),
+                negative_exemplar_ids=tuple(proposal.negative_exemplar_ids),
                 tiling=tiling_cfg,
             )
+            try:
+                action.validate()
+            except ValueError as exc:
+                reason = (
+                    ActionRejectionReason.MISSING_ROI
+                    if "requires ROI" in str(exc)
+                    else ActionRejectionReason.SCHEMA_INVALID
+                )
+                self._reject(proposal, reason, str(exc))
+                continue
 
             entry = action_bank.add_action(action, qwen_priority=adjusted_priority)
-            existing_keys.add(canonical_key)
-            existing_correlation_groups.add(corr_group)
-            existing_prompts.add(clean_prompt)
+            if entry is None:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.SCHEMA_INVALID,
+                    "action failed ActionBank validation",
+                )
+                continue
 
-            if entry:
-                if is_correlated:
-                    entry.redundancy = 0.5  # Mark correlated paraphrase redundancy
-                added_entries.append(entry)
+            existing_keys.add(canonical_key)
+            existing_groups.add(corr_group)
+            existing_prompts.add(clean_prompt)
+            added_entries.append(entry)
 
         return added_entries

@@ -1,0 +1,24 @@
+INFO: === M8.3 One full real-image V4 run ===
+INFO: Loading real SAM3 model: facebook/sam3 on cuda
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/config.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/model.safetensors "HTTP/1.1 302 Found"
+Loading weights:   0%|          | 0/1468 [00:00<?, ?it/s]Loading weights: 100%|██████████| 1468/1468 [00:00<00:00, 18433.08it/s]
+INFO: HTTP Request: GET https://huggingface.co/api/models/facebook/sam3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/processor_config.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/chat_template.json "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/chat_template.jinja "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/audio_tokenizer_config.json "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/processor_config.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/processor_config.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/config.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: HEAD https://huggingface.co/facebook/sam3/resolve/main/tokenizer_config.json "HTTP/1.1 200 OK"
+INFO: HTTP Request: GET https://huggingface.co/api/models/facebook/sam3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+INFO: HTTP Request: GET https://huggingface.co/api/models/facebook/sam3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+INFO: Loading real Qwen planner: qwen-single:latest at http://localhost:11434/v1
+INFO: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO: HTTP Request: POST http://localhost:11434/v1/chat/completions "HTTP/1.1 200 OK"
+INFO: Full run complete! Soft count: 0.27

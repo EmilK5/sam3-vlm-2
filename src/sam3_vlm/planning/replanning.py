@@ -89,8 +89,14 @@ class ReplanEvidenceBuilder:
             scene_summary=scene_summary,
             discovery_diagnostics={
                 "recent_new_nodes_count": len(state.discovery_state.recent_new_nodes),
+                "recent_new_node_counts": list(state.discovery_state.recent_new_node_counts),
+                "coverage_ratio": state.discovery_state.spatial_coverage.coverage_ratio,
                 "unresolved_entropy": sum(n.class_belief.entropy for n in state.graph.active_nodes()),
-                "count_variance": state.count_estimate.variance
-            }
+                "count_variance": state.count_estimate.variance,
+                "search_region": state.search_region.bbox().as_tuple() if state.search_region else None,
+                "search_region_source": state.search_region_source,
+            },
+            belief_classes=list(state.belief_classes),
+            confounder_labels=dict(state.confounder_labels),
         )
         return pack

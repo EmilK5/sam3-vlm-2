@@ -73,8 +73,12 @@ def load_m8_config(args, config_path="configs/m8_real_smoke.json") -> M8Deployme
                 v4_kwargs["cleanup"] = CleanupConfig(**data["cleanup"])
             if "replanning" in data:
                 v4_kwargs["replanning"] = ReplanningConfig(**data["replanning"])
+            if "bootstrap" in data:
+                v4_kwargs["bootstrap"] = BootstrapConfig(**data["bootstrap"])
+            if "belief" in data:
+                v4_kwargs["belief"] = BeliefConfig(**data["belief"])
                 
-            allowed = {"sam3_model", "qwen_model", "qwen_base_url", "require_cuda", "compile_sam3", "budget", "tiling", "cleanup", "replanning", "seed", "output_root", "pilot_sample_limit"}
+            allowed = {"sam3_model", "qwen_model", "qwen_base_url", "require_cuda", "compile_sam3", "budget", "tiling", "cleanup", "replanning", "bootstrap", "belief", "seed", "output_root", "pilot_sample_limit"}
             for k, v in data.items():
                 if k not in allowed:
                     raise ValueError(f"Unknown config key: {k}")
@@ -164,9 +168,22 @@ def OracleHider(paths: RunArtifactPaths):
         if graph_bak.exists():
             shutil.move(graph_bak, graph_path)
 
-def assemble_e2e_runner(paths: RunArtifactPaths, config: V4Config, sensor, planner, run_id: str, prompt: str, target_class: str, image_id: str):
+def assemble_e2e_runner(
+    paths: RunArtifactPaths, config: V4Config, sensor, planner, run_id: str,
+    prompt: str, target_class: str, image_id: str, seed: int | None = None,
+    experiment_name: str | None = None,
+):
     manifest = RunManifest(run_id=run_id, user_prompt=prompt, target_class=target_class, image_id=image_id)
     manifest.v4_config = dataclasses.asdict(config)
+    manifest.experiment_config = {
+        "experiment": experiment_name or "V4_REAL_RUN",
+        "resolved_device": config.device,
+    }
+    manifest.model_identifiers = {
+        "sam3": str(getattr(sensor, "model_id", type(sensor).__name__)),
+        "qwen": str(getattr(planner, "model", type(planner).__name__)),
+    }
+    manifest.seed = seed
     recorder = RunRecorder(paths, manifest)
     runner = Runner(config, sensor=sensor, planner=planner, recorder=recorder)
     return runner, recorder
@@ -325,7 +342,8 @@ def m8_3_full_run(args):
         paths = RunArtifactPaths(base_dir=Path(os.path.join(dep.output_root, "M8.3", run_id)))
         
         runner, recorder = assemble_e2e_runner(
-            paths, dep.v4_config, sam3, qwen, run_id, args.target, "target", "m8_test_img"
+            paths, dep.v4_config, sam3, qwen, run_id, args.target, "target", "m8_test_img",
+            seed=dep.seed, experiment_name="M8.3",
         )
         img_pil = Image.open(args.image).convert("RGB")
         
@@ -417,9 +435,18 @@ def m8_4_and_5_pilot(args):
                 failure_message = None
                 
                 if var_name == "A_OneShot":
-                    cfg = dataclasses.replace(base_config, bootstrap=BootstrapConfig(enable_tiled_bootstrap=False))
+                    cfg = dataclasses.replace(
+                        base_config,
+                        bootstrap=dataclasses.replace(base_config.bootstrap, enable_tiled_bootstrap=False),
+                    )
                     manifest = RunManifest(run_id=run_id, user_prompt=prompt, target_class="target", image_id=img_name)
                     manifest.v4_config = dataclasses.asdict(cfg)
+                    manifest.experiment_config = {"experiment": "M8_Pilot:A_OneShot", "resolved_device": cfg.device}
+                    manifest.model_identifiers = {
+                        "sam3": str(getattr(sam3, "model_id", type(sam3).__name__)),
+                        "qwen": str(getattr(qwen, "model", type(qwen).__name__)),
+                    }
+                    manifest.seed = dep.seed
                     recorder = RunRecorder(paths, manifest)
                     
                     recorder.record_run_started()
@@ -432,15 +459,22 @@ def m8_4_and_5_pilot(args):
                     sam3_t = 0
                     stop_reason = "ONE_SHOT_COMPLETE"
                     
-                    # Create a mock summary to finalize cleanly
+                    # Finalize with the same split runtime semantics as full V4 runs.
+                    wall_ms = (time.time() - start_t) * 1000.0
+                    sam3_ms = result.state.budget.sam3_runtime_ms
                     summary = RunSummary(
                         run_id=run_id, final_soft_count=count, count_variance=0.0,
                         node_count=len(result.state.graph.nodes),
-                        sam3_calls=sam3_c, runtime_ms=(time.time()-start_t)*1000
+                        sam3_calls=sam3_c, runtime_ms=wall_ms, wall_runtime_ms=wall_ms,
+                        sam3_runtime_ms=sam3_ms, qwen_runtime_ms=0.0,
+                        controller_runtime_ms=max(0.0, wall_ms - sam3_ms),
                     )
                     recorder.finalize_success(summary, result.state.graph.to_dict())
                 else:
-                    runner, recorder = assemble_e2e_runner(paths, config, sam3, qwen, run_id, prompt, "target", img_name)
+                    runner, recorder = assemble_e2e_runner(
+                        paths, config, sam3, qwen, run_id, prompt, "target", img_name,
+                        seed=dep.seed, experiment_name=f"M8_Pilot:{var_name}",
+                    )
                     count = runner.run(image=img_pil, user_prompt=prompt, target_class="target", image_id=img_name)
                     valid_run = _run_validator_and_replay(paths, runner.scene_state)
                     stop_reason = runner.scene_state.stop_reason.name if runner.scene_state.stop_reason else "UNKNOWN"
