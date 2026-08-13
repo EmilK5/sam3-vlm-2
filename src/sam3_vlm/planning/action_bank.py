@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import re
-from typing import Any, List, Optional, Set
+from typing import Any, List, Optional, Sequence, Set
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import ActionSource, SpatialMode
 from sam3_vlm.planning.qwen_planner import PlannerOutput, ProposedAction
@@ -131,6 +131,8 @@ class ActionBankGenerator:
         valid_node_ids: Optional[Set[str]] = None,
         config: Optional[Any] = None,
         search_region: Optional[Any] = None,
+        enforce_qwen_contract: bool = False,
+        allowed_belief_classes: Optional[Sequence[str]] = None,
     ) -> List[ActionBankEntry]:
         self.last_rejections = []
         added_entries: List[ActionBankEntry] = []
@@ -156,9 +158,11 @@ class ActionBankGenerator:
             )
             existing_prompts.add(entry.action.prompt.strip().lower())
 
-        allowed_classes = set(
-            canonical_belief_classes(config.belief.num_confounders if config else 2)
-        )
+        allowed_classes = set(allowed_belief_classes or [])
+        if enforce_qwen_contract and not allowed_classes:
+            allowed_classes = set(
+                canonical_belief_classes(config.belief.num_confounders if config else 2)
+            )
 
         for proposal in planner_output.proposed_actions:
             canonical_key = canonicalize_semantic_key(proposal.semantic_key)
@@ -169,43 +173,49 @@ class ActionBankGenerator:
             if not proposal.prompt or not proposal.prompt.strip():
                 self._reject(proposal, ActionRejectionReason.EMPTY_PROMPT, "sam3_prompt is empty")
                 continue
-            try:
-                validate_sam3_prompt_contract(proposal.prompt)
-            except ValueError as exc:
-                self._reject(proposal, ActionRejectionReason.INVALID_GROUNDING_PROMPT, str(exc))
-                continue
 
-            unknown_prior = set(proposal.semantic_prior or {}) - allowed_classes
-            if unknown_prior:
-                self._reject(
-                    proposal,
-                    ActionRejectionReason.UNKNOWN_CLASS_PRIOR,
-                    f"only {sorted(allowed_classes)} are legal; got {sorted(unknown_prior)}",
-                )
-                continue
+            if enforce_qwen_contract:
+                try:
+                    validate_sam3_prompt_contract(proposal.prompt)
+                except ValueError as exc:
+                    self._reject(
+                        proposal,
+                        ActionRejectionReason.INVALID_GROUNDING_PROMPT,
+                        str(exc),
+                    )
+                    continue
 
-            # Scene-level Qwen does not own geometry.  LOCAL/ROI_BATCH belong to
-            # controller cleanup; the persistent run search region is injected below.
-            if proposal.suggested_spatial_mode not in (SpatialMode.GLOBAL, SpatialMode.TILED):
-                reason = (
-                    ActionRejectionReason.MISSING_ROI
-                    if proposal.suggested_spatial_mode in (SpatialMode.LOCAL, SpatialMode.ROI_BATCH)
-                    and not proposal.roi
-                    else ActionRejectionReason.INVALID_SPATIAL_MODE
-                )
-                self._reject(
-                    proposal,
-                    reason,
-                    "Qwen scene actions may use only GLOBAL or TILED; controller owns local ROIs.",
-                )
-                continue
-            if proposal.roi is not None:
-                self._reject(
-                    proposal,
-                    ActionRejectionReason.INVALID_SPATIAL_MODE,
-                    "Qwen may not provide geometry; the controller injects the locked search region.",
-                )
-                continue
+                unknown_prior = set(proposal.semantic_prior or {}) - allowed_classes
+                if unknown_prior:
+                    self._reject(
+                        proposal,
+                        ActionRejectionReason.UNKNOWN_CLASS_PRIOR,
+                        f"only {sorted(allowed_classes)} are legal; got {sorted(unknown_prior)}",
+                    )
+                    continue
+
+                # Strict M8 scene-level Qwen does not own geometry. LOCAL/ROI_BATCH
+                # remain controller cleanup operations.
+                if proposal.suggested_spatial_mode not in (SpatialMode.GLOBAL, SpatialMode.TILED):
+                    reason = (
+                        ActionRejectionReason.MISSING_ROI
+                        if proposal.suggested_spatial_mode in (SpatialMode.LOCAL, SpatialMode.ROI_BATCH)
+                        and not proposal.roi
+                        else ActionRejectionReason.INVALID_SPATIAL_MODE
+                    )
+                    self._reject(
+                        proposal,
+                        reason,
+                        "Qwen scene actions may use only GLOBAL or TILED; controller owns local ROIs.",
+                    )
+                    continue
+                if proposal.roi is not None:
+                    self._reject(
+                        proposal,
+                        ActionRejectionReason.INVALID_SPATIAL_MODE,
+                        "Qwen may not provide geometry; the controller injects the locked search region.",
+                    )
+                    continue
 
             if canonical_key in existing_keys:
                 self._reject(
@@ -226,13 +236,7 @@ class ActionBankGenerator:
             corr_group = proposal.correlation_group or derive_correlation_group(
                 canonical_key, proposal.prompt
             )
-            if corr_group in existing_groups:
-                self._reject(
-                    proposal,
-                    ActionRejectionReason.CORRELATED_DUPLICATE,
-                    f"correlation group {corr_group!r} already searched/proposed",
-                )
-                continue
+            is_correlated = corr_group in existing_groups
 
             if valid_node_ids is not None:
                 referenced = set(proposal.positive_exemplar_ids) | set(proposal.negative_exemplar_ids)
@@ -244,6 +248,16 @@ class ActionBankGenerator:
                         f"unknown exemplar node ids: {sorted(missing)}",
                     )
                     continue
+
+            roi_geom = None
+            if not enforce_qwen_contract and proposal.roi and len(proposal.roi) == 4:
+                from sam3_vlm.core.geometry import Box
+                roi_geom = Box(
+                    x1=proposal.roi[0],
+                    y1=proposal.roi[1],
+                    x2=proposal.roi[2],
+                    y2=proposal.roi[3],
+                )
 
             tiling_cfg = None
             if proposal.suggested_spatial_mode == SpatialMode.TILED:
@@ -275,7 +289,8 @@ class ActionBankGenerator:
                 qwen_priority=adjusted_priority,
                 semantic_prior=proposal.semantic_prior,
                 correlation_group=corr_group,
-                roi=search_region,
+                roi=roi_geom,
+                search_region=search_region,
                 positive_exemplar_ids=tuple(proposal.positive_exemplar_ids),
                 negative_exemplar_ids=tuple(proposal.negative_exemplar_ids),
                 tiling=tiling_cfg,
@@ -303,6 +318,8 @@ class ActionBankGenerator:
             existing_keys.add(canonical_key)
             existing_groups.add(corr_group)
             existing_prompts.add(clean_prompt)
+            if is_correlated:
+                entry.redundancy = max(entry.redundancy, 0.5)
             added_entries.append(entry)
 
         return added_entries

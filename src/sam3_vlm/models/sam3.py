@@ -53,7 +53,14 @@ def _roi_box(roi: Any) -> Optional[Box]:
 
 
 def _clipped_domain(action: SensingAction, img_w: int, img_h: int) -> Box:
-    roi = _roi_box(action.roi)
+    # GLOBAL/TILED use the persistent run-level search domain. LOCAL/ROI_BATCH
+    # continue to use action.roi, preserving the core spatial-mode invariant.
+    geometry = (
+        action.search_region
+        if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED)
+        else action.roi
+    )
+    roi = _roi_box(geometry)
     if roi is None:
         return Box(0.0, 0.0, float(img_w), float(img_h))
     domain = Box(

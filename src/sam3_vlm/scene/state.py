@@ -152,7 +152,9 @@ class SceneState:
     count_estimate: CountEstimate = field(default_factory=CountEstimate)
     action_bank: Optional["ActionBank"] = None
     budget: BudgetState = field(default_factory=BudgetState)
-    belief_classes: List[str] = field(default_factory=lambda: ["target", "confounder1", "confounder2"])
+    # Empty means dataset-generic/legacy belief vocabulary. M8 canonical runs
+    # populate this explicitly with target, confounder1, confounder2, ... .
+    belief_classes: List[str] = field(default_factory=list)
     confounder_labels: Dict[str, str] = field(default_factory=dict)
     search_region: Optional[Geometry] = None
     search_region_locked: bool = False

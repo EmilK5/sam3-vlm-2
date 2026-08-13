@@ -83,12 +83,10 @@ class Runner:
 
     def run(self, image: Any, user_prompt: str, target_class: str = "target", image_id: str = "img1") -> float:
         """Execute the active perception state machine until DONE."""
-        if target_class != "target":
-            raise ValueError("V4 posterior ontology requires canonical target_class='target'.")
         self._run_start_perf = time.perf_counter()
         self.image = image
         self.user_prompt = user_prompt
-        self.target_class = "target"
+        self.target_class = target_class
         self.image_id = image_id
         
         if self.recorder:
@@ -154,6 +152,22 @@ class Runner:
                 "search_region_source": self.scene_state.search_region_source,
                 "confounder_labels": dict(self.scene_state.confounder_labels),
             })
+
+    def _uses_canonical_m8_policy(self) -> bool:
+        if self.scene_state is None or self.scene_state.target_class != "target":
+            return False
+        classes = list(self.scene_state.belief_classes or [])
+        if not classes or classes[0] != "target":
+            return False
+        expected = ["target"] + [f"confounder{i}" for i in range(1, len(classes))]
+        return classes == expected
+
+    def _belief_class_vocabulary(self):
+        return (
+            self.scene_state.belief_classes
+            if self._uses_canonical_m8_policy()
+            else None
+        )
 
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
         from sam3_vlm.core.types import SpatialMode
@@ -423,9 +437,10 @@ class Runner:
                 return
                 
             max_cleanup_calls = getattr(self.config.budget, "max_cleanup_calls", 5)
-            if max_cleanup_calls <= 0:
-                # Cleanup is intentionally disabled in current real M8.  Do not
-                # misreport that configuration choice as budget exhaustion.
+            if max_cleanup_calls <= 0 and self._uses_canonical_m8_policy():
+                # In real M8 cleanup can be deliberately disabled; that is not
+                # cleanup budget exhaustion. Frozen generic M6 semantics below
+                # remain unchanged.
                 if self.scene_state.stop_reason is None:
                     self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
                 if self.recorder:
@@ -445,7 +460,7 @@ class Runner:
             
             decision = self.cleanup_controller.generate_cleanup_action(
                 residual_nodes, self.scene_state.graph, self.target_class, self.config,
-                user_prompt=self.user_prompt,
+                user_prompt=self.scene_state.user_prompt,
             )
             
             if not decision.action:
@@ -582,7 +597,7 @@ class Runner:
             if node:
                 self.belief_updater.update_node_belief(
                     node, action, obs_ref, target_class=self.target_class,
-                    config=self.config.belief, class_vocabulary=self.scene_state.belief_classes,
+                    config=self.config.belief, class_vocabulary=self._belief_class_vocabulary(),
                 )
                 if self.recorder:
                     prov = {
@@ -596,7 +611,7 @@ class Runner:
         for new_node in assoc_result.new_nodes:
             self.belief_updater.update_node_belief(
                 new_node, action, new_node.observations[-1], target_class=self.target_class,
-                config=self.config.belief, class_vocabulary=self.scene_state.belief_classes,
+                config=self.config.belief, class_vocabulary=self._belief_class_vocabulary(),
             )
             if self.recorder:
                 prov = {
@@ -638,7 +653,7 @@ class Runner:
                 node.observations.append(obs_ref)
                 self.belief_updater.update_node_belief(
                     node, action, obs_ref, target_class=self.target_class,
-                    config=self.config.belief, class_vocabulary=self.scene_state.belief_classes,
+                    config=self.config.belief, class_vocabulary=self._belief_class_vocabulary(),
                 )
                 if self.recorder:
                     prov = {
@@ -666,6 +681,12 @@ class Runner:
             valid_node_ids=valid_node_ids,
             config=self.config,
             search_region=self.scene_state.search_region,
+            enforce_qwen_contract=self._uses_canonical_m8_policy(),
+            allowed_belief_classes=(
+                self.scene_state.belief_classes
+                if self._uses_canonical_m8_policy()
+                else None
+            ),
         )
         
         if self.recorder:
@@ -723,6 +744,12 @@ class Runner:
             valid_node_ids=valid_node_ids,
             config=self.config,
             search_region=self.scene_state.search_region,
+            enforce_qwen_contract=self._uses_canonical_m8_policy(),
+            allowed_belief_classes=(
+                self.scene_state.belief_classes
+                if self._uses_canonical_m8_policy()
+                else None
+            ),
         )
         
         if self.recorder:
@@ -768,25 +795,35 @@ class Runner:
             self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
 
     def _request_replan(self):
-        """Centralized handler that prevents evidence-free empty replan loops."""
+        """Centralized handler preserving frozen M6 behavior outside strict M8."""
         qwen_exhausted = self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls
         replans_exhausted = self.scene_state.replans_executed >= self.config.replanning.max_replans
+        strict_m8 = self._uses_canonical_m8_policy()
 
         if qwen_exhausted or replans_exhausted:
             best_entry = self._choose_best_action()
-            if best_entry is not None:
-                self.state = RunnerState.GLOBAL_SENSING
+            if strict_m8:
+                if best_entry is not None:
+                    self.state = RunnerState.GLOBAL_SENSING
+                else:
+                    self.scene_state.set_stop_reason(
+                        StopReason.QWEN_BUDGET if qwen_exhausted else StopReason.NO_VALID_ACTIONS
+                    )
+                    self.state = RunnerState.CLEANUP
             else:
-                self.scene_state.set_stop_reason(
-                    StopReason.QWEN_BUDGET if qwen_exhausted else StopReason.NO_VALID_ACTIONS
-                )
-                self.state = RunnerState.CLEANUP
+                # Frozen M6 contract: only continue globally when a remaining
+                # action has sufficient measured utility; otherwise enter cleanup.
+                if (
+                    best_entry
+                    and best_entry.total_utility
+                    and best_entry.total_utility >= self.config.stopping.utility_min_threshold
+                ):
+                    self.state = RunnerState.GLOBAL_SENSING
+                else:
+                    self.state = RunnerState.CLEANUP
             return
 
-        # If the previous *replan* produced no executable action and no SAM3
-        # evidence has been gathered since it, another immediate Qwen call has
-        # no changed state to reason over.  Stop instead of burning replans.
-        if (
+        if strict_m8 and (
             self.scene_state.replans_executed > 0
             and self.scene_state.last_plan_accepted_actions == 0
             and self.scene_state.actions_since_replan == 0
@@ -799,7 +836,7 @@ class Runner:
             self.scene_state, self.image, assets_dir=self.config.assets_dir
         )
         self._execute_replan()
-        if self.scene_state.last_plan_accepted_actions == 0:
+        if strict_m8 and self.scene_state.last_plan_accepted_actions == 0:
             self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
             self.state = RunnerState.CLEANUP
         else:
@@ -847,6 +884,8 @@ class Runner:
 
     def _freeze_confounder_labels(self, planner_output) -> None:
         """Bind generic confounder slots once; replans may not rename them."""
+        if not self._uses_canonical_m8_policy():
+            return
         slots = [c for c in self.scene_state.belief_classes if c != "target"]
         for slot, label in zip(slots, planner_output.likely_confounders):
             if slot not in self.scene_state.confounder_labels and label:
@@ -861,7 +900,7 @@ class Runner:
             return action
         domain = self.scene_state.search_region.bbox()
         if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
-            return dataclasses.replace(action, roi=self.scene_state.search_region)
+            return dataclasses.replace(action, search_region=self.scene_state.search_region)
         if action.roi is None:
             return action
         roi = action.roi.bbox() if hasattr(action.roi, "bbox") else action.roi

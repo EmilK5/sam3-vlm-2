@@ -144,10 +144,13 @@ def test_action_bank_rejects_bad_qwen_actions_and_inherits_tiling_and_search_reg
         IDGenerator(),
         config=cfg,
         search_region=domain,
+        enforce_qwen_contract=True,
+        allowed_belief_classes=["target", "confounder1", "confounder2"],
     )
     assert len(entries) == 1
     action = entries[0].action
-    assert action.roi.bbox().as_tuple() == domain.bbox().as_tuple()
+    assert action.roi is None
+    assert action.search_region.bbox().as_tuple() == domain.bbox().as_tuple()
     assert action.spatial_mode == SpatialMode.TILED
     assert action.tiling == cfg.tiling
 
@@ -183,7 +186,7 @@ def test_mock_sam3_global_and_tiled_search_only_inside_locked_roi():
         semantic_key="green_fruit",
         prompt="green fruit",
         family=ActionFamily.DISCOVERY,
-        roi=roi,
+        search_region=roi,
         spatial_mode=SpatialMode.GLOBAL,
     )
     global_obs = sensor.observe((1000, 1000), global_action)
@@ -223,7 +226,12 @@ class _CanopySensor:
             searched = [BoxGeometry(Box(0, 0, 1000, 1000))]
         else:
             detections = [_det(f"target_{self.call_count}", 200, 220, 240, 260)]
-            searched = [action.roi]
+            domain = (
+                action.search_region
+                if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED)
+                else action.roi
+            )
+            searched = [domain] if domain is not None else []
         return SAM3Observation(
             call_id=f"sam3_{self.call_count:06d}",
             action_id=action.action_id,
@@ -258,8 +266,9 @@ def test_citrus_bootstrap_locks_enclosing_canopy_before_target_and_excludes_cont
     assert sensor.actions[0].prompt == "tree canopy"
     assert sensor.actions[0].roi is None
     assert sensor.actions[1].prompt == "green citrus"
-    assert sensor.actions[1].roi.bbox().as_tuple() == (100, 80, 700, 650)
-    assert state.search_region.bbox().as_tuple() == (100, 80, 700, 650)
+    assert sensor.actions[1].roi is None
+    assert sensor.actions[1].search_region.bbox().as_tuple() == (100, 80, 700, 650)
+    assert state.search_region.bbox().as_tuple() == (100, 80, 700, 650) 
     assert state.search_region_locked
     assert not state.search_region_fallback_used
     assert len(state.graph.nodes) == 1  # canopy detections never become count nodes
@@ -287,7 +296,8 @@ def test_citrus_bootstrap_canopy_failure_falls_back_to_full_image(monkeypatch):
     assert state.search_region_locked
     assert state.search_region_fallback_used
     assert "FALLBACK" in state.search_region_source
-    assert sensor.actions[1].roi.bbox().as_tuple() == (0, 0, 1000, 1000)
+    assert sensor.actions[1].roi is None
+    assert sensor.actions[1].search_region.bbox().as_tuple() == (0, 0, 1000, 1000)
 
 
 class _NoopPlanner:
@@ -304,6 +314,7 @@ def _empty_scene_state():
         target_class="target",
         graph=SceneGraph(),
         semantic_memory=SemanticMemory(),
+        belief_classes=["target", "confounder1", "confounder2"],
         search_region=BoxGeometry(Box(0, 0, 1000, 1000)),
         search_region_locked=True,
     )

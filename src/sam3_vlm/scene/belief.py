@@ -128,11 +128,16 @@ class ProxyEvidenceModel:
         semantic_weights = action.semantic_prior
         if semantic_weights is None:
             if action.family in (ActionFamily.DISCOVERY, ActionFamily.VERIFICATION):
-                semantic_weights = {target_class or "target": 1.0}
+                semantic_weights = (
+                    {target_class: 1.0}
+                    if target_class
+                    else {action.semantic_key: 1.0}
+                )
             else:
-                # A confounder action without an explicit generic-slot prior is
-                # semantically ungrounded for belief fusion.  Keep it neutral.
-                semantic_weights = {}
+                # Generic M4-M7 semantics: an uncalibrated confounder/context
+                # action refers to its own semantic coordinate. Canonical M8
+                # actions normally provide an explicit generic-slot prior.
+                semantic_weights = {action.semantic_key: 1.0}
 
         is_confounder = action.family == ActionFamily.CONFOUNDER
         for cls_name in vocabulary:
@@ -176,6 +181,94 @@ class BeliefUpdater:
                 h -= p * math.log2(p)
         return max(0.0, h)
 
+    def _update_dynamic_node_belief(
+        self,
+        node: Node,
+        action: SensingAction,
+        obs_ref: NodeObservationRef,
+        target_class: Optional[str],
+        confounder_class: Optional[str],
+        event_id: Optional[str],
+        config: BeliefConfig,
+    ) -> None:
+        """Legacy/dataset-generic M4-M7 belief update.
+
+        This path intentionally permits arbitrary finite class names. The M8
+        production path opts into the frozen canonical vocabulary by passing
+        class_vocabulary explicitly.
+        """
+        vocabulary_set = (
+            set(node.class_belief.probabilities.keys())
+            if node.class_belief.probabilities
+            else set()
+        )
+        if action.semantic_prior:
+            vocabulary_set.update(action.semantic_prior.keys())
+        if target_class:
+            vocabulary_set.add(target_class)
+        if confounder_class:
+            vocabulary_set.add(confounder_class)
+        if not vocabulary_set:
+            vocabulary_set.add(action.semantic_key)
+        vocabulary = list(vocabulary_set)
+
+        if not node.class_belief.probabilities:
+            equal_p = 1.0 / len(vocabulary)
+            probs = {cls_name: equal_p for cls_name in vocabulary}
+        else:
+            probs = dict(node.class_belief.probabilities)
+            new_classes = [c for c in vocabulary if c not in probs]
+            if new_classes:
+                pseudocount_mass = config.prior_pseudocount / (
+                    node.class_belief.update_count
+                    + config.prior_pseudocount * len(vocabulary)
+                )
+                scale = max(0.01, 1.0 - pseudocount_mass * len(new_classes))
+                for key in probs:
+                    probs[key] *= scale
+                for new_cls in new_classes:
+                    probs[new_cls] = pseudocount_mass
+                total = sum(probs.values())
+                if total > 0.0:
+                    probs = {k: v / total for k, v in probs.items()}
+
+        score = obs_ref.score if obs_ref.score is not None else 0.5
+        corr_group = action.correlation_group or action.semantic_key
+        same_key_count = sum(
+            1
+            for old_obs in node.observations
+            if (getattr(old_obs, "correlation_group", None) or old_obs.semantic_key)
+            == corr_group
+            and old_obs.observation_id != obs_ref.observation_id
+            and old_obs.relation != ObservationRelation.NOT_OBSERVABLE
+        )
+        weight = config.discount_repeat_weight ** same_key_count
+        likelihoods = self.evidence_model.compute_likelihoods(
+            action=action,
+            relation=obs_ref.relation,
+            score=score,
+            weight=weight,
+            vocabulary=vocabulary,
+            target_class=target_class,
+            confounder_class=confounder_class,
+        )
+        unnormalized = {
+            cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0)
+            for cls_name in probs
+        }
+        total = sum(unnormalized.values())
+        updated_probs = (
+            {k: v / total for k, v in unnormalized.items()}
+            if total > 0.0
+            else probs
+        )
+        node.class_belief = ClassBelief(
+            probabilities=updated_probs,
+            update_count=node.class_belief.update_count + 1,
+            entropy=self.calculate_entropy(updated_probs),
+            last_update_event_id=event_id,
+        )
+
     @staticmethod
     def _resolve_vocabulary(
         node: Node,
@@ -204,7 +297,23 @@ class BeliefUpdater:
         config: BeliefConfig = BeliefConfig(),
         class_vocabulary: Optional[Sequence[str]] = None,
     ) -> None:
-        """Update a node while preserving exactly the initialized class space."""
+        """Update a node; explicit class_vocabulary opts into frozen M8 ontology."""
+        # NOT_OBSERVABLE is a hard no-evidence invariant in every mode and
+        # must return before any vocabulary validation/mutation.
+        if obs_ref.relation == ObservationRelation.NOT_OBSERVABLE:
+            return
+
+        if class_vocabulary is None:
+            return self._update_dynamic_node_belief(
+                node=node,
+                action=action,
+                obs_ref=obs_ref,
+                target_class=target_class,
+                confounder_class=confounder_class,
+                event_id=event_id,
+                config=config,
+            )
+
         vocabulary = self._resolve_vocabulary(node, class_vocabulary, config)
         canonical_target = "target"
         if target_class not in (None, "target"):

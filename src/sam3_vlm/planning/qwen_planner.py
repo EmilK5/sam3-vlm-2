@@ -182,8 +182,9 @@ class QwenPlannerService:
                 try:
                     import copy
                     repair_evidence = copy.deepcopy(evidence)
-                    repair_evidence.scene_summary += (
-                        "\nPrevious output was malformed. Return only the required JSON schema."
+                    repair_evidence.user_prompt += (
+                        "\n\nYour previous output was invalid. "
+                        "Return ONLY JSON matching this schema."
                     )
                     raw_output = self._invoke_backend(repair_evidence, budget, config)
                     output = self._coerce_to_planner_output(raw_output)
@@ -200,7 +201,7 @@ class QwenPlannerService:
             except ValueError:
                 fallback_prompt = "visible object"
             output = PlannerOutput(
-                scene_summary="Deterministic fallback due to repeated planner parse failure.",
+                scene_summary="Deterministic fallback due to repeated model failure.",
                 proposed_actions=[
                     ProposedAction(
                         semantic_key="target_fallback",

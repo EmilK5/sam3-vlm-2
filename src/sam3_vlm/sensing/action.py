@@ -58,12 +58,14 @@ class SensingAction:
     qwen_priority: Optional[float] = None
     semantic_prior: Optional[Dict[str, float]] = None
     correlation_group: Optional[str] = None
+    # Persistent run-level execution domain for GLOBAL/TILED sensing.
+    # Kept separate from roi, which remains reserved for LOCAL/ROI_BATCH.
+    search_region: Optional[Geometry] = None
 
     def validate(self) -> None:
         """Validate executable action invariants before SAM3."""
         if not self.prompt or not self.prompt.strip():
             raise ValueError("SensingAction prompt cannot be empty.")
-        validate_sam3_prompt_contract(self.prompt)
         if not self.semantic_key or not self.semantic_key.strip():
             raise ValueError("SensingAction semantic_key cannot be empty.")
         if not (0.0 <= self.threshold <= 1.0):

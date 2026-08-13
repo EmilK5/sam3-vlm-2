@@ -75,6 +75,12 @@ class MockQwenPlanner:
                 semantic_prior={"target": 0.80, "confounder1": 0.20},
                 suggested_threshold=0.30,
                 suggested_spatial_mode=SpatialMode.TILED,
+                tiling={
+                    "grid_rows": 2,
+                    "grid_cols": 2,
+                    "overlap_ratio": 0.15,
+                    "tile_min_size": 512,
+                },
                 rationale="Test a more discriminative target appearance at higher spatial resolution.",
             ),
         ]
@@ -136,7 +142,8 @@ class RealQwenPlanner:
             "- rationale: unrestricted short reasoning; reasoning NEVER goes into sam3_prompt.\n"
             "- suggested_spatial_mode: GLOBAL or TILED only. The controller owns the locked search ROI.\n"
             f"- semantic_prior keys may ONLY be: {belief_classes}.\n"
-            f"- likely_confounders has at most {len(confounder_slots)} entries; entry i names confounder{i+1}.\n"
+            f"- likely_confounders has at most {len(confounder_slots)} entries; "
+            "entries map by position to confounder1, confounder2, and so on.\n"
         )
         if existing_mapping:
             text += (

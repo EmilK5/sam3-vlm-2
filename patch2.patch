@@ -1,0 +1,120 @@
+diff --git a/src/sam3_vlm/models/sam3.py b/src/sam3_vlm/models/sam3.py
+index 39f7e3d..acee9ae 100644
+--- a/src/sam3_vlm/models/sam3.py
++++ b/src/sam3_vlm/models/sam3.py
+@@ -1,5 +1,12 @@
+ def _clipped_domain(action: SensingAction, img_w: int, img_h: int) -> Box:
+-    roi = _roi_box(action.roi)
++    # GLOBAL/TILED use the persistent run-level search domain. LOCAL/ROI_BATCH
++    # continue to use action.roi, preserving the core spatial-mode invariant.
++    geometry = (
++        action.search_region
++        if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED)
++        else action.roi
++    )
++    roi = _roi_box(geometry)
+     if roi is None:
+         return Box(0.0, 0.0, float(img_w), float(img_h))
+     domain = Box(
+@@ -9,7 +16,7 @@ def _clipped_domain(action: SensingAction, img_w: int, img_h: int) -> Box:
+         min(float(img_h), float(roi.y2)),
+     )
+     if domain.area <= 0.0:
+-        raise ValueError(f"Invalid search ROI {roi.as_tuple()} for image size {img_w}x{img_h}")
++        raise ValueError(f"Invalid search region/ROI {roi.as_tuple()} for image size {img_w}x{img_h}")
+     return domain
+ 
+ class RealSAM3Sensor:
+diff --git a/src/sam3_vlm/pipeline/bootstrap.py b/src/sam3_vlm/pipeline/bootstrap.py
+index dcf6e8e..8cf74ef 100644
+--- a/src/sam3_vlm/pipeline/bootstrap.py
++++ b/src/sam3_vlm/pipeline/bootstrap.py
+@@ -5,7 +5,7 @@
+             family=ActionFamily.DISCOVERY,
+             spatial_mode=SpatialMode.GLOBAL,
+             source=ActionSource.USER_BOOTSTRAP,
+-            roi=state.search_region,
++            search_region=state.search_region,
+             threshold=self.config.sam3.default_threshold,
+             semantic_prior={"target": 1.0},
+         )
+@@ -19,7 +19,7 @@
+                 family=ActionFamily.DISCOVERY,
+                 spatial_mode=SpatialMode.TILED,
+                 source=ActionSource.USER_BOOTSTRAP,
+-                roi=state.search_region,
++                search_region=state.search_region,
+                 tiling=self.config.tiling,
+                 threshold=self.config.sam3.default_threshold,
+                 semantic_prior={"target": 1.0},
+diff --git a/src/sam3_vlm/pipeline/runner.py b/src/sam3_vlm/pipeline/runner.py
+index 4e020c8..9bdfd64 100644
+--- a/src/sam3_vlm/pipeline/runner.py
++++ b/src/sam3_vlm/pipeline/runner.py
+@@ -4,7 +4,7 @@
+             return action
+         domain = self.scene_state.search_region.bbox()
+         if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
+-            return dataclasses.replace(action, roi=self.scene_state.search_region)
++            return dataclasses.replace(action, search_region=self.scene_state.search_region)
+         if action.roi is None:
+             return action
+         roi = action.roi.bbox() if hasattr(action.roi, "bbox") else action.roi
+diff --git a/src/sam3_vlm/planning/action_bank.py b/src/sam3_vlm/planning/action_bank.py
+index e90800a..4854b42 100644
+--- a/src/sam3_vlm/planning/action_bank.py
++++ b/src/sam3_vlm/planning/action_bank.py
+@@ -9,7 +9,7 @@
+                 qwen_priority=adjusted_priority,
+                 semantic_prior=proposal.semantic_prior,
+                 correlation_group=corr_group,
+-                roi=search_region,
++                search_region=search_region,
+                 positive_exemplar_ids=tuple(proposal.positive_exemplar_ids),
+                 negative_exemplar_ids=tuple(proposal.negative_exemplar_ids),
+                 tiling=tiling_cfg,
+diff --git a/src/sam3_vlm/sensing/action.py b/src/sam3_vlm/sensing/action.py
+index 97d1c4b..d051dd5 100644
+--- a/src/sam3_vlm/sensing/action.py
++++ b/src/sam3_vlm/sensing/action.py
+@@ -9,6 +9,9 @@ class SensingAction:
+     spatial_mode: SpatialMode = SpatialMode.GLOBAL
+     source: ActionSource = ActionSource.QWEN
+     roi: Optional[Geometry] = None
++    # Persistent run-level execution domain for GLOBAL/TILED sensing.
++    # This is intentionally distinct from roi, which remains LOCAL/ROI_BATCH geometry.
++    search_region: Optional[Geometry] = None
+     positive_exemplar_ids: Tuple[str, ...] = field(default_factory=tuple)
+     negative_exemplar_ids: Tuple[str, ...] = field(default_factory=tuple)
+     tiling: Optional[TilingConfig] = None
+@@ -41,3 +44,7 @@ class SensingAction:
+             roi_box = self.roi.bbox() if hasattr(self.roi, "bbox") else self.roi
+             if not hasattr(roi_box, "area") or roi_box.area <= 0.0:
+                 raise ValueError("SensingAction ROI must have positive area.")
++        if self.search_region is not None:
++            search_box = self.search_region.bbox() if hasattr(self.search_region, "bbox") else self.search_region
++            if not hasattr(search_box, "area") or search_box.area <= 0.0:
++                raise ValueError("SensingAction search_region must have positive area.")
+diff --git a/tests/test_m8_real_hotfix.py b/tests/test_m8_real_hotfix.py
+index eaa6807..269b331 100644
+--- a/tests/test_m8_real_hotfix.py
++++ b/tests/test_m8_real_hotfix.py
+@@ -8,7 +8,8 @@
+     )
+     assert len(entries) == 1
+     action = entries[0].action
+-    assert action.roi.bbox().as_tuple() == domain.bbox().as_tuple()
++    assert action.roi is None
++    assert action.search_region.bbox().as_tuple() == domain.bbox().as_tuple()
+     assert action.spatial_mode == SpatialMode.TILED
+     assert action.tiling == cfg.tiling
+ 
+@@ -19,7 +20,7 @@
+         semantic_key="green_fruit",
+         prompt="green fruit",
+         family=ActionFamily.DISCOVERY,
+-        roi=roi,
++        search_region=roi,
+         spatial_mode=SpatialMode.GLOBAL,
+     )
+     global_obs = sensor.observe((1000, 1000), global_action)

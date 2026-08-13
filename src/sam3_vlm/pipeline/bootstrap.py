@@ -140,9 +140,9 @@ class BootstrapPipeline:
                     node,
                     action,
                     obs_ref,
-                    target_class="target",
+                    target_class=state.target_class,
                     config=self.config.belief,
-                    class_vocabulary=state.belief_classes,
+                    class_vocabulary=state.belief_classes or None,
                 )
                 if self.recorder:
                     prov = {
@@ -158,9 +158,9 @@ class BootstrapPipeline:
                 new_node,
                 action,
                 new_node.observations[0],
-                target_class="target",
+                target_class=state.target_class,
                 config=self.config.belief,
-                class_vocabulary=state.belief_classes,
+                class_vocabulary=state.belief_classes or None,
             )
             if self.recorder:
                 prov = {
@@ -212,16 +212,20 @@ class BootstrapPipeline:
         target_class: str = "target",
         confounder_class: Optional[str] = None,
     ) -> BootstrapResult:
-        if target_class != "target":
-            raise ValueError("V4 posterior ontology requires canonical target_class='target'.")
+        canonical_mode = target_class == "target" and confounder_class is None
+        effective_target = "target" if canonical_mode else target_class
 
         img_w, img_h = self._image_size(image)
         full_image = BoxGeometry(Box(0.0, 0.0, float(img_w), float(img_h)))
-        belief_classes = canonical_belief_classes(self.config.belief.num_confounders)
+        belief_classes = (
+            canonical_belief_classes(self.config.belief.num_confounders)
+            if canonical_mode
+            else []
+        )
         state = SceneState(
             image_id=image_id,
             user_prompt=user_prompt,
-            target_class="target",
+            target_class=effective_target,
             graph=SceneGraph(),
             semantic_memory=SemanticMemory(),
             discovery_state=DiscoveryState(),
@@ -279,14 +283,14 @@ class BootstrapPipeline:
         # Pass 1: target bootstrap across the active search domain.
         global_action = SensingAction(
             action_id=self.id_gen.next_action_id(),
-            semantic_key="target",
+            semantic_key=state.target_class,
             prompt=user_prompt,
             family=ActionFamily.DISCOVERY,
             spatial_mode=SpatialMode.GLOBAL,
             source=ActionSource.USER_BOOTSTRAP,
-            roi=state.search_region,
+            search_region=state.search_region,
             threshold=self.config.sam3.default_threshold,
-            semantic_prior={"target": 1.0},
+            semantic_prior={state.target_class: 1.0},
         )
         obs_global = self._execute_sensor_action(state, image, global_action)
         self._associate_discovery(state, global_action, obs_global)
@@ -303,16 +307,16 @@ class BootstrapPipeline:
         if tiling_decision.should_tile and self.config.bootstrap.enable_tiled_bootstrap:
             tiled_action = SensingAction(
                 action_id=self.id_gen.next_action_id(),
-                semantic_key="target",
+                semantic_key=state.target_class,
                 prompt=user_prompt,
                 family=ActionFamily.DISCOVERY,
                 spatial_mode=SpatialMode.TILED,
                 source=ActionSource.USER_BOOTSTRAP,
-                roi=state.search_region,
+                search_region=state.search_region,
                 tiling=self.config.tiling,
                 threshold=self.config.sam3.default_threshold,
-                semantic_prior={"target": 1.0},
-                correlation_group="target",
+                semantic_prior={state.target_class: 1.0},
+                correlation_group=state.target_class,
             )
             obs_tiled = self._execute_sensor_action(state, image, tiled_action)
             assoc_tiled = self._associate_discovery(state, tiled_action, obs_tiled)
@@ -348,7 +352,7 @@ class BootstrapPipeline:
         qwen_evidence_pack = QwenEvidencePack(
             original_image_id=image_id,
             user_prompt=user_prompt,
-            target_class="target",
+            target_class=state.target_class,
             contact_sheet=contact_sheet,
             image_path=image_path_str,
             scene_summary=f"Bootstrap complete. Total candidates: {contact_sheet.total_candidates}.",
