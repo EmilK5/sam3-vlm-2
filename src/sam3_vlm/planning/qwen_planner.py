@@ -195,11 +195,19 @@ class QwenPlannerService:
             if getattr(self.planner_backend, "strict_model_errors", False):
                 raise ValueError(f"Strict Qwen execution failed: malformed response: {raw_output}")
             self.last_fallback_used = True
-            fallback_prompt = evidence.user_prompt or "visible object"
-            try:
-                validate_sam3_prompt_contract(fallback_prompt)
-            except ValueError:
-                fallback_prompt = "visible object"
+            fallback_prompt = evidence.user_prompt or (evidence.target_class or "target")
+
+            # Preserve the frozen generic planner contract. The strict short-SAM3
+            # prompt grammar is an M8 production policy, not a generic service rule.
+            belief_classes = list(getattr(evidence, "belief_classes", []) or [])
+            canonical_m8 = bool(belief_classes) and belief_classes == (
+                ["target"] + [f"confounder{i}" for i in range(1, len(belief_classes))]
+            )
+            if canonical_m8:
+                try:
+                    validate_sam3_prompt_contract(fallback_prompt)
+                except ValueError:
+                    fallback_prompt = "visible object"
             output = PlannerOutput(
                 scene_summary="Deterministic fallback due to repeated model failure.",
                 proposed_actions=[

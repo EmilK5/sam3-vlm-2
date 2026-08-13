@@ -141,17 +141,46 @@ class Runner:
 
     def _record_controller_state(self):
         if self.recorder and self.scene_state:
-            self.recorder.record_controller_state_updated({
+           self.recorder.record_controller_state_updated({
                 "iteration": self.scene_state.iteration,
                 "qwen_round": self.scene_state.qwen_round,
                 "replans_executed": self.scene_state.replans_executed,
                 "actions_since_replan": self.scene_state.actions_since_replan,
-                "last_plan_accepted_actions": self.scene_state.last_plan_accepted_actions,
-                "search_region": self.scene_state.search_region.bbox().as_tuple() if self.scene_state.search_region else None,
-                "search_region_locked": self.scene_state.search_region_locked,
-                "search_region_source": self.scene_state.search_region_source,
-                "confounder_labels": dict(self.scene_state.confounder_labels),
-            })
+
+                "last_plan_accepted_actions": (
+                    self.scene_state.last_plan_accepted_actions
+                ),
+
+                "belief_classes": list(
+                    self.scene_state.belief_classes or []
+                ),
+
+                "confounder_labels": dict(
+                    self.scene_state.confounder_labels or {}
+                ),
+
+                "search_region": (
+                    self.scene_state.search_region.bbox().as_tuple()
+                    if self.scene_state.search_region is not None
+                    else None
+                ),
+
+                "search_region_locked": (
+                    self.scene_state.search_region_locked
+                ),
+
+                "search_region_source": (
+                    self.scene_state.search_region_source
+                ),
+
+                "search_region_fallback_used": (
+                    self.scene_state.search_region_fallback_used
+                ),
+
+                "search_region_call_id": (
+                    self.scene_state.search_region_call_id
+                ),
+            }) 
 
     def _uses_canonical_m8_policy(self) -> bool:
         if self.scene_state is None or self.scene_state.target_class != "target":
@@ -464,9 +493,12 @@ class Runner:
             )
             
             if not decision.action:
-                if self.recorder:
-                    self.recorder.record_stop_decided(decision.reason.value if decision.reason else "CLEANUP_COMPLETE")
                 self.scene_state.set_stop_reason(decision.reason)
+                if self.recorder:
+                    resolved_reason = self.scene_state.stop_reason or decision.reason
+                    self.recorder.record_stop_decided(
+                        resolved_reason.value if resolved_reason else "CLEANUP_COMPLETE"
+                    )
                 self.state = RunnerState.FINALIZE
                 return
             
