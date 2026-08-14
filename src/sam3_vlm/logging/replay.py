@@ -207,9 +207,20 @@ class ReplayEngine:
             "spatial_coverage" in discovery_data
             and isinstance(discovery_data["spatial_coverage"], dict)
         ):
+            coverage_data = deepcopy(discovery_data["spatial_coverage"])
+
+            # JSON arrays deserialize as lists, but CoverageSummary.searched_boxes
+            # is canonically List[Tuple[float, float, float, float]].
+            # Restore the original runtime representation for deterministic replay.
+            if "searched_boxes" in coverage_data:
+                coverage_data["searched_boxes"] = [
+                    tuple(float(v) for v in box)
+                    for box in coverage_data["searched_boxes"]
+                ]
+
             discovery_data["spatial_coverage"] = CoverageSummary(
-                **discovery_data["spatial_coverage"]
-            )
+                **coverage_data
+            ) 
 
         if (
             "unresolved_regions" in discovery_data

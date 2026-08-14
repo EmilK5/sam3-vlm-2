@@ -5,7 +5,7 @@ import time
 from enum import Enum
 from typing import Any, List, Optional
 from sam3_vlm.core.config import V4Config
-from sam3_vlm.core.types import ActionSource, SpatialMode
+from sam3_vlm.core.types import ActionFamily, ActionSource, SpatialMode
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.models.sam3 import SAM3Sensor
 from sam3_vlm.models.qwen import QwenPlanner
@@ -105,6 +105,18 @@ class Runner:
                 
             final_count = self._compute_final_count()
             self._finalize_runtime_accounting()
+
+            # _finalize_runtime_accounting() mutates persistent BudgetState after
+            # the final model-action budget event. Persist the finalized budget so
+            # deterministic replay sees exactly the same terminal state.
+            if self.recorder:
+                self.recorder.record_budget_updated(
+                    self.scene_state.budget.__dict__
+                )
+
+                # Also persist the terminal controller state after all final mutations.
+                self._record_controller_state()
+                
             if self.recorder:
                 from sam3_vlm.logging.schema import RunSummary
                 summary = RunSummary(
@@ -365,14 +377,19 @@ class Runner:
                     config=self.config.association
                 )
                 
-                if self.recorder:
-                    self.recorder.record_association_completed(
-                        action.action_id, len(assoc_result.matched_observations), len(assoc_result.new_nodes)
-                    )
-                
                 new_nodes_count, not_retrieved_nodes_count = self._project_observations(
                     action, observation, assoc_result
                 )
+
+                if self.recorder:
+                    # Association may provisionally construct unmatched nodes.
+                    # Report only nodes actually admitted to the counting graph
+                    # after the Runner's family-level graph-expansion policy.
+                    self.recorder.record_association_completed(
+                        action.action_id,
+                        len(assoc_result.matched_observations),
+                        new_nodes_count,
+                    )
 
             # Recompute soft count and variance
             self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
@@ -390,7 +407,7 @@ class Runner:
             if action.family == ActionFamily.CONTEXT:
                 affected = 0
             else:
-                affected = len(assoc_result.matched_observations) + len(assoc_result.new_nodes) + not_retrieved_nodes_count
+                affected = len(assoc_result.matched_observations) + new_nodes_count + not_retrieved_nodes_count
 
             self.scene_state.semantic_memory.record_execution(
                 action=action, 
@@ -571,14 +588,16 @@ class Runner:
                 config=self.config.association
             )
             
-            if self.recorder:
-                self.recorder.record_association_completed(
-                    cleanup_action.action_id, len(assoc_result.matched_observations), len(assoc_result.new_nodes)
-                )
-
             new_nodes_count, not_retrieved_nodes_count = self._project_observations(
                 cleanup_action, observation, assoc_result
             )
+
+            if self.recorder:
+                self.recorder.record_association_completed(
+                    cleanup_action.action_id,
+                    len(assoc_result.matched_observations),
+                    new_nodes_count,
+                )
 
             # Compute stats
             pre_count = self.scene_state.count_estimate
@@ -618,12 +637,41 @@ class Runner:
         elif self.state == RunnerState.FINALIZE:
             self.state = RunnerState.DONE
 
+    def _admitted_new_nodes_for_action(self, action, assoc_result):
+        """Return provisional association nodes that may enter the count graph.
+
+        ``IoUAssociationPolicy.associate`` registers unmatched SAM3 detections
+        provisionally in the graph.  Graph dimensionality, however, is a
+        controller-level scientific decision: discovery experiments may enlarge
+        the represented object set, while confounder/verification/cleanup
+        experiments are discriminative measurements over the represented set.
+
+        For non-discovery actions we therefore remove provisional unmatched
+        nodes immediately.  Their raw SAM3 detections remain fully preserved in
+        the SAM3 action-completed artifact, so this does not discard sensor
+        provenance; it only prevents confounder/background detections from
+        becoming count-bearing object hypotheses.
+        """
+        provisional_new_nodes = list(assoc_result.new_nodes)
+        if action.family == ActionFamily.DISCOVERY:
+            return provisional_new_nodes
+
+        for node in provisional_new_nodes:
+            self.scene_state.graph.nodes.pop(node.node_id, None)
+        return []
+
     def _project_observations(self, action, observation, assoc_result) -> tuple[int, int]:
-        """Project observations to the graph and update beliefs (M4/M5 interface)."""
-        new_nodes_count = len(assoc_result.new_nodes)
+        """Project one SAM3 observation onto the represented scene graph.
+
+        Only DISCOVERY actions may admit unmatched detections as new graph
+        nodes.  All other action families can still strongly update matched
+        nodes and contribute NOT_RETRIEVED/NOT_OBSERVABLE evidence.
+        """
+        admitted_new_nodes = self._admitted_new_nodes_for_action(action, assoc_result)
+        new_nodes_count = len(admitted_new_nodes)
         matched_node_ids = {nid for nid, _ in assoc_result.matched_observations}
-        new_node_ids = {n.node_id for n in assoc_result.new_nodes}
-        
+        new_node_ids = {n.node_id for n in admitted_new_nodes}
+
         for node_id, obs_ref in assoc_result.matched_observations:
             node = self.scene_state.graph.get_node(node_id)
             if node:
@@ -640,7 +688,8 @@ class Runner:
                         "semantic_key": action.semantic_key
                     }
                     self.recorder.record_node_updated(node_id, node.to_dict(), prov)
-        for new_node in assoc_result.new_nodes:
+
+        for new_node in admitted_new_nodes:
             self.belief_updater.update_node_belief(
                 new_node, action, new_node.observations[-1], target_class=self.target_class,
                 config=self.config.belief, class_vocabulary=self._belief_class_vocabulary(),
@@ -654,13 +703,13 @@ class Runner:
                     "semantic_key": action.semantic_key
                 }
                 self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
-            
+
         from sam3_vlm.core.types import ObservationRelation, NodeObservationRef, SpatialMode
         not_retrieved_nodes_count = 0
         for node in self.scene_state.graph.active_nodes():
             if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
                 relation = ObservationRelation.NOT_OBSERVABLE
-                
+
                 if observation.searched_regions:
                     node_box = node.geometry.bbox()
                     for region in observation.searched_regions:
@@ -672,7 +721,7 @@ class Runner:
                     if action.spatial_mode in (SpatialMode.GLOBAL, SpatialMode.TILED):
                         relation = ObservationRelation.NOT_RETRIEVED
                         not_retrieved_nodes_count += 1
-                    
+
                 obs_ref = NodeObservationRef(
                     observation_id=self.id_gen.next_observation_id(),
                     sam3_call_id=observation.call_id,
@@ -696,7 +745,7 @@ class Runner:
                         "relation": obs_ref.relation.value
                     }
                     self.recorder.record_node_updated(node.node_id, node.to_dict(), prov)
-                
+
         return new_nodes_count, not_retrieved_nodes_count
 
     def _execute_initial_plan(self):
@@ -949,3 +998,4 @@ class Runner:
             
         self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
         return self.scene_state.count_estimate.mean_count
+

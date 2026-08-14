@@ -136,27 +136,61 @@ class ActionBankGenerator:
     ) -> List[ActionBankEntry]:
         self.last_rejections = []
         added_entries: List[ActionBankEntry] = []
-        existing_keys: Set[str] = set()
+
+        # Legacy/generic ActionBank semantics use semantic-key uniqueness.
+        # Strict M8 instead allows multiple sensing experiments against the same
+        # canonical belief coordinate.
+        existing_semantic_keys: Set[str] = set()
         existing_groups: Set[str] = set()
         existing_prompts: Set[str] = set()
-        group_avg_utilities = {}
+        group_avg_utilities = {} 
 
         for group, record in semantic_memory.records.items():
-            existing_groups.add(group)
-            existing_keys.update(canonicalize_semantic_key(k) for k in record.semantic_keys)
-            existing_prompts.update(p.strip().lower() for p in record.prompts)
-            if record.execution_count > 0:
-                group_avg_utilities[group] = (
-                    sum(record.realized_utility_by_execution) / record.execution_count
-                )
+            normalized_group = canonicalize_semantic_key(group)
+
+            existing_groups.add(normalized_group)
+
+            existing_semantic_keys.update(
+                canonicalize_semantic_key(key)
+                for key in record.semantic_keys
+            )
+
+            existing_prompts.update(
+                p.strip().lower()
+                for p in record.prompts
+            )
+
+            # Empirical history must override Qwen's prior when we have actual
+            # realized utility observations for this correlation group.
+            realized_utilities = list(
+                record.realized_utility_by_execution or []
+            )
+
+            if realized_utilities:
+                group_avg_utilities[normalized_group] = (
+                    sum(realized_utilities) / len(realized_utilities)
+                ) 
 
         for entry in action_bank.entries:
-            existing_keys.add(canonicalize_semantic_key(entry.action.semantic_key))
-            existing_groups.add(
-                entry.action.correlation_group
-                or derive_correlation_group(entry.action.semantic_key, entry.action.prompt)
+            existing_semantic_keys.add(
+                canonicalize_semantic_key(entry.action.semantic_key)
             )
-            existing_prompts.add(entry.action.prompt.strip().lower())
+
+            existing_group = (
+                entry.action.correlation_group
+                or derive_correlation_group(
+                    entry.action.semantic_key,
+                    entry.action.prompt,
+                )
+            )
+
+            existing_groups.add(
+                canonicalize_semantic_key(existing_group)
+            )
+
+            existing_prompts.add(
+                entry.action.prompt.strip().lower()
+            ) 
 
         allowed_classes = set(allowed_belief_classes or [])
         if enforce_qwen_contract and not allowed_classes:
@@ -217,13 +251,41 @@ class ActionBankGenerator:
                     )
                     continue
 
-            if canonical_key in existing_keys:
+            # Preserve frozen generic/M4-M7 behavior:
+            # outside strict M8, semantic keys are unique action-bank identities.
+            #
+            # In strict M8, semantic_key is a belief coordinate instead, so multiple
+            # distinct experiments may target "target", e.g.
+            # "shadowed green fruit" and "round green fruit".
+            if (
+                not enforce_qwen_contract
+                and canonical_key in existing_semantic_keys
+            ):
                 self._reject(
                     proposal,
                     ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
                     f"semantic key {canonical_key!r} already exists",
                 )
                 continue
+
+            clean_prompt = proposal.prompt.strip().lower()
+
+            if clean_prompt in existing_prompts:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
+                    "exact SAM3 prompt already exists",
+                )
+                continue
+
+            if not enforce_qwen_contract and canonical_key in existing_semantic_keys:
+                self._reject(
+                    proposal,
+                    ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
+                    f"semantic key {canonical_key!r} already exists",
+                )
+                continue
+
             clean_prompt = proposal.prompt.strip().lower()
             if clean_prompt in existing_prompts:
                 self._reject(
@@ -233,10 +295,19 @@ class ActionBankGenerator:
                 )
                 continue
 
-            corr_group = proposal.correlation_group or derive_correlation_group(
-                canonical_key, proposal.prompt
+            corr_group = (
+                proposal.correlation_group
+                or derive_correlation_group(
+                    canonical_key,
+                    proposal.prompt,
+                )
             )
-            is_correlated = corr_group in existing_groups
+
+            # Use a normalized key only for internal history/dedup lookup.
+            # Preserve corr_group itself on SensingAction for provenance.
+            corr_group_key = canonicalize_semantic_key(corr_group)
+
+            is_correlated = corr_group_key in existing_groups 
 
             if valid_node_ids is not None:
                 referenced = set(proposal.positive_exemplar_ids) | set(proposal.negative_exemplar_ids)
@@ -272,11 +343,25 @@ class ActionBankGenerator:
                     tiling_cfg = config.tiling
 
             adjusted_priority = proposal.priority
-            if corr_group in group_avg_utilities:
-                avg_utility = group_avg_utilities[corr_group]
-                threshold = config.stopping.utility_min_threshold if config else 0.05
-                adjusted_priority *= 0.1 if avg_utility < threshold else 1.2
-                adjusted_priority = min(1.0, adjusted_priority)
+
+            avg_utility = group_avg_utilities.get(corr_group_key)
+
+            if avg_utility is not None:
+                threshold = (
+                    config.stopping.utility_min_threshold
+                    if config is not None
+                    else 0.05
+                )
+
+                if avg_utility < threshold:
+                    # Empirical evidence says this semantic experiment family has
+                    # performed poorly. Strongly discount Qwen's proposed priority.
+                    adjusted_priority *= 0.1
+                else:
+                    # Successful empirical history may modestly reinforce Qwen.
+                    adjusted_priority *= 1.2
+
+                adjusted_priority = min(1.0, adjusted_priority) 
 
             action = SensingAction(
                 action_id=id_gen.next_action_id(),
@@ -315,11 +400,14 @@ class ActionBankGenerator:
                 )
                 continue
 
-            existing_keys.add(canonical_key)
-            existing_groups.add(corr_group)
+            existing_semantic_keys.add(canonical_key)
+            existing_groups.add(corr_group_key)
             existing_prompts.add(clean_prompt)
+
             if is_correlated:
                 entry.redundancy = max(entry.redundancy, 0.5)
-            added_entries.append(entry)
+
+            added_entries.append(entry) 
 
         return added_entries
+

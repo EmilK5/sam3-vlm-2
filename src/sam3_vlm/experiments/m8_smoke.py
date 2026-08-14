@@ -9,6 +9,8 @@ import shutil
 import uuid
 import sys
 import dataclasses
+import math
+import numpy as np
 from contextlib import contextmanager
 from pathlib import Path
 from PIL import Image
@@ -33,6 +35,162 @@ from sam3_vlm.evaluation.metrics import CountingMetrics, aggregate_count_metrics
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _canonical_states_equal(left, right, *, rel_tol=1e-12, abs_tol=1e-12):
+    """
+    Deep equality for replay validation.
+
+    Structural/discrete values must match exactly.
+    Floating-point values may differ only by machine-level numerical noise.
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        return left == right
+
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(
+            float(left),
+            float(right),
+            rel_tol=rel_tol,
+            abs_tol=abs_tol,
+        )
+
+    if type(left) is not type(right):
+        return False
+
+    if isinstance(left, dict):
+        if set(left) != set(right):
+            return False
+        return all(
+            _canonical_states_equal(
+                left[key],
+                right[key],
+                rel_tol=rel_tol,
+                abs_tol=abs_tol,
+            )
+            for key in left
+        )
+
+    if isinstance(left, list):
+        if len(left) != len(right):
+            return False
+        return all(
+            _canonical_states_equal(
+                a,
+                b,
+                rel_tol=rel_tol,
+                abs_tol=abs_tol,
+            )
+            for a, b in zip(left, right)
+        )
+
+    return left == right
+
+def _json_default(value):
+    """Convert serialization-safe runtime values to their JSON representation.
+
+    Replay validation compares scientific state after it has crossed the JSON
+    artifact boundary. Tuples, NumPy scalars/arrays, Paths, and enum-like values
+    can be semantically identical while differing as raw Python objects. This
+    helper normalizes only representation; it does not discard fields or values.
+    """
+    if isinstance(value, Path):
+        return str(value)
+
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+
+    if isinstance(value, np.generic):
+        return value.item()
+
+    if dataclasses.is_dataclass(value):
+        return dataclasses.asdict(value)
+
+    enum_value = getattr(value, "value", None)
+    if enum_value is not None:
+        return enum_value
+
+    if isinstance(value, set):
+        return sorted(value)
+
+    raise TypeError(
+        f"Object of type {type(value).__name__} is not JSON serializable"
+    )
+
+
+def _json_canonical(value):
+    """Return the exact representation a value has after a JSON round trip.
+
+    This intentionally normalizes tuple/list differences introduced by JSON
+    persistence while preserving every scientifically relevant key and value.
+    """
+    return json.loads(
+        json.dumps(
+            value,
+            sort_keys=True,
+            allow_nan=False,
+            default=_json_default,
+        )
+    )
+
+
+def _first_difference(left, right, path="$"):
+    """Return a compact description of the first canonical-state mismatch."""
+    if (
+        not isinstance(left, bool)
+        and not isinstance(right, bool)
+        and isinstance(left, (int, float))
+        and isinstance(right, (int, float))
+    ):
+        if math.isclose(
+            float(left),
+            float(right),
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            return None
+
+        return (
+            f"{path}: left={left!r}, right={right!r}"
+        )
+
+    if type(left) is not type(right):
+        return (
+            f"{path}: type {type(left).__name__} != "
+            f"{type(right).__name__}; left={left!r}, right={right!r}"
+        )
+
+    if isinstance(left, dict):
+        left_keys = set(left)
+        right_keys = set(right)
+        if left_keys != right_keys:
+            missing_left = sorted(right_keys - left_keys)
+            missing_right = sorted(left_keys - right_keys)
+            return (
+                f"{path}: key mismatch; missing_from_left={missing_left}, "
+                f"missing_from_right={missing_right}"
+            )
+        for key in sorted(left_keys):
+            diff = _first_difference(left[key], right[key], f"{path}.{key}")
+            if diff is not None:
+                return diff
+        return None
+
+    if isinstance(left, list):
+        if len(left) != len(right):
+            return f"{path}: length {len(left)} != {len(right)}"
+        for index, (l_value, r_value) in enumerate(zip(left, right)):
+            diff = _first_difference(
+                l_value, r_value, f"{path}[{index}]"
+            )
+            if diff is not None:
+                return diff
+        return None
+
+    if left != right:
+        return f"{path}: left={left!r}, right={right!r}"
+
+    return None
 
 @dataclasses.dataclass
 class M8DeploymentConfig:
@@ -294,33 +452,59 @@ def m8_2_qwen_smoke(args):
         return False
 
 def _run_validator_and_replay(paths: RunArtifactPaths, runner_state=None) -> bool:
+    """Validate artifacts and verify deterministic replay equivalence.
+
+    The comparison is performed after a JSON round trip because persisted run
+    artifacts necessarily convert tuples to arrays/lists. Raw Python equality
+    would therefore reject states that are byte-for-byte equivalent once
+    serialized. No fields are omitted from the scientific canonical state.
+    """
     try:
         from sam3_vlm.logging.replay import canonical_scene_state
+
         validator = RunValidator(paths)
         result = validator.validate()
         if not result.valid:
             logger.error(f"Validation failed: {result.errors}")
             return False
-            
+
         engine = ReplayEngine(paths)
         replayed_state = engine.replay_state()
-        
-        if runner_state:
-            cs_replayed = canonical_scene_state(replayed_state)
-            cs_runner = canonical_scene_state(runner_state)
-            if cs_replayed != cs_runner:
-                logger.error("Replay graph canonical state mismatch!")
-                return False
-            
+
+        cs_runner = None
+        if runner_state is not None:
+            cs_replayed = _json_canonical(
+                canonical_scene_state(replayed_state)
+            )
+            cs_runner = _json_canonical(
+                canonical_scene_state(runner_state)
+            )
+
+        if not _canonical_states_equal(cs_runner, cs_replayed):
+            logger.error(
+                "Replay canonical state mismatch! First difference: %s",
+                _first_difference(cs_runner, cs_replayed),
+            )
+            return False 
+
         with OracleHider(paths):
             engine_hidden = ReplayEngine(paths)
             replayed_hidden = engine_hidden.replay_state()
-            if runner_state:
-                cs_hidden = canonical_scene_state(replayed_hidden)
-                if cs_hidden != cs_runner:
-                    logger.error("Replay with hidden artifacts canonical state mismatch!")
+
+            if runner_state is not None:
+                cs_hidden = _json_canonical(
+                    canonical_scene_state(replayed_hidden)
+                )
+
+                if not _canonical_states_equal(cs_runner, cs_hidden):
+                    diff = _first_difference(cs_hidden, cs_runner)
+                    logger.error(
+                        "Replay with hidden artifacts canonical state mismatch! "
+                        "First difference: %s",
+                        diff or "unknown difference",
+                    )
                     return False
-                
+
         return True
     except Exception as e:
         logger.error(f"Validation/Replay crashed: {e}")
@@ -437,8 +621,12 @@ def m8_4_and_5_pilot(args):
                 if var_name == "A_OneShot":
                     cfg = dataclasses.replace(
                         base_config,
-                        bootstrap=dataclasses.replace(base_config.bootstrap, enable_tiled_bootstrap=False),
-                    )
+                        bootstrap=dataclasses.replace(
+                            base_config.bootstrap,
+                            enable_tiled_bootstrap=False,
+                            locked_context_prompt=None,
+                        ),
+                    ) 
                     manifest = RunManifest(run_id=run_id, user_prompt=prompt, target_class="target", image_id=img_name)
                     manifest.v4_config = dataclasses.asdict(cfg)
                     manifest.experiment_config = {"experiment": "M8_Pilot:A_OneShot", "resolved_device": cfg.device}
@@ -612,3 +800,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
