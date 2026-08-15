@@ -1,0 +1,23 @@
+{
+  "run_id": "pilot_C_V4_NoExemplarCleanup_tree_1_09e98f",
+  "schema_version": "1.0",
+  "final_soft_count": 17.17274324969163,
+  "count_variance": 4.897814263857525,
+  "final_stop_reason": "NO_VALID_ACTIONS",
+  "node_count": 27,
+  "qwen_calls": 4,
+  "sam3_calls": 10,
+  "sam3_tiles": 16,
+  "cleanup_calls": 0,
+  "runtime_ms": 241823.58388788998,
+  "wall_runtime_ms": 241823.58388788998,
+  "sam3_runtime_ms": 4051.503629423678,
+  "qwen_runtime_ms": 237374.56837669015,
+  "controller_runtime_ms": 397.51188177615404,
+  "number_of_replans": 3,
+  "discovery_statistics": {
+    "coverage_ratio": 1.0,
+    "saturated": true
+  },
+  "evaluation_fields": {}
+}

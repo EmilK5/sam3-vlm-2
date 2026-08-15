@@ -284,7 +284,25 @@ class Runner:
             best_entry = self._choose_best_action()
             
             if not best_entry:
-                self.state = RunnerState.REPLAN
+                # Strict M8: if Qwen just produced accepted actions but none
+                # clears the numerical utility threshold, there is no new sensor
+                # evidence to justify another Qwen call. Stop instead of
+                # replanning on an unchanged evidence state.
+                if (
+                    self._uses_canonical_m8_policy()
+                    and self.scene_state.last_plan_accepted_actions > 0
+                    and self.scene_state.actions_since_replan == 0
+                ):
+                    self.scene_state.set_stop_reason(
+                        StopReason.ACTION_BANK_EXHAUSTED
+                    )
+                    if self.recorder:
+                        self.recorder.record_stop_decided(
+                            self.scene_state.stop_reason.value
+                        )
+                    self.state = RunnerState.CLEANUP
+                else:
+                    self.state = RunnerState.REPLAN
                 return
                 
             from sam3_vlm.core.types import ActionFamily

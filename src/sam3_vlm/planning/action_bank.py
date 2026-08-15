@@ -166,6 +166,25 @@ class ActionBankGenerator:
                 record.realized_utility_by_execution or []
             )
 
+            # In strict M8, bootstrap/discovery gain is logged separately from
+            # discrimination utility. A zero realized utility on an execution
+            # that actually discovered nodes means "utility unmeasured", not
+            # "this semantic group empirically failed". Exclude only those
+            # bookkeeping zeros from the history used to adjust Qwen priority.
+            # Generic/M4-M7 behavior remains unchanged.
+            if enforce_qwen_contract and realized_utilities:
+                discovery_gains = list(
+                    getattr(record, "new_nodes_by_execution", []) or []
+                )
+                if len(discovery_gains) == len(realized_utilities):
+                    realized_utilities = [
+                        utility
+                        for utility, new_nodes in zip(
+                            realized_utilities, discovery_gains
+                        )
+                        if not (new_nodes > 0 and abs(float(utility)) <= 1e-12)
+                    ]
+
             if realized_utilities:
                 group_avg_utilities[normalized_group] = (
                     sum(realized_utilities) / len(realized_utilities)

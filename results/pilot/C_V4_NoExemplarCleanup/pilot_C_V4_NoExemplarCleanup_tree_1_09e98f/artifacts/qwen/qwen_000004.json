@@ -1,0 +1,555 @@
+{
+  "qwen_call_id": "qwen_000004",
+  "qwen_round": 3,
+  "input": {
+    "evidence_pack": {
+      "original_image_id": "tree_1",
+      "user_prompt": "green fruit",
+      "target_class": "target",
+      "contact_sheet": {
+        "crops": [
+          {
+            "node_id": "node_000001",
+            "box": [
+              111.26728630065918,
+              493.42022705078125,
+              132.988431930542,
+              515.9087524414062
+            ],
+            "sam3_score": 0.6898950338363647,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.9023312434592877,
+              "confounder1": 0.045717290295652545,
+              "confounder2": 0.05195146624505972
+            },
+            "crop_image_path": "assets/crops/node_000001.jpg"
+          },
+          {
+            "node_id": "node_000002",
+            "box": [
+              137.84721183776855,
+              555.4157104492188,
+              158.8930492401123,
+              573.7704467773438
+            ],
+            "sam3_score": 0.635317325592041,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.8889645789316252,
+              "confounder1": 0.05197402688306905,
+              "confounder2": 0.059061394185305725
+            },
+            "crop_image_path": "assets/crops/node_000002.jpg"
+          },
+          {
+            "node_id": "node_000003",
+            "box": [
+              199.9694652557373,
+              497.9315490722656,
+              224.8296947479248,
+              520.9586791992188
+            ],
+            "sam3_score": 0.5815502405166626,
+            "support_count": 6,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.8599475366148798,
+              "confounder1": 0.06555647222282221,
+              "confounder2": 0.07449599116229798
+            },
+            "crop_image_path": "assets/crops/node_000003.jpg"
+          },
+          {
+            "node_id": "node_000004",
+            "box": [
+              493.01527214050293,
+              47.92075729370117,
+              509.7896251678467,
+              68.16897583007812
+            ],
+            "sam3_score": 0.6623849272727966,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.919258819525568,
+              "confounder1": 0.03779374405186178,
+              "confounder2": 0.042947436422570213
+            },
+            "crop_image_path": "assets/crops/node_000004.jpg"
+          },
+          {
+            "node_id": "node_000005",
+            "box": [
+              570.3930187225342,
+              77.50907135009766,
+              588.0534801483154,
+              102.34480285644531
+            ],
+            "sam3_score": 0.6640515923500061,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.9155988218342124,
+              "confounder1": 0.03950693446058142,
+              "confounder2": 0.04489424370520618
+            },
+            "crop_image_path": "assets/crops/node_000005.jpg"
+          },
+          {
+            "node_id": "node_000006",
+            "box": [
+              8.703400611877441,
+              354.8746643066406,
+              30.755847930908203,
+              374.31597900390625
+            ],
+            "sam3_score": 0.6210831999778748,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.8461486398555953,
+              "confounder1": 0.07201553028035966,
+              "confounder2": 0.08183582986404507
+            },
+            "crop_image_path": "assets/crops/node_000006.jpg"
+          },
+          {
+            "node_id": "node_000015",
+            "box": [
+              513.4511241912842,
+              698.8505859375,
+              534.9109630584717,
+              716.37646484375
+            ],
+            "sam3_score": 0.0,
+            "support_count": 3,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.39065112977812577,
+              "confounder1": 0.42063336404164786,
+              "confounder2": 0.18871550618022634
+            },
+            "crop_image_path": "assets/crops/node_000015.jpg"
+          },
+          {
+            "node_id": "node_000016",
+            "box": [
+              -1.2007391452789307,
+              416.79266357421875,
+              9.003966331481934,
+              432.9427185058594
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.3920074178406037,
+              "confounder1": 0.28459227250014296,
+              "confounder2": 0.3234003096592533
+            },
+            "crop_image_path": "assets/crops/node_000016.jpg"
+          },
+          {
+            "node_id": "node_000017",
+            "box": [
+              -1.3257114887237549,
+              518.3151245117188,
+              20.08346176147461,
+              546.4158935546875
+            ],
+            "sam3_score": 0.0,
+            "support_count": 2,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.2503248789902568,
+              "confounder1": 0.5348986241269218,
+              "confounder2": 0.21477649688282138
+            },
+            "crop_image_path": "assets/crops/node_000017.jpg"
+          },
+          {
+            "node_id": "node_000018",
+            "box": [
+              578.5932750701904,
+              801.651611328125,
+              594.5251598358154,
+              821.6178588867188
+            ],
+            "sam3_score": 0.0,
+            "support_count": 2,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.45864740424188616,
+              "confounder1": 0.2533990873761384,
+              "confounder2": 0.2879535083819755
+            },
+            "crop_image_path": "assets/crops/node_000018.jpg"
+          },
+          {
+            "node_id": "node_000019",
+            "box": [
+              302.9758678674698,
+              333.5937194824219,
+              317.7320976257324,
+              354.6844482421875
+            ],
+            "sam3_score": 0.0,
+            "support_count": 2,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.5893170224752663,
+              "confounder1": 0.19223458522434347,
+              "confounder2": 0.2184483923003903
+            },
+            "crop_image_path": "assets/crops/node_000019.jpg"
+          },
+          {
+            "node_id": "node_000020",
+            "box": [
+              78.99790000915527,
+              816.3005065917969,
+              92.45401573181152,
+              829.4968566894531
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.42812744903102057,
+              "confounder1": 0.2676850238578202,
+              "confounder2": 0.30418752711115926
+            },
+            "crop_image_path": "assets/crops/node_000020.jpg"
+          },
+          {
+            "node_id": "node_000010",
+            "box": [
+              -1.641832947731018,
+              288.1571350097656,
+              21.81526756286621,
+              309.44744873046875
+            ],
+            "sam3_score": 0.5729901790618896,
+            "support_count": 4,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.6343327719511838,
+              "confounder1": 0.24548937746571037,
+              "confounder2": 0.1201778505831058
+            },
+            "crop_image_path": "assets/crops/node_000010.jpg"
+          },
+          {
+            "node_id": "node_000014",
+            "box": [
+              319.87818717956543,
+              8.846447944641113,
+              336.8694591522217,
+              32.73179244995117
+            ],
+            "sam3_score": 0.5060018301010132,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.8634134534137365,
+              "confounder1": 0.06393412818931483,
+              "confounder2": 0.07265241839694866
+            },
+            "crop_image_path": "assets/crops/node_000014.jpg"
+          },
+          {
+            "node_id": "node_000012",
+            "box": [
+              60.10629844665527,
+              285.08135986328125,
+              81.29929161071777,
+              304.48297119140625
+            ],
+            "sam3_score": 0.5053783059120178,
+            "support_count": 3,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.7133484216105038,
+              "confounder1": 0.13417733456529607,
+              "confounder2": 0.15247424382420008
+            },
+            "crop_image_path": "assets/crops/node_000012.jpg"
+          },
+          {
+            "node_id": "node_000013",
+            "box": [
+              50.02022743225098,
+              382.51788330078125,
+              69.78670310974121,
+              402.69818115234375
+            ],
+            "sam3_score": 0.5052874684333801,
+            "support_count": 3,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.6953250728721934,
+              "confounder1": 0.14261379567684568,
+              "confounder2": 0.16206113145096096
+            },
+            "crop_image_path": "assets/crops/node_000013.jpg"
+          },
+          {
+            "node_id": "node_000007",
+            "box": [
+              35.00356101989746,
+              478.3362731933594,
+              51.32950019836426,
+              497.4785461425781
+            ],
+            "sam3_score": 0.5957568287849426,
+            "support_count": 5,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.875001180735136,
+              "confounder1": 0.0585100856133406,
+              "confounder2": 0.06648873365152341
+            },
+            "crop_image_path": "assets/crops/node_000007.jpg"
+          },
+          {
+            "node_id": "node_000026",
+            "box": [
+              292.6766185760498,
+              261.15826416015625,
+              312.70777702331543,
+              284.27947998046875
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.3914685454638745,
+              "confounder1": 0.28484451063393107,
+              "confounder2": 0.3236869439021944
+            },
+            "crop_image_path": "assets/crops/node_000026.jpg"
+          },
+          {
+            "node_id": "node_000021",
+            "box": [
+              302.968891620636,
+              262.1783447265625,
+              311.6822876930237,
+              282.3125305175781
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.41366024961376424,
+              "confounder1": 0.27445690443611037,
+              "confounder2": 0.3118828459501254
+            },
+            "crop_image_path": "assets/crops/node_000021.jpg"
+          },
+          {
+            "node_id": "node_000022",
+            "box": [
+              431.02220726013184,
+              186.3905029296875,
+              457.02770805358887,
+              211.4131317138672
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.4065431745741903,
+              "confounder1": 0.27778830126314497,
+              "confounder2": 0.3156685241626647
+            },
+            "crop_image_path": "assets/crops/node_000022.jpg"
+          },
+          {
+            "node_id": "node_000024",
+            "box": [
+              560.5766124725342,
+              163.16122436523438,
+              576.1151256561279,
+              182.74688720703125
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.3985492226349109,
+              "confounder1": 0.281530151107063,
+              "confounder2": 0.31992062625802614
+            },
+            "crop_image_path": "assets/crops/node_000024.jpg"
+          },
+          {
+            "node_id": "node_000027",
+            "box": [
+              563.7250804901123,
+              163.4130401611328,
+              575.2568492889404,
+              175.62445068359375
+            ],
+            "sam3_score": 0.0,
+            "support_count": 1,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.3831882548300365,
+              "confounder1": 0.2887203913561531,
+              "confounder2": 0.3280913538138104
+            },
+            "crop_image_path": "assets/crops/node_000027.jpg"
+          },
+          {
+            "node_id": "node_000011",
+            "box": [
+              618.4926891326904,
+              143.14019775390625,
+              638.3855113983154,
+              165.32081604003906
+            ],
+            "sam3_score": 0.5260130167007446,
+            "support_count": 4,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.8284523673663154,
+              "confounder1": 0.08029889187108637,
+              "confounder2": 0.09124874076259815
+            },
+            "crop_image_path": "assets/crops/node_000011.jpg"
+          },
+          {
+            "node_id": "node_000009",
+            "box": [
+              679.3526744842529,
+              108.08511352539062,
+              702.7355480194092,
+              130.58941650390625
+            ],
+            "sam3_score": 0.6331185102462769,
+            "support_count": 4,
+            "provenance": "sam3_000016",
+            "class_belief": {
+              "target": 0.8544708166128788,
+              "confounder1": 0.06812004328758858,
+              "confounder2": 0.07740914009953248
+            },
+            "crop_image_path": "assets/crops/node_000009.jpg"
+          }
+        ],
+        "total_candidates": 27,
+        "strata_counts": {
+          "high": 0,
+          "medium": 14,
+          "low": 13,
+          "outlier": 0,
+          "sampled": 24
+        },
+        "contact_sheet_image_path": "assets/contact_sheets/sheet_tree_1_replan_3.jpg"
+      },
+      "image_path": "assets/tree_1.jpg",
+      "scene_summary": "=== SEMANTIC HISTORY ===\n- group='locked_context_region': execs=1, nodes_found=0, affected=0, avg_ent_delta=0.00, avg_var_delta=0.00, avg_disc=0.00, avg_util=0.00\n- group='target': execs=4, nodes_found=27, affected=54, avg_ent_delta=-0.67, avg_var_delta=-0.17, avg_disc=0.67, avg_util=0.67\n- group='leaf_confounder': execs=1, nodes_found=0, affected=27, avg_ent_delta=-0.57, avg_var_delta=-0.05, avg_disc=0.57, avg_util=0.57\n- group='shadowed_fruit': execs=1, nodes_found=0, affected=27, avg_ent_delta=-1.10, avg_var_delta=-0.28, avg_disc=1.10, avg_util=1.10\n- group='confounder1': execs=1, nodes_found=0, affected=27, avg_ent_delta=-0.57, avg_var_delta=-0.09, avg_disc=0.57, avg_util=0.57\n- group='confounder2': execs=1, nodes_found=0, affected=27, avg_ent_delta=-0.72, avg_var_delta=-0.08, avg_disc=0.72, avg_util=0.72",
+      "discovery_diagnostics": {
+        "recent_new_nodes_count": 27,
+        "recent_new_node_counts": [
+          18.0,
+          9.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "coverage_ratio": 1.0,
+        "unresolved_entropy": 30.961949894545977,
+        "count_variance": 4.927630159345515,
+        "search_region": [
+          0.09913444519042969,
+          0.0,
+          717.5208740234375,
+          991.8333740234375
+        ],
+        "search_region_source": "SAM3_CONTEXT:tree canopy"
+      },
+      "belief_classes": [
+        "target",
+        "confounder1",
+        "confounder2"
+      ],
+      "confounder_labels": {
+        "confounder1": "leaf",
+        "confounder2": "shadow"
+      }
+    },
+    "contact_sheet_ref": {
+      "relative_path": "artifacts/contact_sheets/qwen_000004_contact_sheet.jpg",
+      "artifact_type": "contact_sheet_jpg",
+      "sha256": "97b6a3ec1e4cf40c28f40d2fee0171382de0cd47f546e5e9303d9b269d1d89b9",
+      "size_bytes": 194356
+    }
+  },
+  "output": {
+    "scene_summary": "Dense tree canopy with green fruit candidates partially occluded by leaves; shadows present on ground and foliage; high uncertainty due to overlapping visual patterns.",
+    "proposed_actions": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "round green fruit",
+        "family": "DISCOVERY",
+        "priority": 0.8,
+        "semantic_prior": {
+          "target": 0.67
+        },
+        "suggested_threshold": 0.5,
+        "suggested_spatial_mode": "TILED",
+        "exemplar_policy": null,
+        "rationale": "Reduce uncertainty by exploring round green fruit appearance in dense foliage where occlusion is prevalent.",
+        "correlation_group": null,
+        "roi": null,
+        "positive_exemplar_ids": [],
+        "negative_exemplar_ids": [],
+        "tiling": null
+      },
+      {
+        "semantic_key": "confounder2",
+        "sam3_prompt": "dark shadow",
+        "family": "CONFOUNDER",
+        "priority": 0.7,
+        "semantic_prior": {
+          "confounder2": 0.72
+        },
+        "suggested_threshold": 0.2,
+        "suggested_spatial_mode": "TILED",
+        "exemplar_policy": null,
+        "rationale": "Identify shadow patterns to distinguish occluded green fruit from background elements in high-contrast lighting.",
+        "correlation_group": null,
+        "roi": null,
+        "positive_exemplar_ids": [],
+        "negative_exemplar_ids": [],
+        "tiling": null
+      }
+    ],
+    "missing_appearance_modes": [
+      "shadowed green fruit"
+    ],
+    "likely_confounders": [
+      "leaf",
+      "shadow"
+    ]
+  },
+  "metadata": {
+    "repair_attempted": false,
+    "fallback_used": false,
+    "qwen_runtime_ms": 60640.65281488001,
+    "rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "round green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  }
+}

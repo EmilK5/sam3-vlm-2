@@ -1,0 +1,239 @@
+{
+  "metadata": {
+    "experiment": "M8_Pilot",
+    "target": "green fruit",
+    "resolved_config": {
+      "tiling": {
+        "grid_rows": 2,
+        "grid_cols": 2,
+        "overlap_ratio": 0.15,
+        "tile_min_size": 256
+      },
+      "budget": {
+        "max_qwen_calls": 5,
+        "max_sam3_calls": 15,
+        "max_sam3_tiles": 64,
+        "max_cleanup_calls": 0,
+        "max_runtime_seconds": 300
+      },
+      "stopping": {
+        "discovery_saturation_threshold": 0.05,
+        "utility_min_threshold": 0.02,
+        "max_iterations": 20,
+        "count_variance_threshold": 0.5
+      },
+      "bootstrap": {
+        "enable_tiled_bootstrap": true,
+        "tiled_bootstrap_min_candidates": 5,
+        "locked_context_prompt": "tree canopy",
+        "locked_context_threshold": 0.4,
+        "locked_context_fallback_full_image": true
+      },
+      "planner": {
+        "max_actions_per_prompt": 5,
+        "temperature": 0.2
+      },
+      "sam3": {
+        "default_threshold": 0.25,
+        "box_nms_iou_threshold": 0.7
+      },
+      "action_selection": {
+        "alpha_discovery": 1.0,
+        "beta_discrimination": 1.0,
+        "gamma_redundancy": 0.5,
+        "lambda_cost": 0.1,
+        "eta_qwen_priority": 0.2
+      },
+      "association": {
+        "iou_match_threshold": 0.5,
+        "new_node_iou_threshold": 0.3,
+        "tiled_nms_threshold": 0.7
+      },
+      "belief": {
+        "prior_pseudocount": 1.0,
+        "discount_repeat_weight": 0.8,
+        "num_confounders": 2
+      },
+      "replanning": {
+        "max_replans": 3,
+        "discovery_plateau_steps": 2,
+        "unresolved_entropy_threshold": 1.0,
+        "count_variance_threshold": 0.5,
+        "min_actions_between_replans": 2
+      },
+      "cleanup": {
+        "cleanup_residual_max_nodes": 10,
+        "cleanup_ambiguity_threshold": 0.8,
+        "cleanup_min_utility": 0.05,
+        "roi_batch_size": 4
+      },
+      "logging": {
+        "log_events": true,
+        "save_masks": true,
+        "save_contact_sheets": true
+      },
+      "device": "cuda",
+      "output_dir": "/home/ekielar/sam3-vlm-2/results",
+      "assets_dir": "assets"
+    },
+    "variants": [
+      "A_OneShot",
+      "B_FixedBank",
+      "C_V4_NoExemplarCleanup"
+    ]
+  },
+  "samples": [
+    {
+      "variant": "A_OneShot",
+      "sample_id": "tree_1",
+      "predicted_count": 16.0,
+      "count_type": "hard_one_shot",
+      "gt_count": 21,
+      "runtime_ms": 921.9241142272949,
+      "success": true,
+      "run_id": "pilot_A_OneShot_tree_1_6f13e3",
+      "storage_bytes": 77215,
+      "sam3_calls": 1,
+      "sam3_tiles": 0,
+      "qwen_calls": 0,
+      "cleanup_calls": 0,
+      "replans": 0,
+      "iterations": 0,
+      "stop_reason": "ONE_SHOT_COMPLETE",
+      "validator_status": null,
+      "replay_status": null,
+      "failure_category": null,
+      "failure_message": null,
+      "artifact_directory": "/home/ekielar/sam3-vlm-2/results/pilot/A_OneShot/pilot_A_OneShot_tree_1_6f13e3",
+      "experiment_id": "M8_Pilot",
+      "resolved_config_reference": "m8_real_smoke",
+      "absolute_error": 5.0,
+      "signed_error": -5.0,
+      "squared_error": 25.0,
+      "relative_error": 0.23809523809523808
+    },
+    {
+      "variant": "B_FixedBank",
+      "sample_id": "tree_1",
+      "predicted_count": 15.653249739418886,
+      "count_type": "posterior",
+      "gt_count": 21,
+      "runtime_ms": 58570.449352264404,
+      "success": true,
+      "run_id": "pilot_B_FixedBank_tree_1_bf89b3",
+      "storage_bytes": 647385,
+      "sam3_calls": 6,
+      "sam3_tiles": 12,
+      "qwen_calls": 1,
+      "cleanup_calls": 0,
+      "replans": 0,
+      "iterations": 0,
+      "stop_reason": "NO_VALID_ACTIONS",
+      "validator_status": "PASS",
+      "replay_status": "PASS",
+      "failure_category": null,
+      "failure_message": null,
+      "artifact_directory": "/home/ekielar/sam3-vlm-2/results/pilot/B_FixedBank/pilot_B_FixedBank_tree_1_bf89b3",
+      "experiment_id": "M8_Pilot",
+      "resolved_config_reference": "m8_real_smoke",
+      "absolute_error": 5.346750260581114,
+      "signed_error": -5.346750260581114,
+      "squared_error": 28.58773834902421,
+      "relative_error": 0.2546071552657673
+    },
+    {
+      "variant": "C_V4_NoExemplarCleanup",
+      "sample_id": "tree_1",
+      "predicted_count": 17.17274324969163,
+      "count_type": "posterior",
+      "gt_count": 21,
+      "runtime_ms": 241951.15494728088,
+      "success": true,
+      "run_id": "pilot_C_V4_NoExemplarCleanup_tree_1_09e98f",
+      "storage_bytes": 1869011,
+      "sam3_calls": 10,
+      "sam3_tiles": 16,
+      "qwen_calls": 4,
+      "cleanup_calls": 0,
+      "replans": 0,
+      "iterations": 0,
+      "stop_reason": "NO_VALID_ACTIONS",
+      "validator_status": "PASS",
+      "replay_status": "PASS",
+      "failure_category": null,
+      "failure_message": null,
+      "artifact_directory": "/home/ekielar/sam3-vlm-2/results/pilot/C_V4_NoExemplarCleanup/pilot_C_V4_NoExemplarCleanup_tree_1_09e98f",
+      "experiment_id": "M8_Pilot",
+      "resolved_config_reference": "m8_real_smoke",
+      "absolute_error": 3.8272567503083685,
+      "signed_error": -3.8272567503083685,
+      "squared_error": 14.647894232780974,
+      "relative_error": 0.18225032144325565
+    }
+  ],
+  "aggregates": {
+    "A_OneShot": {
+      "MAE": 5.0,
+      "MSE": 25.0,
+      "RMSE": 5.0,
+      "MRE": 0.23809523809523808,
+      "mean_signed_error": -5.0,
+      "avg_zero_gt_pred": 0.0,
+      "avg_sam3_calls": 1.0,
+      "avg_sam3_tiles": 0.0,
+      "avg_cleanup_calls": 0.0,
+      "avg_replans": 0.0,
+      "avg_iterations": 0.0,
+      "avg_qwen_calls": 0.0,
+      "avg_runtime_ms": 921.9241142272949,
+      "avg_storage_bytes": 77215.0,
+      "avg_events_json_bytes": 0.0,
+      "avg_mask_bytes": 0.0,
+      "avg_contact_sheet_bytes": 0.0,
+      "avg_qwen_bytes": 0.0,
+      "n_samples": 1
+    },
+    "B_FixedBank": {
+      "MAE": 5.346750260581114,
+      "MSE": 28.58773834902421,
+      "RMSE": 5.346750260581114,
+      "MRE": 0.2546071552657673,
+      "mean_signed_error": -5.346750260581114,
+      "avg_zero_gt_pred": 0.0,
+      "avg_sam3_calls": 6.0,
+      "avg_sam3_tiles": 0.0,
+      "avg_cleanup_calls": 0.0,
+      "avg_replans": 0.0,
+      "avg_iterations": 0.0,
+      "avg_qwen_calls": 1.0,
+      "avg_runtime_ms": 58570.449352264404,
+      "avg_storage_bytes": 647385.0,
+      "avg_events_json_bytes": 0.0,
+      "avg_mask_bytes": 0.0,
+      "avg_contact_sheet_bytes": 0.0,
+      "avg_qwen_bytes": 0.0,
+      "n_samples": 1
+    },
+    "C_V4_NoExemplarCleanup": {
+      "MAE": 3.8272567503083685,
+      "MSE": 14.647894232780974,
+      "RMSE": 3.8272567503083685,
+      "MRE": 0.18225032144325565,
+      "mean_signed_error": -3.8272567503083685,
+      "avg_zero_gt_pred": 0.0,
+      "avg_sam3_calls": 10.0,
+      "avg_sam3_tiles": 0.0,
+      "avg_cleanup_calls": 0.0,
+      "avg_replans": 0.0,
+      "avg_iterations": 0.0,
+      "avg_qwen_calls": 4.0,
+      "avg_runtime_ms": 241951.15494728088,
+      "avg_storage_bytes": 1869011.0,
+      "avg_events_json_bytes": 0.0,
+      "avg_mask_bytes": 0.0,
+      "avg_contact_sheet_bytes": 0.0,
+      "avg_qwen_bytes": 0.0,
+      "n_samples": 1
+    }
+  }
+}

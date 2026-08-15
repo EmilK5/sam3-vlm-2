@@ -1,0 +1,20 @@
+{
+  "run_id": "pilot_A_OneShot_tree_1_6f13e3",
+  "schema_version": "1.0",
+  "final_soft_count": 16.0,
+  "count_variance": 0.0,
+  "final_stop_reason": null,
+  "node_count": 16,
+  "qwen_calls": 0,
+  "sam3_calls": 1,
+  "sam3_tiles": 0,
+  "cleanup_calls": 0,
+  "runtime_ms": 885.1196765899658,
+  "wall_runtime_ms": 885.1196765899658,
+  "sam3_runtime_ms": 772.6732464507222,
+  "qwen_runtime_ms": 0.0,
+  "controller_runtime_ms": 112.4464301392436,
+  "number_of_replans": 0,
+  "discovery_statistics": {},
+  "evaluation_fields": {}
+}

@@ -1,0 +1,78 @@
+diff --git a/src/sam3_vlm/planning/action_bank.py b/src/sam3_vlm/planning/action_bank.py
+index f786c85..75fe19e 100644
+--- a/src/sam3_vlm/planning/action_bank.py
++++ b/src/sam3_vlm/planning/action_bank.py
+@@ -29,7 +29,6 @@ class ActionRejectionReason(str, Enum):
+     SCHEMA_INVALID = "SCHEMA_INVALID"
+     EMPTY_PROMPT = "EMPTY_PROMPT"
+     INVALID_GROUNDING_PROMPT = "INVALID_GROUNDING_PROMPT"
+-    UNKNOWN_SEMANTIC_KEY = "UNKNOWN_SEMANTIC_KEY"
+     UNKNOWN_CLASS_PRIOR = "UNKNOWN_CLASS_PRIOR"
+ 
+ 
+@@ -239,17 +238,6 @@ class ActionBankGenerator:
+                     )
+                     continue
+ 
+-                if canonical_key not in allowed_classes:
+-                    self._reject(
+-                        proposal,
+-                        ActionRejectionReason.UNKNOWN_SEMANTIC_KEY,
+-                        (
+-                            f"semantic key {canonical_key!r} is not a legal M8 belief class; "
+-                            f"expected one of {sorted(allowed_classes)}"
+-                        ),
+-                    )
+-                    continue
+-
+                 unknown_prior = set(proposal.semantic_prior or {}) - allowed_classes
+                 if unknown_prior:
+                     self._reject(
+diff --git a/tests/test_m8_controller_semantics_followup.py b/tests/test_m8_controller_semantics_followup.py
+index 54a3d09..9a2172c 100644
+--- a/tests/test_m8_controller_semantics_followup.py
++++ b/tests/test_m8_controller_semantics_followup.py
+@@ -52,19 +52,20 @@ def _target_proposal(prompt: str, priority: float = 0.8) -> ProposedAction:
+     )
+ 
+ 
+-def test_strict_m8_rejects_noncanonical_semantic_key():
++def test_strict_m8_allows_descriptive_semantic_key_with_canonical_prior():
++    """Semantic experiment names may be descriptive; posterior class keys may not."""
+     generator = ActionBankGenerator()
+     entries = generator.generate_entries(
+         PlannerOutput(
+             proposed_actions=[
+                 ProposedAction(
+-                    semantic_key="confounder",
+-                    prompt="flat leaf",
+-                    family=ActionFamily.CONFOUNDER,
++                    semantic_key="round_green_fruit",
++                    prompt="round green fruit",
++                    family=ActionFamily.DISCOVERY,
+                     priority=0.9,
+-                    semantic_prior={"confounder1": 0.8},
++                    semantic_prior={"target": 0.8},
+                     suggested_threshold=0.5,
+-                    suggested_spatial_mode=SpatialMode.GLOBAL,
++                    suggested_spatial_mode=SpatialMode.TILED,
+                 )
+             ]
+         ),
+@@ -76,12 +77,10 @@ def test_strict_m8_rejects_noncanonical_semantic_key():
+         allowed_belief_classes=["target", "confounder1", "confounder2"],
+     )
+ 
+-    assert entries == []
+-    assert len(generator.last_rejections) == 1
+-    rejection = generator.last_rejections[0]
+-    assert rejection.reason == ActionRejectionReason.UNKNOWN_SEMANTIC_KEY.value
+-    assert "confounder" in rejection.detail
+-    assert "confounder1" in rejection.detail
++    assert len(entries) == 1
++    assert entries[0].action.semantic_key == "round_green_fruit"
++    assert entries[0].action.semantic_prior == {"target": 0.8}
++    assert generator.last_rejections == []
+ 
+ 
+ def test_strict_m8_positive_discovery_zero_utility_is_unmeasured_history():

@@ -1,0 +1,91 @@
+{
+  "run_id": "pilot_B_FixedBank_tree_1_bf89b3",
+  "schema_version": "1.0",
+  "image_id": "tree_1",
+  "user_prompt": "green fruit",
+  "target_class": "target",
+  "v4_config": {
+    "tiling": {
+      "grid_rows": 2,
+      "grid_cols": 2,
+      "overlap_ratio": 0.15,
+      "tile_min_size": 256
+    },
+    "budget": {
+      "max_qwen_calls": 5,
+      "max_sam3_calls": 15,
+      "max_sam3_tiles": 64,
+      "max_cleanup_calls": 0,
+      "max_runtime_seconds": 300
+    },
+    "stopping": {
+      "discovery_saturation_threshold": 0.05,
+      "utility_min_threshold": 0.02,
+      "max_iterations": 20,
+      "count_variance_threshold": 0.5
+    },
+    "bootstrap": {
+      "enable_tiled_bootstrap": true,
+      "tiled_bootstrap_min_candidates": 5,
+      "locked_context_prompt": "tree canopy",
+      "locked_context_threshold": 0.4,
+      "locked_context_fallback_full_image": true
+    },
+    "planner": {
+      "max_actions_per_prompt": 5,
+      "temperature": 0.2
+    },
+    "sam3": {
+      "default_threshold": 0.25,
+      "box_nms_iou_threshold": 0.7
+    },
+    "action_selection": {
+      "alpha_discovery": 1.0,
+      "beta_discrimination": 1.0,
+      "gamma_redundancy": 0.5,
+      "lambda_cost": 0.1,
+      "eta_qwen_priority": 0.2
+    },
+    "association": {
+      "iou_match_threshold": 0.5,
+      "new_node_iou_threshold": 0.3,
+      "tiled_nms_threshold": 0.7
+    },
+    "belief": {
+      "prior_pseudocount": 1.0,
+      "discount_repeat_weight": 0.8,
+      "num_confounders": 2
+    },
+    "replanning": {
+      "max_replans": 0,
+      "discovery_plateau_steps": 2,
+      "unresolved_entropy_threshold": 1.0,
+      "count_variance_threshold": 0.5,
+      "min_actions_between_replans": 2
+    },
+    "cleanup": {
+      "cleanup_residual_max_nodes": 10,
+      "cleanup_ambiguity_threshold": 0.8,
+      "cleanup_min_utility": 0.05,
+      "roi_batch_size": 4
+    },
+    "logging": {
+      "log_events": true,
+      "save_masks": true,
+      "save_contact_sheets": true
+    },
+    "device": "cuda",
+    "output_dir": "/home/ekielar/sam3-vlm-2/results",
+    "assets_dir": "assets"
+  },
+  "experiment_config": {
+    "experiment": "M8_Pilot:B_FixedBank",
+    "resolved_device": "cuda"
+  },
+  "model_identifiers": {
+    "sam3": "facebook/sam3",
+    "qwen": "qwen-single:latest"
+  },
+  "seed": 42,
+  "creation_timestamp_ms": 1786739345432.382
+}

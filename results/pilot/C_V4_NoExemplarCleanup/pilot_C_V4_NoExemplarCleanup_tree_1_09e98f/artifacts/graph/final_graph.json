@@ -1,0 +1,3552 @@
+{
+  "schema_version": 1,
+  "nodes": {
+    "node_000001": {
+      "node_id": "node_000001",
+      "box": [
+        111.26728630065918,
+        493.42022705078125,
+        132.988431930542,
+        515.9087524414062
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.9063997152792791,
+          "confounder1": 0.045923422476714076,
+          "confounder2": 0.0476768622440068
+        },
+        "update_count": 10,
+        "entropy": 0.5419508661972006,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000001",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000079",
+          "relation": "NEW_DETECTION",
+          "score": 0.825072169303894,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000021",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000091",
+          "relation": "STRONG_MATCH",
+          "score": 0.8608382940292358,
+          "association_score": 0.9698255317637564
+        },
+        {
+          "observation_id": "obs_000037",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000115",
+          "relation": "STRONG_MATCH",
+          "score": 0.8765867352485657,
+          "association_score": 0.9675639222938959
+        },
+        {
+          "observation_id": "obs_000051",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000085",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000138",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000162",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000194",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000166",
+          "relation": "STRONG_MATCH",
+          "score": 0.702267587184906,
+          "association_score": 0.9910821670433853
+        },
+        {
+          "observation_id": "obs_000226",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000178",
+          "relation": "STRONG_MATCH",
+          "score": 0.6898950338363647,
+          "association_score": 0.9863042283304438
+        },
+        {
+          "observation_id": "obs_000273",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000002": {
+      "node_id": "node_000002",
+      "box": [
+        137.84721183776855,
+        555.4157104492188,
+        158.8930492401123,
+        573.7704467773438
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8935241472857924,
+          "confounder1": 0.052240605702778026,
+          "confounder2": 0.054235247011429545
+        },
+        "update_count": 10,
+        "entropy": 0.5956425824667964,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000002",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000078",
+          "relation": "NEW_DETECTION",
+          "score": 0.7692545652389526,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000022",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000092",
+          "relation": "STRONG_MATCH",
+          "score": 0.7991152405738831,
+          "association_score": 0.7562213327175357
+        },
+        {
+          "observation_id": "obs_000038",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000116",
+          "relation": "STRONG_MATCH",
+          "score": 0.8308227062225342,
+          "association_score": 0.8920111930386243
+        },
+        {
+          "observation_id": "obs_000052",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000086",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000139",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000163",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000193",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000165",
+          "relation": "STRONG_MATCH",
+          "score": 0.6545466184616089,
+          "association_score": 0.9753389493526393
+        },
+        {
+          "observation_id": "obs_000225",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000177",
+          "relation": "STRONG_MATCH",
+          "score": 0.635317325592041,
+          "association_score": 0.9755257813281942
+        },
+        {
+          "observation_id": "obs_000274",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000003": {
+      "node_id": "node_000003",
+      "box": [
+        199.9694652557373,
+        497.9315490722656,
+        224.8296947479248,
+        520.9586791992188
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8655184057046682,
+          "confounder1": 0.06598115687995758,
+          "confounder2": 0.06850043741537415
+        },
+        "update_count": 11,
+        "entropy": 0.7040496540615571,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 6,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000003",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000070",
+          "relation": "NEW_DETECTION",
+          "score": 0.7623209357261658,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000028",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000098",
+          "relation": "STRONG_MATCH",
+          "score": 0.6790774464607239,
+          "association_score": 0.8915906522782736
+        },
+        {
+          "observation_id": "obs_000036",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000114",
+          "relation": "STRONG_MATCH",
+          "score": 0.2793738842010498,
+          "association_score": 0.5067718621857833
+        },
+        {
+          "observation_id": "obs_000039",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000118",
+          "relation": "STRONG_MATCH",
+          "score": 0.7008198499679565,
+          "association_score": 0.9140017975349912
+        },
+        {
+          "observation_id": "obs_000053",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000087",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000140",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000164",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000189",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000161",
+          "relation": "STRONG_MATCH",
+          "score": 0.6498785614967346,
+          "association_score": 0.9920591135728539
+        },
+        {
+          "observation_id": "obs_000219",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000171",
+          "relation": "STRONG_MATCH",
+          "score": 0.5815502405166626,
+          "association_score": 0.963320040188286
+        },
+        {
+          "observation_id": "obs_000275",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000004": {
+      "node_id": "node_000004",
+      "box": [
+        493.01527214050293,
+        47.92075729370117,
+        509.7896251678467,
+        68.16897583007812
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.9226825794883241,
+          "confounder1": 0.03793450604943957,
+          "confounder2": 0.03938291446223636
+        },
+        "update_count": 9,
+        "entropy": 0.46995354001748413,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000004",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000085",
+          "relation": "NEW_DETECTION",
+          "score": 0.7362439036369324,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000033",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000109",
+          "relation": "STRONG_MATCH",
+          "score": 0.8486430048942566,
+          "association_score": 0.9250350281507951
+        },
+        {
+          "observation_id": "obs_000054",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000083",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000126",
+          "relation": "STRONG_MATCH",
+          "score": 0.7485626339912415,
+          "association_score": 0.9272523396160735
+        },
+        {
+          "observation_id": "obs_000141",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000165",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000195",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000167",
+          "relation": "STRONG_MATCH",
+          "score": 0.6142574548721313,
+          "association_score": 0.9944074825352223
+        },
+        {
+          "observation_id": "obs_000228",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000180",
+          "relation": "STRONG_MATCH",
+          "score": 0.6623849272727966,
+          "association_score": 0.9778890765037778
+        },
+        {
+          "observation_id": "obs_000276",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000005": {
+      "node_id": "node_000005",
+      "box": [
+        570.3930187225342,
+        77.50907135009766,
+        588.0534801483154,
+        102.34480285644531
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.9191641332655902,
+          "confounder1": 0.03966077315247579,
+          "confounder2": 0.041175093581933976
+        },
+        "update_count": 9,
+        "entropy": 0.48593299467223,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000005",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000073",
+          "relation": "NEW_DETECTION",
+          "score": 0.7362198233604431,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000034",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000111",
+          "relation": "STRONG_MATCH",
+          "score": 0.8106182217597961,
+          "association_score": 0.9038113026842254
+        },
+        {
+          "observation_id": "obs_000055",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000084",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000127",
+          "relation": "STRONG_MATCH",
+          "score": 0.713033139705658,
+          "association_score": 0.9050410856985978
+        },
+        {
+          "observation_id": "obs_000142",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000166",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000191",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000163",
+          "relation": "STRONG_MATCH",
+          "score": 0.605707049369812,
+          "association_score": 0.9936193325742152
+        },
+        {
+          "observation_id": "obs_000218",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000170",
+          "relation": "STRONG_MATCH",
+          "score": 0.6640515923500061,
+          "association_score": 0.9923911089402647
+        },
+        {
+          "observation_id": "obs_000277",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000006": {
+      "node_id": "node_000006",
+      "box": [
+        8.703400611877441,
+        354.8746643066406,
+        30.755847930908203,
+        374.31597900390625
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8521740349665783,
+          "confounder1": 0.07252835037322204,
+          "confounder2": 0.07529761466019962
+        },
+        "update_count": 10,
+        "entropy": 0.7521614751257906,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000006",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000082",
+          "relation": "NEW_DETECTION",
+          "score": 0.7261951565742493,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000026",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000096",
+          "relation": "STRONG_MATCH",
+          "score": 0.4042137563228607,
+          "association_score": 0.7390534887908453
+        },
+        {
+          "observation_id": "obs_000027",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000097",
+          "relation": "STRONG_MATCH",
+          "score": 0.6988417506217957,
+          "association_score": 0.6919275577166449
+        },
+        {
+          "observation_id": "obs_000056",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000088",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000143",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000167",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000190",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000162",
+          "relation": "STRONG_MATCH",
+          "score": 0.6078019738197327,
+          "association_score": 0.9938985348845297
+        },
+        {
+          "observation_id": "obs_000227",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000179",
+          "relation": "STRONG_MATCH",
+          "score": 0.6210831999778748,
+          "association_score": 0.9836969464010494
+        },
+        {
+          "observation_id": "obs_000278",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000007": {
+      "node_id": "node_000007",
+      "box": [
+        35.00356101989746,
+        478.3362731933594,
+        51.32950019836426,
+        497.4785461425781
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8800567783022735,
+          "confounder1": 0.05884814623884888,
+          "confounder2": 0.061095075458877664
+        },
+        "update_count": 10,
+        "entropy": 0.6491104925026436,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000007",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000074",
+          "relation": "NEW_DETECTION",
+          "score": 0.7118300795555115,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000023",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000093",
+          "relation": "STRONG_MATCH",
+          "score": 0.7513015270233154,
+          "association_score": 0.9325113023815598
+        },
+        {
+          "observation_id": "obs_000035",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000112",
+          "relation": "STRONG_MATCH",
+          "score": 0.7849664688110352,
+          "association_score": 0.9297227303170909
+        },
+        {
+          "observation_id": "obs_000057",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000089",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000144",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000168",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000192",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000164",
+          "relation": "STRONG_MATCH",
+          "score": 0.6067616939544678,
+          "association_score": 0.9784660104217691
+        },
+        {
+          "observation_id": "obs_000221",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000173",
+          "relation": "STRONG_MATCH",
+          "score": 0.5957568287849426,
+          "association_score": 0.9508415131116962
+        },
+        {
+          "observation_id": "obs_000279",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000008": {
+      "node_id": "node_000008",
+      "box": [
+        685.9630260467529,
+        243.50682067871094,
+        708.6552257537842,
+        262.9071960449219
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8656945655649768,
+          "confounder1": 0.06589472697525674,
+          "confounder2": 0.06841070745976653
+        },
+        "update_count": 9,
+        "entropy": 0.7034001535848241,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 4,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000008",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000077",
+          "relation": "NEW_DETECTION",
+          "score": 0.7071101069450378,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000030",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000102",
+          "relation": "STRONG_MATCH",
+          "score": 0.8499559760093689,
+          "association_score": 0.7480664217951626
+        },
+        {
+          "observation_id": "obs_000058",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000079",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000122",
+          "relation": "STRONG_MATCH",
+          "score": 0.7189375162124634,
+          "association_score": 0.7440373815644127
+        },
+        {
+          "observation_id": "obs_000145",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000169",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000196",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000224",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000176",
+          "relation": "STRONG_MATCH",
+          "score": 0.6356322169303894,
+          "association_score": 0.9805472024156059
+        },
+        {
+          "observation_id": "obs_000280",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000009": {
+      "node_id": "node_000009",
+      "box": [
+        679.3526744842529,
+        108.08511352539062,
+        702.7355480194092,
+        130.58941650390625
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8602241243359459,
+          "confounder1": 0.06857870795292578,
+          "confounder2": 0.0711971677111284
+        },
+        "update_count": 9,
+        "entropy": 0.7233920389520274,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 4,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000009",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000072",
+          "relation": "NEW_DETECTION",
+          "score": 0.6967211961746216,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000029",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000100",
+          "relation": "STRONG_MATCH",
+          "score": 0.815039336681366,
+          "association_score": 0.8142005001264531
+        },
+        {
+          "observation_id": "obs_000059",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000078",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000121",
+          "relation": "STRONG_MATCH",
+          "score": 0.6917309165000916,
+          "association_score": 0.8071793449537916
+        },
+        {
+          "observation_id": "obs_000146",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000170",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000197",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000217",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000169",
+          "relation": "STRONG_MATCH",
+          "score": 0.6331185102462769,
+          "association_score": 0.972592664542064
+        },
+        {
+          "observation_id": "obs_000281",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000010": {
+      "node_id": "node_000010",
+      "box": [
+        -1.641832947731018,
+        288.1571350097656,
+        21.81526756286621,
+        309.44744873046875
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.6409883891839617,
+          "confounder1": 0.24806512855941307,
+          "confounder2": 0.11094648225662518
+        },
+        "update_count": 9,
+        "entropy": 1.2621175148370334,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 4,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000010",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000084",
+          "relation": "NEW_DETECTION",
+          "score": 0.6722893714904785,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000020",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000089",
+          "relation": "STRONG_MATCH",
+          "score": 0.7643909454345703,
+          "association_score": 0.9032638094765324
+        },
+        {
+          "observation_id": "obs_000060",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000090",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000106",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": "det_000140",
+          "relation": "STRONG_MATCH",
+          "score": 0.3243597447872162,
+          "association_score": 0.972170771449507
+        },
+        {
+          "observation_id": "obs_000171",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000198",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000223",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000175",
+          "relation": "STRONG_MATCH",
+          "score": 0.5729901790618896,
+          "association_score": 0.9685596575702757
+        },
+        {
+          "observation_id": "obs_000282",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000011": {
+      "node_id": "node_000011",
+      "box": [
+        618.4926891326904,
+        143.14019775390625,
+        638.3855113983154,
+        165.32081604003906
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.835035697958715,
+          "confounder1": 0.0809369902967946,
+          "confounder2": 0.0840273117444904
+        },
+        "update_count": 9,
+        "entropy": 0.8109771000589293,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 4,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000011",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000087",
+          "relation": "NEW_DETECTION",
+          "score": 0.5964823365211487,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000032",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000106",
+          "relation": "STRONG_MATCH",
+          "score": 0.7790434956550598,
+          "association_score": 0.8189567106383472
+        },
+        {
+          "observation_id": "obs_000061",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000082",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000125",
+          "relation": "STRONG_MATCH",
+          "score": 0.627221941947937,
+          "association_score": 0.8274993113071274
+        },
+        {
+          "observation_id": "obs_000147",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000172",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000199",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000229",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000181",
+          "relation": "STRONG_MATCH",
+          "score": 0.5260130167007446,
+          "association_score": 0.9578920910227713
+        },
+        {
+          "observation_id": "obs_000283",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000012": {
+      "node_id": "node_000012",
+      "box": [
+        60.10629844665527,
+        285.08135986328125,
+        81.29929161071777,
+        304.48297119140625
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.7228713661003099,
+          "confounder1": 0.13596855365283633,
+          "confounder2": 0.14116008024685373
+        },
+        "update_count": 9,
+        "entropy": 1.1285672860375853,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 3,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000012",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000076",
+          "relation": "NEW_DETECTION",
+          "score": 0.5904989242553711,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000025",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000095",
+          "relation": "STRONG_MATCH",
+          "score": 0.7313893437385559,
+          "association_score": 0.8774481327789624
+        },
+        {
+          "observation_id": "obs_000062",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000091",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000148",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000173",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000200",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000222",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000174",
+          "relation": "STRONG_MATCH",
+          "score": 0.5053783059120178,
+          "association_score": 0.9758912066665625
+        },
+        {
+          "observation_id": "obs_000284",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000013": {
+      "node_id": "node_000013",
+      "box": [
+        50.02022743225098,
+        382.51788330078125,
+        69.78670310974121,
+        402.69818115234375
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.7051993315680469,
+          "confounder1": 0.14463904338766656,
+          "confounder2": 0.1501616250442865
+        },
+        "update_count": 9,
+        "entropy": 1.169568143751683,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 3,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000013",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000071",
+          "relation": "NEW_DETECTION",
+          "score": 0.5871396064758301,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000024",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000094",
+          "relation": "STRONG_MATCH",
+          "score": 0.6055482625961304,
+          "association_score": 0.7383303712931629
+        },
+        {
+          "observation_id": "obs_000063",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000092",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000149",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000174",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000201",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000216",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000168",
+          "relation": "STRONG_MATCH",
+          "score": 0.5052874684333801,
+          "association_score": 0.9731962638649981
+        },
+        {
+          "observation_id": "obs_000285",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000014": {
+      "node_id": "node_000014",
+      "box": [
+        319.87818717956543,
+        8.846447944641113,
+        336.8694591522217,
+        32.73179244995117
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.8688674813891396,
+          "confounder1": 0.06433798861371388,
+          "confounder2": 0.06679452999714659
+        },
+        "update_count": 10,
+        "entropy": 0.6916352822803536,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 5,
+        "independent_semantic_support_count": 5
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000014",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000075",
+          "relation": "NEW_DETECTION",
+          "score": 0.5446145534515381,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000019",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000088",
+          "relation": "STRONG_MATCH",
+          "score": 0.5512643456459045,
+          "association_score": 0.8450750827002487
+        },
+        {
+          "observation_id": "obs_000031",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000104",
+          "relation": "STRONG_MATCH",
+          "score": 0.7628210783004761,
+          "association_score": 0.8760874396025775
+        },
+        {
+          "observation_id": "obs_000064",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000081",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000124",
+          "relation": "STRONG_MATCH",
+          "score": 0.6992291212081909,
+          "association_score": 0.8630509550597847
+        },
+        {
+          "observation_id": "obs_000150",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000175",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000202",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000220",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000172",
+          "relation": "STRONG_MATCH",
+          "score": 0.5060018301010132,
+          "association_score": 0.980808372350106
+        },
+        {
+          "observation_id": "obs_000286",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000015": {
+      "node_id": "node_000015",
+      "box": [
+        513.4511241912842,
+        698.8505859375,
+        534.9109630584717,
+        716.37646484375
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.3971262816370974,
+          "confounder1": 0.4276054798286077,
+          "confounder2": 0.1752682385342949
+        },
+        "update_count": 9,
+        "entropy": 1.4935345831744198,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 3,
+        "independent_semantic_support_count": 4
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000015",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000086",
+          "relation": "NEW_DETECTION",
+          "score": 0.4637848734855652,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000041",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000120",
+          "relation": "STRONG_MATCH",
+          "score": 0.3243471384048462,
+          "association_score": 0.8622255775085222
+        },
+        {
+          "observation_id": "obs_000065",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000093",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000107",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": "det_000156",
+          "relation": "STRONG_MATCH",
+          "score": 0.38431409001350403,
+          "association_score": 0.9290394928145086
+        },
+        {
+          "observation_id": "obs_000176",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000203",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000230",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000287",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000016": {
+      "node_id": "node_000016",
+      "box": [
+        -1.2007391452789307,
+        416.79266357421875,
+        9.003966331481934,
+        432.9427185058594
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.40327566034527557,
+          "confounder1": 0.2927728695897399,
+          "confounder2": 0.3039514700649845
+        },
+        "update_count": 8,
+        "entropy": 1.5694077840365384,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000016",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000081",
+          "relation": "NEW_DETECTION",
+          "score": 0.2980668842792511,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000066",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000094",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000151",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000177",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000204",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000231",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000288",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000017": {
+      "node_id": "node_000017",
+      "box": [
+        -1.3257114887237549,
+        518.3151245117188,
+        20.08346176147461,
+        546.4158935546875
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.2550579093758766,
+          "confounder1": 0.5450122470773496,
+          "confounder2": 0.1999298435467737
+        },
+        "update_count": 8,
+        "entropy": 1.4443036146639574,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 2,
+        "independent_semantic_support_count": 4
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000017",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000083",
+          "relation": "NEW_DETECTION",
+          "score": 0.2609547972679138,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000067",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000095",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000105",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": "det_000139",
+          "relation": "STRONG_MATCH",
+          "score": 0.4685288369655609,
+          "association_score": 0.9182715652916333
+        },
+        {
+          "observation_id": "obs_000178",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000205",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000232",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000289",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000018": {
+      "node_id": "node_000018",
+      "box": [
+        578.5932750701904,
+        801.651611328125,
+        594.5251598358154,
+        821.6178588867188
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.47034931087960224,
+          "confounder1": 0.25986429885478923,
+          "confounder2": 0.26978639026560847
+        },
+        "update_count": 9,
+        "entropy": 1.5269783839154627,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.018199166971936815,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 2,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000018",
+          "sam3_call_id": "sam3_000009",
+          "action_id": "action_000002",
+          "semantic_key": "target",
+          "correlation_group": null,
+          "detection_id": "det_000080",
+          "relation": "NEW_DETECTION",
+          "score": 0.252591997385025,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000040",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000119",
+          "relation": "STRONG_MATCH",
+          "score": 0.2620799243450165,
+          "association_score": 0.8489296215780068
+        },
+        {
+          "observation_id": "obs_000068",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000096",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000152",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000179",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000206",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000233",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000290",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000009",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000019": {
+      "node_id": "node_000019",
+      "box": [
+        302.9758678674698,
+        333.5937194824219,
+        317.7320976257324,
+        354.6844482421875
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.600653725508865,
+          "confounder1": 0.1959326056825373,
+          "confounder2": 0.20341366880859776
+        },
+        "update_count": 8,
+        "entropy": 1.369812080312276,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 2,
+        "independent_semantic_support_count": 3
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000042",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000103",
+          "relation": "NEW_DETECTION",
+          "score": 0.5621483325958252,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000069",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000080",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": "det_000123",
+          "relation": "STRONG_MATCH",
+          "score": 0.5369831919670105,
+          "association_score": 0.9947344587219807
+        },
+        {
+          "observation_id": "obs_000153",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000180",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000207",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000234",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000291",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000020": {
+      "node_id": "node_000020",
+      "box": [
+        78.99790000915527,
+        816.3005065917969,
+        92.45401573181152,
+        829.4968566894531
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.43968311371907814,
+          "confounder1": 0.27491015830018467,
+          "confounder2": 0.2854067279807371
+        },
+        "update_count": 8,
+        "entropy": 1.5496520108413034,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.001460918901649986,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000043",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000113",
+          "relation": "NEW_DETECTION",
+          "score": 0.45350658893585205,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000070",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000097",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000154",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000181",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000208",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000235",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000292",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000021": {
+      "node_id": "node_000021",
+      "box": [
+        302.968891620636,
+        262.1783447265625,
+        311.6822876930237,
+        282.3125305175781
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.425115705598547,
+          "confounder1": 0.282057414737555,
+          "confounder2": 0.292826879663898
+        },
+        "update_count": 8,
+        "entropy": 1.5584974381629537,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.3787954847657717,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000044",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000101",
+          "relation": "NEW_DETECTION",
+          "score": 0.3889490067958832,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000071",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000098",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000155",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000182",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000209",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000236",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000293",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000022": {
+      "node_id": "node_000022",
+      "box": [
+        431.02220726013184,
+        186.3905029296875,
+        457.02770805358887,
+        211.4131317138672
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.41794202526910507,
+          "confounder1": 0.2855770616431688,
+          "confounder2": 0.2964809130877262
+        },
+        "update_count": 8,
+        "entropy": 1.5623936442187591,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000045",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000105",
+          "relation": "NEW_DETECTION",
+          "score": 0.35834527015686035,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000072",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000099",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000156",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000183",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000210",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000237",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000294",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000023": {
+      "node_id": "node_000023",
+      "box": [
+        442.1240978240967,
+        391.0059509277344,
+        459.0885601043701,
+        411.5505676269531
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.4150052431314738,
+          "confounder1": 0.2870179449399549,
+          "confounder2": 0.29797681192857134
+        },
+        "update_count": 8,
+        "entropy": 1.563900720620539,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.0,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000046",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000110",
+          "relation": "NEW_DETECTION",
+          "score": 0.34603315591812134,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000073",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000100",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000157",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000184",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000211",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000238",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000295",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000024": {
+      "node_id": "node_000024",
+      "box": [
+        560.5766124725342,
+        163.16122436523438,
+        576.1151256561279,
+        182.74688720703125
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.409878739109982,
+          "confounder1": 0.28953317884880453,
+          "confounder2": 0.3005880820412135
+        },
+        "update_count": 8,
+        "entropy": 1.5664086169272764,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.4627154742430407,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000047",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000108",
+          "relation": "NEW_DETECTION",
+          "score": 0.32483455538749695,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000074",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000101",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000158",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000185",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000212",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000239",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000296",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000025": {
+      "node_id": "node_000025",
+      "box": [
+        138.85861015319824,
+        922.4635620117188,
+        153.92767143249512,
+        937.62646484375
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.40315580131730844,
+          "confounder1": 0.2928316764277256,
+          "confounder2": 0.304012522254966
+        },
+        "update_count": 8,
+        "entropy": 1.5694598135524078,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.01526814617822617,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000048",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000117",
+          "relation": "NEW_DETECTION",
+          "score": 0.29758647084236145,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000075",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000102",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000159",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000186",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000213",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000240",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000297",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000026": {
+      "node_id": "node_000026",
+      "box": [
+        292.6766185760498,
+        261.15826416015625,
+        312.70777702331543,
+        284.27947998046875
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.4027315585183509,
+          "confounder1": 0.2930398240989358,
+          "confounder2": 0.3042286173827133
+        },
+        "update_count": 8,
+        "entropy": 1.5696432807365799,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.3787954847657717,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000049",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000099",
+          "relation": "NEW_DETECTION",
+          "score": 0.2958875894546509,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000076",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000103",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000160",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000187",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000214",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000241",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000298",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    },
+    "node_000027": {
+      "node_id": "node_000027",
+      "box": [
+        563.7250804901123,
+        163.4130401611328,
+        575.2568492889404,
+        175.62445068359375
+      ],
+      "coordinate_space": "image",
+      "class_belief": {
+        "probabilities": {
+          "target": 0.3943674248874691,
+          "confounder1": 0.2971435471114112,
+          "confounder2": 0.30848902800111966
+        },
+        "update_count": 8,
+        "entropy": 1.573039494119899,
+        "last_update_event_id": null
+      },
+      "diagnostics": {
+        "existence_score": 1.0,
+        "duplicate_risk": 0.4627154742430407,
+        "merge_risk": 0.0,
+        "split_risk": 0.0,
+        "ambiguous_with": [],
+        "support_count": 1,
+        "independent_semantic_support_count": 1
+      },
+      "observations": [
+        {
+          "observation_id": "obs_000050",
+          "sam3_call_id": "sam3_000010",
+          "action_id": "action_000003",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": "det_000107",
+          "relation": "NEW_DETECTION",
+          "score": 0.2628794312477112,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000077",
+          "sam3_call_id": "sam3_000011",
+          "action_id": "action_000005",
+          "semantic_key": "leaf_confounder",
+          "correlation_group": "leaf_confounder",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000104",
+          "sam3_call_id": "sam3_000012",
+          "action_id": "action_000004",
+          "semantic_key": "shadowed_fruit",
+          "correlation_group": "shadowed_fruit",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000161",
+          "sam3_call_id": "sam3_000013",
+          "action_id": "action_000007",
+          "semantic_key": "confounder1",
+          "correlation_group": "confounder1",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000188",
+          "sam3_call_id": "sam3_000014",
+          "action_id": "action_000008",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000215",
+          "sam3_call_id": "sam3_000015",
+          "action_id": "action_000006",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000242",
+          "sam3_call_id": "sam3_000016",
+          "action_id": "action_000009",
+          "semantic_key": "target",
+          "correlation_group": "target",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        },
+        {
+          "observation_id": "obs_000299",
+          "sam3_call_id": "sam3_000017",
+          "action_id": "action_000010",
+          "semantic_key": "confounder2",
+          "correlation_group": "confounder2",
+          "detection_id": null,
+          "relation": "NOT_RETRIEVED",
+          "score": 0.0,
+          "association_score": null
+        }
+      ],
+      "created_by_call_id": "sam3_000010",
+      "status": "ACTIVE",
+      "merged_from": []
+    }
+  }
+}

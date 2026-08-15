@@ -1,0 +1,8 @@
+[
+    {
+        "sample_id": "tree_1",
+        "image_path": "/home/ekielar/sam3-vlm-2/assets/02-07-2025-13-37-09_22.522.png",
+        "target": "green fruit",
+        "gt_count": 21
+    }
+]
