@@ -6,6 +6,25 @@
 
 V4 is a clean architectural rewrite of the current V3 research code. V3 remains frozen as a reference implementation and source of tested low-level components. V4 must not preserve legacy abstractions merely for compatibility.
 
+### Current M8 execution policy
+
+The current M8 experiment deliberately uses a narrower policy than the generic
+architecture described in the remainder of this document:
+
+- Qwen may identify confounders in its scene analysis, but every executable
+  Qwen action must be a novel `target` / `DISCOVERY` prompt.
+- Confounders are context for phrasing better target prompts; they are not sent
+  to SAM3 as separate experiments.
+- The information-value proxy is evaluated only for target actions.
+- Each planning round admits at most one action. The production configuration
+  permits one replan, for at most two Qwen calls after bootstrap.
+- A target posterior at or above `0.8` contributes `1.0` to the reported count.
+  The posterior itself remains unchanged and the raw soft count is retained.
+
+These rules override older M8 examples below that execute confounder actions.
+The generic schemas and belief model retain confounder families so historical
+artifacts and non-M8 experiments remain replayable.
+
 The primary change is the unit of control:
 
 - **V3 dominant pattern:** select one unresolved node, generate/choose one verification action, run SAM3 locally, update that node, repeat.

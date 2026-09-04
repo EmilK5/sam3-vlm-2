@@ -83,24 +83,37 @@ def test_recent_zero_gain_discovery_overrides_early_success():
     assert utility.total_utility < V4Config().stopping.utility_min_threshold
 
 
-def test_discovery_plateau_does_not_disable_novel_verification():
+def test_discovery_plateau_keeps_target_only_uncertainty_value():
     state = _canonical_state()
     memory = state.semantic_memory
     memory.record_execution(_target_action("a1", "green fruit"), "s1", new_nodes=18)
     memory.record_execution(_target_action("a2", "shaded green fruit"), "s2", new_nodes=0)
     memory.record_execution(_target_action("a3", "round green fruit"), "s3", new_nodes=0)
     state.discovery_state.saturated = True
+    node = Node(
+        node_id="n1",
+        geometry=BoxGeometry(Box(0, 0, 10, 10)),
+        class_belief=ClassBelief(
+            probabilities={
+                "target": 1 / 3,
+                "confounder1": 1 / 3,
+                "confounder2": 1 / 3,
+            },
+            entropy=1.5,
+        ),
+    )
+    state.graph.add_node(node)
 
-    verification = SensingAction(
+    target_experiment = SensingAction(
         action_id="a4",
         semantic_key="target",
         prompt="dark green fruit",
-        family=ActionFamily.VERIFICATION,
+        family=ActionFamily.DISCOVERY,
         semantic_prior={"target": 1.0},
         correlation_group="target",
     )
     entry = ActionBankEntry(
-        action=verification,
+        action=target_experiment,
         qwen_priority=0.9,
         redundancy=0.5,
     )
@@ -155,6 +168,25 @@ def test_replan_evidence_lists_exact_execution_history_and_saturation():
     ]
 
 
+def test_replan_blacklist_includes_accepted_unexecuted_prompts():
+    state = _canonical_state()
+    state.action_bank.add_action(
+        _target_action("a1", "occluded green fruit")
+    )
+    contact_sheet_builder = SimpleNamespace(
+        build_contact_sheet=lambda **kwargs: ContactSheet()
+    )
+
+    pack = ReplanEvidenceBuilder(contact_sheet_builder).build(
+        state,
+        config=V4Config(),
+    )
+
+    assert pack.discovery_diagnostics["tried_sam3_prompts"] == [
+        "occluded green fruit"
+    ]
+
+
 def test_unproductive_replan_stops_before_another_qwen_call():
     planner = _NoopPlanner()
     runner = Runner(V4Config(), MockSAM3Adapter(), planner)
@@ -168,10 +200,11 @@ def test_unproductive_replan_stops_before_another_qwen_call():
         "s7",
         new_nodes=0,
         affected_nodes=20,
-        entropy_change=-0.8,
-        variance_change=-0.18,
-        realized_discrimination_proxy=0.8,
+        entropy_change=-0.01,
+        variance_change=-0.01,
+        realized_discrimination_proxy=0.01,
     )
+    runner.scene_state.count_estimate.variance = 1.0
     runner.scene_state.last_plan_action_ids = ["a7"]
     runner.scene_state.last_plan_accepted_actions = 1
     runner.scene_state.actions_since_replan = 1
@@ -185,7 +218,30 @@ def test_unproductive_replan_stops_before_another_qwen_call():
     assert runner.state == RunnerState.CLEANUP
 
 
-def test_end_to_end_unproductive_replan_is_bounded_to_two_qwen_calls():
+@pytest.mark.parametrize(
+    ("new_nodes", "variance_change"),
+    [(1, 0.0), (0, -0.03)],
+)
+def test_productive_target_plan_allows_replanning(new_nodes, variance_change):
+    runner = Runner(V4Config(), MockSAM3Adapter(), _NoopPlanner())
+    runner.scene_state = _canonical_state()
+    action = _target_action("a8", "occluded green fruit")
+    entry = runner.scene_state.action_bank.add_action(action)
+    entry.executed = True
+    runner.scene_state.semantic_memory.record_execution(
+        action,
+        "s8",
+        new_nodes=new_nodes,
+        affected_nodes=20,
+        variance_change=variance_change,
+    )
+    runner.scene_state.count_estimate.variance = 0.97
+    runner.scene_state.last_plan_action_ids = ["a8"]
+
+    assert runner._last_plan_had_marginal_value() is True
+
+
+def test_end_to_end_unproductive_target_plan_stops_after_one_qwen_call():
     class EmptySensor:
         def __init__(self):
             self.call_count = 0
@@ -209,11 +265,6 @@ def test_end_to_end_unproductive_replan_is_bounded_to_two_qwen_calls():
 
         def plan_scene(self, evidence, budget, config):
             self.call_count += 1
-            family = (
-                ActionFamily.VERIFICATION
-                if self.call_count == 1
-                else ActionFamily.DISCOVERY
-            )
             prompt = (
                 "dark green fruit"
                 if self.call_count == 1
@@ -224,7 +275,7 @@ def test_end_to_end_unproductive_replan_is_bounded_to_two_qwen_calls():
                     ProposedAction(
                         semantic_key="target",
                         prompt=prompt,
-                        family=family,
+                        family=ActionFamily.DISCOVERY,
                         priority=0.9,
                         semantic_prior={"target": 1.0},
                     )
@@ -232,8 +283,8 @@ def test_end_to_end_unproductive_replan_is_bounded_to_two_qwen_calls():
             )
 
     config = V4Config(
-        budget=BudgetConfig(max_qwen_calls=5, max_cleanup_calls=0),
-        replanning=ReplanningConfig(max_replans=3, min_actions_between_replans=0),
+        budget=BudgetConfig(max_qwen_calls=2, max_cleanup_calls=0),
+        replanning=ReplanningConfig(max_replans=1, min_actions_between_replans=0),
     )
     sensor = EmptySensor()
     planner = TwoRoundPlanner()
@@ -250,10 +301,10 @@ def test_end_to_end_unproductive_replan_is_bounded_to_two_qwen_calls():
 
     runner.run("mock", "green fruit", image_id="img")
 
-    assert planner.call_count == 2
-    assert runner.scene_state.budget.qwen_calls == 2
-    assert sensor.call_count == 2
-    assert runner.scene_state.replans_executed == 1
+    assert planner.call_count == 1
+    assert runner.scene_state.budget.qwen_calls == 1
+    assert sensor.call_count == 1
+    assert runner.scene_state.replans_executed == 0
     assert runner.scene_state.stop_reason == StopReason.LOW_MARGINAL_UTILITY
 
 
@@ -301,3 +352,14 @@ def test_count_commit_threshold_is_validated_before_a_run():
 
     with pytest.raises(ValueError, match="target_count_commit_threshold"):
         BeliefConfig(target_count_commit_threshold=1.01)
+
+
+@pytest.mark.parametrize("threshold", [-0.01, 1.01])
+def test_relative_variance_reduction_threshold_is_validated(threshold):
+    with pytest.raises(
+        ValueError,
+        match="min_relative_count_variance_reduction",
+    ):
+        ReplanningConfig(
+            min_relative_count_variance_reduction=threshold,
+        )

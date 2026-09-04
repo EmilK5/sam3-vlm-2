@@ -37,55 +37,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def _canonical_states_equal(left, right, *, rel_tol=1e-12, abs_tol=1e-12):
-    """
-    Deep equality for replay validation.
-
-    Structural/discrete values must match exactly.
-    Floating-point values may differ only by machine-level numerical noise.
-    """
-    if isinstance(left, bool) or isinstance(right, bool):
-        return left == right
-
-    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-        return math.isclose(
-            float(left),
-            float(right),
-            rel_tol=rel_tol,
-            abs_tol=abs_tol,
-        )
-
-    if type(left) is not type(right):
-        return False
-
-    if isinstance(left, dict):
-        if set(left) != set(right):
-            return False
-        return all(
-            _canonical_states_equal(
-                left[key],
-                right[key],
-                rel_tol=rel_tol,
-                abs_tol=abs_tol,
-            )
-            for key in left
-        )
-
-    if isinstance(left, list):
-        if len(left) != len(right):
-            return False
-        return all(
-            _canonical_states_equal(
-                a,
-                b,
-                rel_tol=rel_tol,
-                abs_tol=abs_tol,
-            )
-            for a, b in zip(left, right)
-        )
-
-    return left == right
-
 def _json_default(value):
     """Convert serialization-safe runtime values to their JSON representation.
 
@@ -223,39 +174,30 @@ def load_m8_config(args, config_path="configs/m8_real_smoke.json") -> M8Deployme
         with open(config_path, "r") as f:
             data = json.load(f)
             
-            if "budget" in data:
-                v4_kwargs["budget"] = BudgetConfig(**data["budget"])
-            if "tiling" in data:
-                v4_kwargs["tiling"] = TilingConfig(**data["tiling"])
-            if "cleanup" in data:
-                v4_kwargs["cleanup"] = CleanupConfig(**data["cleanup"])
-            if "replanning" in data:
-                v4_kwargs["replanning"] = ReplanningConfig(**data["replanning"])
-            if "bootstrap" in data:
-                v4_kwargs["bootstrap"] = BootstrapConfig(**data["bootstrap"])
-            if "belief" in data:
-                v4_kwargs["belief"] = BeliefConfig(**data["belief"])
-            if "association" in data:
-                v4_kwargs["association"] = AssociationConfig(**data["association"])
-            if "action_selection" in data:
-                v4_kwargs["action_selection"] = ActionSelectionConfig(
-                    **data["action_selection"]
-                )
-                
-            allowed = {
+            section_types = {
+                "budget": BudgetConfig,
+                "tiling": TilingConfig,
+                "stopping": StoppingConfig,
+                "bootstrap": BootstrapConfig,
+                "planner": PlannerConfig,
+                "sam3": SAM3Config,
+                "action_selection": ActionSelectionConfig,
+                "association": AssociationConfig,
+                "belief": BeliefConfig,
+                "replanning": ReplanningConfig,
+                "cleanup": CleanupConfig,
+                "logging": LoggingConfig,
+            }
+            for key, config_type in section_types.items():
+                if key in data:
+                    v4_kwargs[key] = config_type(**data[key])
+
+            allowed = set(section_types) | {
                 "sam3_model",
                 "qwen_model",
                 "qwen_base_url",
                 "require_cuda",
                 "compile_sam3",
-                "budget",
-                "tiling",
-                "cleanup",
-                "replanning",
-                "bootstrap",
-                "belief",
-                "association",
-                "action_selection",
                 "seed",
                 "output_root",
                 "pilot_sample_limit",
@@ -494,7 +436,6 @@ def _run_validator_and_replay(paths: RunArtifactPaths, runner_state=None) -> boo
         engine = ReplayEngine(paths)
         replayed_state = engine.replay_state()
 
-        cs_runner = None
         if runner_state is not None:
             cs_replayed = _json_canonical(
                 canonical_scene_state(replayed_state)
@@ -503,12 +444,13 @@ def _run_validator_and_replay(paths: RunArtifactPaths, runner_state=None) -> boo
                 canonical_scene_state(runner_state)
             )
 
-        if not _canonical_states_equal(cs_runner, cs_replayed):
-            logger.error(
-                "Replay canonical state mismatch! First difference: %s",
-                _first_difference(cs_runner, cs_replayed),
-            )
-            return False 
+            diff = _first_difference(cs_runner, cs_replayed)
+            if diff is not None:
+                logger.error(
+                    "Replay canonical state mismatch! First difference: %s",
+                    diff,
+                )
+                return False
 
         with OracleHider(paths):
             engine_hidden = ReplayEngine(paths)
@@ -519,8 +461,8 @@ def _run_validator_and_replay(paths: RunArtifactPaths, runner_state=None) -> boo
                     canonical_scene_state(replayed_hidden)
                 )
 
-                if not _canonical_states_equal(cs_runner, cs_hidden):
-                    diff = _first_difference(cs_hidden, cs_runner)
+                diff = _first_difference(cs_hidden, cs_runner)
+                if diff is not None:
                     logger.error(
                         "Replay with hidden artifacts canonical state mismatch! "
                         "First difference: %s",
@@ -601,7 +543,13 @@ def m8_4_and_5_pilot(args):
     
     variants = {
         "A_OneShot": "A_OneShot",
-        "B_FixedBank": dataclasses.replace(base_config, replanning=ReplanningConfig(max_replans=0)),
+        "B_FixedBank": dataclasses.replace(
+            base_config,
+            replanning=dataclasses.replace(
+                base_config.replanning,
+                max_replans=0,
+            ),
+        ),
         "C_V4_NoExemplarCleanup": base_config
     }
     

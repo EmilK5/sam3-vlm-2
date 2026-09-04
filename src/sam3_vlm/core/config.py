@@ -82,10 +82,6 @@ class ActionSelectionConfig:
     gamma_redundancy: float = 0.5
     lambda_cost: float = 0.1
     eta_qwen_priority: float = 0.2
-    # Empirical controller terms.  Discovery is judged by newly registered
-    # nodes, while verification/confounder actions are judged by belief change.
-    recent_zero_gain_penalty: float = 0.5
-    ineffective_discrimination_scale: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -136,6 +132,16 @@ class ReplanningConfig:
     unresolved_entropy_threshold: float = 1.0
     count_variance_threshold: float = 0.5
     min_actions_between_replans: int = 2
+    # A target experiment is materially useful when it finds a new node or
+    # reduces count variance by at least this fraction.
+    min_relative_count_variance_reduction: float = 0.02
+
+    def __post_init__(self) -> None:
+        threshold = self.min_relative_count_variance_reduction
+        if not (0.0 <= threshold <= 1.0):
+            raise ValueError(
+                "min_relative_count_variance_reduction must be in [0, 1]"
+            )
 
 
 @dataclass(frozen=True)

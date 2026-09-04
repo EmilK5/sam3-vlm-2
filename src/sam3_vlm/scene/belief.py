@@ -341,9 +341,6 @@ class BeliefUpdater:
                     + ", ".join(sorted(unknown))
                 )
 
-        if obs_ref.relation == ObservationRelation.NOT_OBSERVABLE:
-            return
-
         if not node.class_belief.probabilities:
             equal_p = 1.0 / len(vocabulary)
             probs = {cls_name: equal_p for cls_name in vocabulary}

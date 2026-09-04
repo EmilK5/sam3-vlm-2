@@ -110,6 +110,12 @@ Qwen proposes a structured action bank containing:
 
 Qwen may rank actions semantically, but it does **not** directly create detections or overwrite graph beliefs.
 
+The current M8 policy is intentionally narrower: Qwen can mention confounders
+in its analysis, but the executable bank accepts only novel target
+`DISCOVERY` prompts. This keeps every additional SAM3 call tied directly to the
+counting target. The broader action families remain available to generic and
+historical V4 experiments.
+
 ### Numerical controller — active perception
 
 The controller selects which proposed action to execute.
@@ -149,7 +155,7 @@ Early in a run, discovery should dominate. Later, discrimination and count uncer
 3. Bootstrap detections are **candidates**, not positive labels.
 4. SAM3 confidence is not automatically a target-class probability.
 5. Global semantic sensing is preferred over per-object sensing.
-6. Positive and confounder prompts are both first-class sensing actions.
+6. Current M8 sensing actions are novel target prompts; confounders are planner context only.
 7. Repeated global/tiled executions of the same semantic prompt are correlated evidence.
 8. Qwen is called on meaningful scene-state changes, not once per graph node.
 9. Discovery uncertainty and classification uncertainty are separate.
@@ -204,7 +210,7 @@ with registration/discovery uncertainty handled separately.
 
 The generic controller keeps this purely soft estimate by default. The real M8
 deployment config enables a conservative reporting commitment threshold of
-`0.9`: a represented node whose target posterior is at least `0.9` contributes
+`0.8`: a represented node whose target posterior is at least `0.8` contributes
 exactly `1.0` to the reported count. This does not mutate or freeze the node
 posterior. Runs retain `raw_soft_count`, `committed_target_nodes`, and the
 configured threshold in `summary.json` discovery diagnostics so the heuristic

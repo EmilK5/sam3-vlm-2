@@ -191,6 +191,14 @@ class SceneState:
     last_plan_accepted_actions: int = 0
     last_plan_action_ids: List[str] = field(default_factory=list)
 
+    @property
+    def uses_canonical_m8_policy(self) -> bool:
+        classes = list(self.belief_classes or [])
+        expected = ["target"] + [
+            f"confounder{i}" for i in range(1, len(classes))
+        ]
+        return bool(classes) and self.target_class == "target" and classes == expected
+
     def set_stop_reason(self, candidate: Optional[StopReason]) -> None:
         """Set stop reason with deterministic frozen M6 precedence."""
         if candidate is None:

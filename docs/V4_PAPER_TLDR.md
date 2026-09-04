@@ -2,6 +2,12 @@
 
 *Compact V4 research formulation / working paper draft. Intended as the human-readable scientific source of truth. The implementation specification lives separately in `V4_DESIGN_SPEC.md`.*
 
+> **Current M8 scope.** The general research formulation below includes
+> confounder experiments. The current M8 implementation is intentionally
+> simpler: Qwen may use confounders as planning context, but SAM3 executes only
+> novel target-discovery prompts and the controller evaluates information value
+> only for those target actions.
+
 ## Abstract
 
 We study zero-shot counting in visually difficult scenes using a vision-language model (VLM) and a prompt-conditioned segmentation model. The main target is green-citrus counting, where green fruit and foliage are highly confusable, but the formulation is dataset-independent and also applies to cars, blood cells, and general counting benchmarks. Our central idea is to treat prompting not as one-shot detection but as **active semantic sensing**. A user first supplies the target concept. SAM3 executes this prompt globally to create a sensor-grounded candidate graph. Qwen then observes the original image together with representative SAM3 crops, confidence scores, and retrieval provenance, and proposes a bank of semantic sensing actions: target-oriented discovery prompts, confounder prompts, context prompts, and later verification prompts. The controller executes selected prompts globally, so one SAM3 pass can discover new objects and update beliefs for many existing objects at once. Qwen is called again only when the scene state changes meaningfully. Expensive per-object verification is reserved for the small residual set.

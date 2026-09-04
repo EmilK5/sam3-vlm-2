@@ -84,9 +84,16 @@ class MockQwenPlanner:
                 rationale="Test a more discriminative target appearance at higher spatial resolution.",
             ),
         ]
+        canonical_m8 = bool(evidence_pack.belief_classes) and (
+            evidence_pack.belief_classes[0] == "target"
+        )
+        selected_actions = actions[:1] if canonical_m8 else actions
         return PlannerOutput(
-            scene_summary=f"Mock Qwen planning call {self.call_count}: proposed 3 actions.",
-            proposed_actions=actions,
+            scene_summary=(
+                f"Mock Qwen planning call {self.call_count}: "
+                f"proposed {len(selected_actions)} actions."
+            ),
+            proposed_actions=selected_actions,
             missing_appearance_modes=["small target", "shadowed target"],
             likely_confounders=["foliage", "background"],
         )
@@ -96,14 +103,16 @@ class RealQwenPlanner:
     """Real Qwen scene planner using an OpenAI-compatible endpoint."""
 
     SYSTEM_PROMPT = (
-        "You propose semantic experiments for SAM3. You are NOT a detector and must not count objects. "
+        "You propose target-search experiments for SAM3. You are NOT a detector and must not count objects. "
         "Every executable sam3_prompt MUST be only 2 or 3 words: exactly one or two directly visible "
         "visual modifiers followed by one visible object noun. No verbs, clauses, locations, prepositions, "
         "analysis methods, imaging methods, edge detection, spectral/multispectral language, clustering, "
         "channel analysis, or contrast enhancement may appear in sam3_prompt. Put all reasoning in rationale. "
         "Scene-level actions may use only GLOBAL or TILED spatial modes. Never output boxes/ROIs. "
-        "Belief classes are frozen generic slots: target, confounder1, confounder2, etc.; semantic object names "
-        "must never become class keys. Return ONLY valid JSON matching the requested schema."
+        "Every executable action must search for the user's target: semantic_key must be 'target', family must "
+        "be 'DISCOVERY', and semantic_prior must be {'target': 1.0}. Confounders may be described in "
+        "likely_confounders or rationale, but never proposed as separate SAM3 actions. Return ONLY valid JSON "
+        "matching the requested schema."
     )
 
     def __init__(
@@ -138,12 +147,14 @@ class RealQwenPlanner:
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
             "- sam3_prompt: exactly 2 or 3 words: one/two visible modifiers + one object noun.\n"
-            "- Examples of valid shape: 'green fruit', 'round green fruit', 'flat leaf'.\n"
+            "- Examples of valid shape: 'green fruit', 'round green fruit', 'small red car'.\n"
             "- rationale: unrestricted short reasoning; reasoning NEVER goes into sam3_prompt.\n"
             "- suggested_spatial_mode: GLOBAL or TILED only. The controller owns the locked search ROI.\n"
-            f"- semantic_prior keys may ONLY be: {belief_classes}.\n"
+            "- Every action must use semantic_key='target', family='DISCOVERY', "
+            "and semantic_prior={'target': 1.0}.\n"
+            f"- Belief state remains internal and may contain: {belief_classes}.\n"
             f"- likely_confounders has at most {len(confounder_slots)} entries; "
-            "entries map by position to confounder1, confounder2, and so on.\n"
+            "use it only as non-executable scene context.\n"
         )
         if existing_mapping:
             text += (
@@ -163,10 +174,9 @@ class RealQwenPlanner:
             )
         if evidence_pack.discovery_diagnostics.get("discovery_saturated", False):
             text += (
-                "- DISCOVERY IS SATURATED: do not propose further DISCOVERY "
-                "variants for the target. Propose only a genuinely useful "
-                "VERIFICATION or CONFOUNDER experiment; return an empty "
-                "proposed_actions list if none remains.\n"
+                "- DISCOVERY IS SATURATED: propose one novel target description "
+                "only if it can reduce remaining target uncertainty; otherwise "
+                "return an empty proposed_actions list.\n"
             )
         text += (
             "\nReturn JSON:\n"
@@ -176,11 +186,11 @@ class RealQwenPlanner:
             '  "likely_confounders": ["<semantic label aligned to confounder slots>"],\n'
             '  "proposed_actions": [\n'
             "    {\n"
-            '      "semantic_key": "<string>",\n'
+            '      "semantic_key": "target",\n'
             '      "sam3_prompt": "<2 or 3 words only>",\n'
-            '      "family": "DISCOVERY | CONFOUNDER | CONTEXT | VERIFICATION",\n'
+            '      "family": "DISCOVERY",\n'
             '      "priority": <float 0.0-1.0>,\n'
-            '      "semantic_prior": {"target/confounderN": <float>},\n'
+            '      "semantic_prior": {"target": 1.0},\n'
             '      "suggested_threshold": <float 0.0-1.0>,\n'
             '      "suggested_spatial_mode": "GLOBAL | TILED",\n'
             '      "rationale": "<short reasoning>"\n'

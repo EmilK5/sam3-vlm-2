@@ -4,7 +4,7 @@
   "require_cuda": true,
   "compile_sam3": false,
   "budget": {
-    "max_qwen_calls": 5,
+    "max_qwen_calls": 2,
     "max_sam3_calls": 15,
     "max_sam3_tiles": 64,
     "max_cleanup_calls": 0,
@@ -32,18 +32,18 @@
   },
   "belief": {
     "num_confounders": 2,
-    "target_count_commit_threshold": 0.9
+    "target_count_commit_threshold": 0.8
   },
-  "action_selection": {
-    "recent_zero_gain_penalty": 0.5,
-    "ineffective_discrimination_scale": 0.25
+  "planner": {
+    "max_actions_per_prompt": 1
   },
   "cleanup": {
     "cleanup_min_utility": 0.05
   },
   "replanning": {
-    "max_replans": 3,
-    "min_actions_between_replans": 2
+    "max_replans": 1,
+    "min_actions_between_replans": 1,
+    "min_relative_count_variance_reduction": 0.02
   },
   "seed": 42,
   "output_root": "runs/m8_real_smoke",

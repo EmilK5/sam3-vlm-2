@@ -26,7 +26,12 @@ class DummyArgs:
 
 try:
     c = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
-    assert c.v4_config.budget.max_cleanup_calls == 0, "Cleanup must be disabled in config for M8"
+    v4 = c.v4_config
+    assert v4.budget.max_cleanup_calls == 0, "Cleanup must be disabled for M8"
+    assert v4.budget.max_qwen_calls == 2, "M8 must allow at most two Qwen calls"
+    assert v4.planner.max_actions_per_prompt == 1, "M8 must admit one target action per round"
+    assert v4.replanning.max_replans == 1, "M8 must allow at most one replan"
+    assert v4.belief.target_count_commit_threshold == 0.8, "M8 count commitment must use 0.8"
     print("M8 Config parsed successfully, constraints verified.")
 except Exception as e:
     print(f"Config parsing failed: {e}", file=sys.stderr)

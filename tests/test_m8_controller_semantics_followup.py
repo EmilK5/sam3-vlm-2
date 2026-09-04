@@ -53,23 +53,39 @@ def _target_proposal(prompt: str, priority: float = 0.8) -> ProposedAction:
     )
 
 
-def test_strict_m8_allows_descriptive_semantic_key_with_canonical_prior():
-    """Semantic experiment names may be descriptive; posterior class keys may not."""
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        ProposedAction(
+            semantic_key="round_green_fruit",
+            prompt="round green fruit",
+            family=ActionFamily.DISCOVERY,
+            semantic_prior={"target": 1.0},
+        ),
+        ProposedAction(
+            semantic_key="target",
+            prompt="flat green leaf",
+            family=ActionFamily.CONFOUNDER,
+            semantic_prior={"confounder1": 1.0},
+        ),
+        ProposedAction(
+            semantic_key="target",
+            prompt="round green fruit",
+            family=ActionFamily.VERIFICATION,
+            semantic_prior={"target": 1.0},
+        ),
+        ProposedAction(
+            semantic_key="target",
+            prompt="flat green leaf",
+            family=ActionFamily.DISCOVERY,
+            semantic_prior={"confounder1": 1.0},
+        ),
+    ],
+)
+def test_strict_m8_rejects_non_target_experiments(proposal):
     generator = ActionBankGenerator()
     entries = generator.generate_entries(
-        PlannerOutput(
-            proposed_actions=[
-                ProposedAction(
-                    semantic_key="round_green_fruit",
-                    prompt="round green fruit",
-                    family=ActionFamily.DISCOVERY,
-                    priority=0.9,
-                    semantic_prior={"target": 0.8},
-                    suggested_threshold=0.5,
-                    suggested_spatial_mode=SpatialMode.TILED,
-                )
-            ]
-        ),
+        PlannerOutput(proposed_actions=[proposal]),
         SemanticMemory(),
         ActionBank(),
         IDGenerator(),
@@ -78,10 +94,10 @@ def test_strict_m8_allows_descriptive_semantic_key_with_canonical_prior():
         allowed_belief_classes=["target", "confounder1", "confounder2"],
     )
 
-    assert len(entries) == 1
-    assert entries[0].action.semantic_key == "round_green_fruit"
-    assert entries[0].action.semantic_prior == {"target": 0.8}
-    assert generator.last_rejections == []
+    assert entries == []
+    assert generator.last_rejections[0].reason == (
+        ActionRejectionReason.NON_TARGET_ACTION.value
+    )
 
 
 def test_strict_m8_positive_discovery_zero_utility_is_unmeasured_history():
@@ -108,7 +124,7 @@ def test_strict_m8_positive_discovery_zero_utility_is_unmeasured_history():
     assert entries[0].qwen_priority == pytest.approx(0.8)
 
 
-def test_strict_m8_zero_gain_zero_utility_still_penalizes_history():
+def test_strict_m8_keeps_priority_for_a_novel_target_prompt():
     memory = SemanticMemory()
     memory.records["target"] = SimpleNamespace(
         semantic_keys=["target"],
@@ -129,37 +145,7 @@ def test_strict_m8_zero_gain_zero_utility_still_penalizes_history():
     )
 
     assert len(entries) == 1
-    assert entries[0].qwen_priority == pytest.approx(0.08)
-
-
-def test_strict_m8_discovery_priority_ignores_discrimination_from_zero_gain():
-    memory = SemanticMemory()
-    action = SensingAction(
-        action_id="a1",
-        semantic_key="target",
-        prompt="shaded green fruit",
-        family=ActionFamily.DISCOVERY,
-        correlation_group="target",
-    )
-    memory.record_execution(
-        action,
-        "sam1",
-        new_nodes=0,
-        realized_discrimination_proxy=0.8,
-    )
-
-    entries = ActionBankGenerator().generate_entries(
-        PlannerOutput(proposed_actions=[_target_proposal("occluded green fruit")]),
-        memory,
-        ActionBank(),
-        IDGenerator(),
-        config=V4Config(),
-        enforce_qwen_contract=True,
-        allowed_belief_classes=["target", "confounder1", "confounder2"],
-    )
-
-    assert len(entries) == 1
-    assert entries[0].qwen_priority == pytest.approx(0.08)
+    assert entries[0].qwen_priority == pytest.approx(0.8)
 
 
 def test_generic_history_keeps_frozen_zero_utility_behavior():

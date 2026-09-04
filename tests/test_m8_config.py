@@ -16,7 +16,7 @@ def test_load_m8_config_precedence(tmp_path, monkeypatch):
         "pilot_sample_limit": 5,
         "budget": {"max_qwen_calls": 2},
         "tiling": {"grid_rows": 4},
-        "action_selection": {"recent_zero_gain_penalty": 0.75},
+        "planner": {"max_actions_per_prompt": 1},
     }
 
     monkeypatch.setenv("QWEN_MODEL", "env_qwen")
@@ -40,7 +40,7 @@ def test_load_m8_config_precedence(tmp_path, monkeypatch):
     
     assert cfg.v4_config.budget.max_qwen_calls == 2
     assert cfg.v4_config.tiling.grid_rows == 4
-    assert cfg.v4_config.action_selection.recent_zero_gain_penalty == pytest.approx(0.75)
+    assert cfg.v4_config.planner.max_actions_per_prompt == 1
     assert cfg.v4_config.device == "cpu"
     
 def test_load_m8_config_invalid_key(tmp_path):
@@ -67,8 +67,11 @@ def test_load_m8_config_missing_file():
     assert cfg.pilot_sample_limit == 10
 
 
-def test_real_m8_config_enables_conservative_count_commitment(monkeypatch):
+def test_real_m8_config_uses_bounded_target_only_experiment(monkeypatch):
     monkeypatch.delenv("QWEN_MODEL", raising=False)
     monkeypatch.delenv("QWEN_BASE_URL", raising=False)
     cfg = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
-    assert cfg.v4_config.belief.target_count_commit_threshold == pytest.approx(0.9)
+    assert cfg.v4_config.belief.target_count_commit_threshold == pytest.approx(0.8)
+    assert cfg.v4_config.planner.max_actions_per_prompt == 1
+    assert cfg.v4_config.budget.max_qwen_calls == 2
+    assert cfg.v4_config.replanning.max_replans == 1

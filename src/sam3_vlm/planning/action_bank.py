@@ -30,6 +30,7 @@ class ActionRejectionReason(str, Enum):
     EMPTY_PROMPT = "EMPTY_PROMPT"
     INVALID_GROUNDING_PROMPT = "INVALID_GROUNDING_PROMPT"
     UNKNOWN_CLASS_PRIOR = "UNKNOWN_CLASS_PRIOR"
+    NON_TARGET_ACTION = "NON_TARGET_ACTION"
 
 
 @dataclass
@@ -144,12 +145,9 @@ class ActionBankGenerator:
         existing_groups: Set[str] = set()
         existing_prompts: Set[str] = set()
         group_avg_utilities = {}
-        group_records = {}
 
         for group, record in semantic_memory.records.items():
             normalized_group = canonicalize_semantic_key(group)
-            group_records[normalized_group] = record
-
             existing_groups.add(normalized_group)
 
             existing_semantic_keys.update(
@@ -168,9 +166,7 @@ class ActionBankGenerator:
                 record.realized_utility_by_execution or []
             )
 
-            # Generic/M4-M7 preserves the original group-wide behavior. Strict
-            # M8 chooses family-specific empirical evidence below, after the
-            # proposal family is known.
+            # Generic/M4-M7 preserves the original group-wide behavior.
             if realized_utilities and not enforce_qwen_contract:
                 group_avg_utilities[normalized_group] = (
                     sum(realized_utilities) / len(realized_utilities)
@@ -233,6 +229,20 @@ class ActionBankGenerator:
                     )
                     continue
 
+                # Confounders may inform Qwen's description of the target, but
+                # M8 executes only novel target discovery prompts.
+                if (
+                    canonical_key != "target"
+                    or proposal.family.value != "DISCOVERY"
+                    or set(proposal.semantic_prior or {}) != {"target"}
+                ):
+                    self._reject(
+                        proposal,
+                        ActionRejectionReason.NON_TARGET_ACTION,
+                        "M8 executes only DISCOVERY actions for semantic_key 'target'.",
+                    )
+                    continue
+
                 # Strict M8 scene-level Qwen does not own geometry. LOCAL/ROI_BATCH
                 # remain controller cleanup operations.
                 if proposal.suggested_spatial_mode not in (SpatialMode.GLOBAL, SpatialMode.TILED):
@@ -280,14 +290,6 @@ class ActionBankGenerator:
                     proposal,
                     ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
                     "exact SAM3 prompt already exists",
-                )
-                continue
-
-            if not enforce_qwen_contract and canonical_key in existing_semantic_keys:
-                self._reject(
-                    proposal,
-                    ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
-                    f"semantic key {canonical_key!r} already exists",
                 )
                 continue
 
@@ -341,50 +343,6 @@ class ActionBankGenerator:
             adjusted_priority = proposal.priority
 
             avg_utility = group_avg_utilities.get(corr_group_key)
-            if enforce_qwen_contract:
-                record = group_records.get(corr_group_key)
-                if record is not None and proposal.family.value == "DISCOVERY":
-                    gains = list(
-                        getattr(record, "new_nodes_by_execution", []) or []
-                    )
-                    families = list(
-                        getattr(record, "families_by_execution", []) or []
-                    )
-                    if len(families) == len(gains):
-                        gains = [
-                            gain
-                            for gain, family in zip(gains, families)
-                            if getattr(family, "value", family) == "DISCOVERY"
-                        ]
-                    # Successful discovery is not a calibrated utility value;
-                    # zero-gain executions are direct evidence of exhaustion.
-                    avg_utility = (
-                        0.0
-                        if gains and float(gains[-1]) <= 0.0
-                        else None
-                    )
-                elif record is not None:
-                    effects = list(
-                        getattr(
-                            record,
-                            "realized_discrimination_proxy_by_execution",
-                            [],
-                        )
-                        or []
-                    )
-                    families = list(
-                        getattr(record, "families_by_execution", []) or []
-                    )
-                    if len(families) == len(effects):
-                        effects = [
-                            effect
-                            for effect, family in zip(effects, families)
-                            if getattr(family, "value", family)
-                            == proposal.family.value
-                        ]
-                    avg_utility = (
-                        sum(effects) / len(effects) if effects else None
-                    )
 
             if avg_utility is not None:
                 threshold = (

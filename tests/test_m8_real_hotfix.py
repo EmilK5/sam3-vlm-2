@@ -110,7 +110,7 @@ def test_action_bank_rejects_bad_qwen_actions_and_inherits_tiling_and_search_reg
     output = PlannerOutput(
         proposed_actions=[
             ProposedAction(
-                semantic_key="round_green_fruit",
+                semantic_key="target",
                 prompt="round green fruit",
                 family=ActionFamily.DISCOVERY,
                 suggested_spatial_mode=SpatialMode.TILED,
@@ -129,7 +129,7 @@ def test_action_bank_rejects_bad_qwen_actions_and_inherits_tiling_and_search_reg
                 semantic_prior={"leaf": 0.9},
             ),
             ProposedAction(
-                semantic_key="bad_roi",
+                semantic_key="target",
                 prompt="small green fruit",
                 family=ActionFamily.DISCOVERY,
                 suggested_spatial_mode=SpatialMode.ROI_BATCH,

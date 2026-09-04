@@ -179,10 +179,11 @@ class QwenEvidencePack:
             "These crop panels are UNVERIFIED visual sensor candidates from SAM3.",
             "Do NOT label them as ground truth or final positive detections.",
             "target_support_score is target-family SAM3 sensor support, not a posterior probability.",
-            "latest_observation fields describe the most recent semantic experiment and may be a confounder or non-retrieval.",
-            "Your role is to analyze candidate appearances (e.g. shadow, leaf, occluded fruit) and propose scene-level sensing actions.",
+            "latest_observation fields describe the most recent target experiment or non-retrieval.",
+            "Use possible confounders only to formulate a more specific target description.",
+            "Every executable action must be a novel scene-level prompt for the target.",
             "On replanning, never repeat an exact SAM3 prompt listed in tried_sam3_prompts or semantic history.",
-            "If discovery_saturated is true, prefer useful verification/confounder actions and return no actions when no useful experiment remains.",
+            "If no useful new target prompt remains, return no actions.",
             "Do NOT attempt to output final object counts or raw bounding boxes directly.",
             "",
             "=== SCENE EVIDENCE PACK ===",
@@ -257,9 +258,9 @@ def _target_support_observation(node: Node, semantic_memory: Any = None):
     """Return stable target-family sensor support for a graph candidate.
 
     When semantic history is available, target-oriented DISCOVERY and
-    VERIFICATION calls define the eligible evidence.  The first grounded
-    detection and its semantic key provide a backward-compatible fallback for
-    bootstrap callers and older replay states.
+    VERIFICATION calls define eligible evidence. The first grounded detection
+    and its semantic key provide a backward-compatible fallback for bootstrap
+    callers and older replay states.
 
     The anchor semantic key is taken from the first sensor-grounded detection
     observation. Repeated detections under that same semantic key may strengthen

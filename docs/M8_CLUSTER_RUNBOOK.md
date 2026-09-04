@@ -51,11 +51,11 @@ export QWEN_API_KEY="your_api_key_or_EMPTY_if_vllm"
 ## 2. Validation & Safety Checks
 
 ### 2.1 Release Check & Dry-Run
-Before you submit jobs to the GPU, run the laptop-safe local readiness check. This automatically compiles the code, runs the test suite, parses the config, and executes a dry-run of the CLI.
+Before using the GPU, run the laptop-safe local readiness check. This automatically compiles the code, runs the test suite, parses the config, and executes a dry-run of the CLI.
 ```bash
 bash scripts/check_m8_cluster_ready.sh
 ```
-If this fails, STOP. Do not submit jobs.
+If this fails, stop before running either real model.
 
 ### 2.2 Gating Real Models
 Enable the real model testing flag:
@@ -70,28 +70,28 @@ export RUN_REAL_MODELS=1
 
 The smoke test requires a real, representative image. It never fabricates fallback data.
 
-Submit the smoke job:
+Run the smoke sequence directly in the active shell:
 ```bash
 export M8_IMAGE="/path/to/representative_image.jpg"
 export M8_TARGET="green citrus"
 export M8_OUTPUT_ROOT="runs/cluster_m8_smoke"
 
-sbatch scripts/m8_cluster_smoke.slurm
-```
+python -m sam3_vlm.experiments.m8_smoke \
+  --stage preflight \
+  --require-cuda \
+  --image "$M8_IMAGE" \
+  --target "$M8_TARGET" \
+  --output_dir "$M8_OUTPUT_ROOT"
 
-This Slurm script strictly executes:
-1. `preflight`:
-   ```bash
-   python -m sam3_vlm.experiments.m8_smoke --stage preflight --require-cuda --image "$M8_IMAGE" --target "$M8_TARGET" --output_dir "$M8_OUTPUT_ROOT"
-   ```
-2. Real Models Pytest Suite:
-   ```bash
-   pytest -q -m real_models
-   ```
-3. Bounded Sequence (SAM3 Smoke, Qwen Smoke, Bounded E2E):
-   ```bash
-   python -m sam3_vlm.experiments.m8_smoke --stage all --require-cuda --image "$M8_IMAGE" --target "$M8_TARGET" --output_dir "$M8_OUTPUT_ROOT"
-   ```
+pytest -q -m real_models
+
+python -m sam3_vlm.experiments.m8_smoke \
+  --stage all \
+  --require-cuda \
+  --image "$M8_IMAGE" \
+  --target "$M8_TARGET" \
+  --output_dir "$M8_OUTPUT_ROOT"
+```
 
 **Important:** The `--stage all` command STOPS before the pilot. It will NOT run the pilot automatically.
 
@@ -99,7 +99,7 @@ This Slurm script strictly executes:
 
 ## 4. The Pilot Experiment
 
-Once the smoke test passes cleanly, submit the pilot job separately. The pilot strictly requires a JSON manifest.
+Once the smoke test passes cleanly, run the pilot separately. The pilot strictly requires a JSON manifest.
 
 Example Manifest (`pilot_manifest.json`):
 ```json
@@ -113,16 +113,11 @@ Example Manifest (`pilot_manifest.json`):
 ]
 ```
 
-Submit the pilot job:
+Run the pilot directly:
 ```bash
 export M8_MANIFEST="/path/to/pilot_manifest.json"
 export M8_OUTPUT_ROOT="runs/cluster_m8_pilot"
 
-sbatch scripts/m8_cluster_pilot.slurm
-```
-
-This executes:
-```bash
 python -m sam3_vlm.experiments.m8_smoke \
     --stage pilot \
     --require-cuda \
@@ -142,12 +137,17 @@ python -m sam3_vlm.experiments.m8_smoke \
   - `final_graph.json` (Detected semantics)
   - `summary.json` (E2E metrics)
 
-The M8 config uses `belief.target_count_commit_threshold: 0.9`. The final
-reported count therefore commits target posteriors at or above `0.9` to a
+The M8 config uses `belief.target_count_commit_threshold: 0.8`. The final
+reported count therefore commits target posteriors at or above `0.8` to a
 per-node contribution of `1.0`, without changing the stored posterior. The
 unmodified posterior sum is available as
 `discovery_statistics.raw_soft_count`, alongside the threshold and number of
 committed nodes.
+
+M8 executes only novel target prompts. Qwen may describe likely confounders as
+context, but the controller does not issue separate confounder SAM3 queries.
+Each Qwen round contributes at most one target experiment, with at most one
+replan and two Qwen calls total.
 
 ### Diagnosing Pilot Failures
 Open `pilot_report.json`. Look in `.samples` for any sample where `"success": false`.

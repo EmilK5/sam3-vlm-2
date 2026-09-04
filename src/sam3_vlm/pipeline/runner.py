@@ -5,7 +5,14 @@ import time
 from enum import Enum
 from typing import Any, List, Optional
 from sam3_vlm.core.config import V4Config
-from sam3_vlm.core.types import ActionFamily, ActionSource, SpatialMode
+from sam3_vlm.core.types import (
+    ActionFamily,
+    ActionSource,
+    NodeObservationRef,
+    ObservationRelation,
+    SpatialMode,
+    StopReason,
+)
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.models.sam3 import SAM3Sensor
 from sam3_vlm.models.qwen import QwenPlanner
@@ -33,7 +40,6 @@ from sam3_vlm.scene.state import SceneState, CountEstimator
 from sam3_vlm.pipeline.bootstrap import BootstrapPipeline
 from sam3_vlm.sensing.evidence import ContactSheetBuilder
 from sam3_vlm.sensing.tiling import TilingPolicy
-from sam3_vlm.core.types import StopReason
 from sam3_vlm.core.geometry import Box
 
 
@@ -42,14 +48,10 @@ class RunnerState(str, Enum):
 
     INITIALIZE = "INITIALIZE"
     BOOTSTRAP_GLOBAL = "BOOTSTRAP_GLOBAL"
-    BOOTSTRAP_TILE_DECISION = "BOOTSTRAP_TILE_DECISION"
-    BOOTSTRAP_TILED = "BOOTSTRAP_TILED"
-    BUILD_QWEN_EVIDENCE = "BUILD_QWEN_EVIDENCE"
     PLAN = "PLAN"
     GLOBAL_SENSING = "GLOBAL_SENSING"
     ASSESS = "ASSESS"
     REPLAN = "REPLAN"
-    CLEANUP_DECISION = "CLEANUP_DECISION"
     CLEANUP = "CLEANUP"
     ASSESS_CLEANUP = "ASSESS_CLEANUP"
     FINALIZE = "FINALIZE"
@@ -215,13 +217,9 @@ class Runner:
             }) 
 
     def _uses_canonical_m8_policy(self) -> bool:
-        if self.scene_state is None or self.scene_state.target_class != "target":
-            return False
-        classes = list(self.scene_state.belief_classes or [])
-        if not classes or classes[0] != "target":
-            return False
-        expected = ["target"] + [f"confounder{i}" for i in range(1, len(classes))]
-        return classes == expected
+        return bool(
+            self.scene_state and self.scene_state.uses_canonical_m8_policy
+        )
 
     def _belief_class_vocabulary(self):
         return (
@@ -298,15 +296,18 @@ class Runner:
             if self.recorder:
                 self.recorder.record_qwen_plan_started(self.scene_state.qwen_round)
                 
-            # Initial plan uses bootstrap evidence pack
-            self._execute_initial_plan()
-            
-            # (Note: we should ideally record completion inside _execute_initial_plan or here)
-            # but since Qwen artifact path is needed, we'll instrument QwenPlannerService or do it here.
+            self._execute_plan()
             
             if self.recorder:
                 self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
-            self.state = RunnerState.GLOBAL_SENSING
+            if (
+                self._uses_canonical_m8_policy()
+                and self.scene_state.last_plan_accepted_actions == 0
+            ):
+                self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
+                self.state = RunnerState.CLEANUP
+            else:
+                self.state = RunnerState.GLOBAL_SENSING
             
         elif self.state == RunnerState.GLOBAL_SENSING:
             # 1. Recompute utility & 2. Choose one action
@@ -335,7 +336,6 @@ class Runner:
                     self.state = RunnerState.REPLAN
                 return
                 
-            from sam3_vlm.core.types import ActionFamily
             action = self._constrain_action_to_search_region(best_entry.action)
             action = self._attach_target_pseudoexemplars(action)
             
@@ -466,7 +466,7 @@ class Runner:
                 predicted_utility=best_entry.total_utility if best_entry.total_utility else 0.0,
                 affected_nodes=affected,
                 entropy_change=post_entropy - pre_entropy,
-                variance_change=self.scene_state.count_estimate.variance - pre_count.variance if 'pre_count' in locals() else 0.0,
+                variance_change=self.scene_state.count_estimate.variance - pre_count.variance,
                 realized_discrimination_proxy=discrimination_proxy,
             )
             if self.recorder:
@@ -521,9 +521,6 @@ class Runner:
             self._pending_replan_reason = None
             self._request_replan()
                 
-        elif self.state == RunnerState.CLEANUP_DECISION:
-            # Kept for backward compatibility if needed, but ASSESS handles this now.
-            self.state = RunnerState.CLEANUP
         elif self.state == RunnerState.CLEANUP:
             if self.recorder:
                 self.recorder.record_cleanup_started()
@@ -759,7 +756,6 @@ class Runner:
                 }
                 self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
 
-        from sam3_vlm.core.types import ObservationRelation, NodeObservationRef, SpatialMode
         not_retrieved_nodes_count = 0
         for node in self.scene_state.graph.active_nodes():
             if node.node_id not in matched_node_ids and node.node_id not in new_node_ids:
@@ -803,77 +799,12 @@ class Runner:
 
         return new_nodes_count, not_retrieved_nodes_count
 
-    def _execute_initial_plan(self):
-        """Execute the initial Qwen planning round using bootstrap evidence."""
-        call_id = self.id_gen.next_qwen_call_id() if hasattr(self.id_gen, 'next_qwen_call_id') else f"qwen_{self.scene_state.qwen_round}"
+    def _execute_plan(self, *, is_replan: bool = False) -> None:
+        """Run one Qwen round and add its valid actions to the bank."""
+        call_id = self.id_gen.next_qwen_call_id()
         planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
-        
-        valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
-        new_entries = self.bank_generator.generate_entries(
-            planner_output,
-            self.scene_state.semantic_memory,
-            self.scene_state.action_bank,
-            self.id_gen,
-            valid_node_ids=valid_node_ids,
-            config=self.config,
-            search_region=self.scene_state.search_region,
-            enforce_qwen_contract=self._uses_canonical_m8_policy(),
-            allowed_belief_classes=(
-                self.scene_state.belief_classes
-                if self._uses_canonical_m8_policy()
-                else None
-            ),
-        )
-        
-        if self.recorder:
-            cs_ref = None
-            if self.evidence_pack.contact_sheet.contact_sheet_image_path:
-                try:
-                    with open(self.evidence_pack.contact_sheet.contact_sheet_image_path, "rb") as f:
-                        cs_ref = self.recorder.save_contact_sheet_artifact(call_id, f.read())
-                except FileNotFoundError:
-                    pass
-            payload = {
-                "qwen_call_id": call_id,
-                "qwen_round": self.scene_state.qwen_round,
-                "input": {
-                    "evidence_pack": self.evidence_pack.to_dict(),
-                    "contact_sheet_ref": cs_ref
-                },
-                "output": planner_output.to_dict(),
-                "metadata": {
-                    "repair_attempted": self.planner_service.last_repair_attempted,
-                    "fallback_used": self.planner_service.last_fallback_used,
-                    "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
-                    "rejections": [r.to_dict() for r in self.bank_generator.last_rejections],
-                }
-            }
-            path = self.recorder.save_qwen_artifact(call_id, payload)
-            action_ids = [e.action.action_id for e in new_entries]
-            self.recorder.record_qwen_plan_completed(path, action_ids)
-            
-        self._freeze_confounder_labels(planner_output)
-        self.scene_state.last_plan_accepted_actions = len(new_entries)
-        self.scene_state.last_plan_action_ids = [
-            entry.action.action_id for entry in new_entries
-        ]
-        if self.recorder:
-            invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
-            invalid_total += len(self.bank_generator.last_rejections)
-            self.recorder.record_action_bank_refreshed(len(self.scene_state.action_bank.entries), invalid_total)
-        self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
-        self.scene_state.qwen_round += 1
-        self.scene_state.actions_since_replan = 0
-        self._record_controller_state()
-        
-        if self.recorder:
-            self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
 
-    def _execute_replan(self):
-        """Execute Qwen planning for subsequent rounds and update action bank."""
-        call_id = self.id_gen.next_qwen_call_id() if hasattr(self.id_gen, 'next_qwen_call_id') else f"qwen_{self.scene_state.qwen_round}"
-        planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
-        
+        strict_m8 = self._uses_canonical_m8_policy()
         valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
         new_entries = self.bank_generator.generate_entries(
             planner_output,
@@ -883,10 +814,10 @@ class Runner:
             valid_node_ids=valid_node_ids,
             config=self.config,
             search_region=self.scene_state.search_region,
-            enforce_qwen_contract=self._uses_canonical_m8_policy(),
+            enforce_qwen_contract=strict_m8,
             allowed_belief_classes=(
                 self.scene_state.belief_classes
-                if self._uses_canonical_m8_policy()
+                if strict_m8
                 else None
             ),
         )
@@ -930,7 +861,8 @@ class Runner:
         self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
-        self.scene_state.replans_executed += 1
+        if is_replan:
+            self.scene_state.replans_executed += 1
         self._record_controller_state()
         
         if self.recorder:
@@ -944,7 +876,6 @@ class Runner:
 
         if (
             strict_m8
-            and self.scene_state.replans_executed > 0
             and self.scene_state.actions_since_replan > 0
             and not self._last_plan_had_marginal_value()
         ):
@@ -962,7 +893,9 @@ class Runner:
                     self.state = RunnerState.GLOBAL_SENSING
                 else:
                     self.scene_state.set_stop_reason(
-                        StopReason.QWEN_BUDGET if qwen_exhausted else StopReason.NO_VALID_ACTIONS
+                        StopReason.QWEN_BUDGET
+                        if qwen_exhausted
+                        else StopReason.LOW_MARGINAL_UTILITY
                     )
                     self.state = RunnerState.CLEANUP
             else:
@@ -993,7 +926,7 @@ class Runner:
             assets_dir=self.config.assets_dir,
             config=self.config,
         )
-        self._execute_replan()
+        self._execute_plan(is_replan=True)
         if strict_m8 and self.scene_state.last_plan_accepted_actions == 0:
             self.scene_state.set_stop_reason(StopReason.NO_VALID_ACTIONS)
             self.state = RunnerState.CLEANUP
@@ -1001,12 +934,11 @@ class Runner:
             self.state = RunnerState.GLOBAL_SENSING
 
     def _last_plan_had_marginal_value(self) -> bool:
-        """Return true unless every latest-plan action is measured as useless."""
+        """Check whether the last target plan materially improved count state."""
         action_ids = set(self.scene_state.last_plan_action_ids or [])
         if not action_ids:
             return False
 
-        measured_ids = set()
         for record in self.scene_state.semantic_memory.records.values():
             recorded_action_ids = list(
                 getattr(record, "action_ids_by_execution", []) or []
@@ -1014,45 +946,27 @@ class Runner:
             for index, action_id in enumerate(recorded_action_ids):
                 if action_id not in action_ids:
                     continue
-                measured_ids.add(action_id)
-                families = list(
-                    getattr(record, "families_by_execution", []) or []
-                )
-                family = families[index] if index < len(families) else getattr(
-                    record.family, "value", record.family
-                )
-                if getattr(family, "value", family) == ActionFamily.DISCOVERY.value:
-                    gains = record.new_nodes_by_execution
-                    if index < len(gains) and gains[index] > (
-                        self.config.stopping.discovery_saturation_threshold
-                    ):
-                        return True
-                else:
-                    effects = record.realized_discrimination_proxy_by_execution
-                    variance = record.variance_change_by_execution
-                    entropy_gain = effects[index] if index < len(effects) else 0.0
-                    variance_gain = (
-                        max(0.0, -variance[index])
-                        if index < len(variance)
-                        else 0.0
-                    )
-                    if max(entropy_gain, variance_gain) > (
-                        self.config.stopping.utility_min_threshold
-                    ):
-                        return True
+                gains = record.new_nodes_by_execution
+                if index < len(gains) and gains[index] > (
+                    self.config.stopping.discovery_saturation_threshold
+                ):
+                    return True
 
-        # An unexecuted action whose utility has not yet been measured is still
-        # potentially useful.  Evaluated below-threshold entries are not.
-        for entry in self.scene_state.action_bank.entries:
-            if entry.action.action_id not in action_ids or entry.executed:
-                continue
-            if entry.total_utility is None or entry.total_utility >= (
-                self.config.stopping.utility_min_threshold
-            ):
-                return True
-            measured_ids.add(entry.action.action_id)
+                variance_changes = record.variance_change_by_execution
+                if index >= len(variance_changes):
+                    continue
+                change = float(variance_changes[index])
+                variance_after = self.scene_state.count_estimate.variance
+                variance_before = max(0.0, variance_after - change)
+                relative_reduction = max(0.0, -change) / max(
+                    variance_before, 1e-12
+                )
+                if relative_reduction >= (
+                    self.config.replanning.min_relative_count_variance_reduction
+                ):
+                    return True
 
-        return measured_ids != action_ids
+        return False
 
     def _choose_best_action(self):
         """Recompute utility for all unexecuted actions and return the best."""

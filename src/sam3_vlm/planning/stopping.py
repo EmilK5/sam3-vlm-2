@@ -22,10 +22,6 @@ class BudgetStoppingCondition:
     def should_stop(self, state: "SceneState", config: "V4Config") -> Optional[StopReason]:
         if state.budget.sam3_calls >= config.budget.max_sam3_calls:
             return StopReason.SAM3_BUDGET
-        if state.budget.qwen_calls >= config.budget.max_qwen_calls:
-            # We don't always stop entirely on Qwen budget (we can still sense if bank is valid), 
-            # but if we run out of valid actions and Qwen budget is empty, this handles it. 
-            pass 
         if config.budget.max_runtime_seconds and (state.budget.total_runtime_ms / 1000.0) >= config.budget.max_runtime_seconds:
             return StopReason.RUNTIME_BUDGET
         return None

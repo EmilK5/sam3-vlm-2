@@ -1,7 +1,4 @@
 import pytest
-import os
-import tempfile
-import base64
 from PIL import Image
 from unittest.mock import patch, MagicMock
 
@@ -66,6 +63,9 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
+    assert "semantic_key must be 'target'" in messages[0]["content"]
+    assert "family must be 'DISCOVERY'" in messages[0]["content"]
+    assert "never proposed as separate SAM3 actions" in messages[0]["content"]
     
     content = messages[1]["content"]
     assert isinstance(content, list)
@@ -77,6 +77,7 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     assert "EXACT PROMPT BLACKLIST" in content[0]["text"]
     assert "shadowed green fruit" in content[0]["text"]
     assert "DISCOVERY IS SATURATED" in content[0]["text"]
+    assert "Every action must use semantic_key='target'" in content[0]["text"]
     
     assert content[1]["type"] == "image_url"
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
@@ -137,4 +138,3 @@ def test_qwen_payload_unsupported_mime(mock_openai_client, tmp_path):
     
     with pytest.raises(ValueError, match="Unsupported image extension for Qwen: .bmp"):
         planner.plan_scene(evidence, BudgetState(), V4Config())
-

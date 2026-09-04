@@ -182,6 +182,14 @@ class ReplanEvidenceBuilder:
                         f"variance_delta={float(variance_delta):.6f}; "
                         f"discrimination_proxy={float(discrimination):.6f}"
                     )
+
+        # Include accepted-but-unexecuted prompts. They are still known
+        # experiments and must not consume another Qwen proposal slot.
+        if state.action_bank is not None:
+            for entry in state.action_bank.entries:
+                prompt = entry.action.prompt
+                if prompt not in tried_prompts:
+                    tried_prompts.append(prompt)
         
         scene_summary = "\n".join(history_lines) if len(history_lines) > 1 else "No semantic history yet."
 

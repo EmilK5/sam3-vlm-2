@@ -96,8 +96,6 @@ class SensingAction:
             raise ValueError("SensingAction with TILED spatial_mode must specify tiling configuration.")
         if self.tiling is not None and self.spatial_mode != SpatialMode.TILED:
             raise ValueError("SensingAction with tiling configuration specified must use TILED spatial_mode.")
-        if self.spatial_mode in (SpatialMode.LOCAL, SpatialMode.ROI_BATCH) and self.roi is None:
-            raise ValueError(f"SensingAction requires ROI for spatial_mode={self.spatial_mode.value}.")
         if self.roi is not None:
             roi_box = self.roi.bbox() if hasattr(self.roi, "bbox") else self.roi
             if not hasattr(roi_box, "area") or roi_box.area <= 0.0:
