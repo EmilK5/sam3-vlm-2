@@ -143,10 +143,12 @@ class ActionBankGenerator:
         existing_semantic_keys: Set[str] = set()
         existing_groups: Set[str] = set()
         existing_prompts: Set[str] = set()
-        group_avg_utilities = {} 
+        group_avg_utilities = {}
+        group_records = {}
 
         for group, record in semantic_memory.records.items():
             normalized_group = canonicalize_semantic_key(group)
+            group_records[normalized_group] = record
 
             existing_groups.add(normalized_group)
 
@@ -166,29 +168,13 @@ class ActionBankGenerator:
                 record.realized_utility_by_execution or []
             )
 
-            # In strict M8, bootstrap/discovery gain is logged separately from
-            # discrimination utility. A zero realized utility on an execution
-            # that actually discovered nodes means "utility unmeasured", not
-            # "this semantic group empirically failed". Exclude only those
-            # bookkeeping zeros from the history used to adjust Qwen priority.
-            # Generic/M4-M7 behavior remains unchanged.
-            if enforce_qwen_contract and realized_utilities:
-                discovery_gains = list(
-                    getattr(record, "new_nodes_by_execution", []) or []
-                )
-                if len(discovery_gains) == len(realized_utilities):
-                    realized_utilities = [
-                        utility
-                        for utility, new_nodes in zip(
-                            realized_utilities, discovery_gains
-                        )
-                        if not (new_nodes > 0 and abs(float(utility)) <= 1e-12)
-                    ]
-
-            if realized_utilities:
+            # Generic/M4-M7 preserves the original group-wide behavior. Strict
+            # M8 chooses family-specific empirical evidence below, after the
+            # proposal family is known.
+            if realized_utilities and not enforce_qwen_contract:
                 group_avg_utilities[normalized_group] = (
                     sum(realized_utilities) / len(realized_utilities)
-                ) 
+                )
 
         for entry in action_bank.entries:
             existing_semantic_keys.add(
@@ -305,15 +291,6 @@ class ActionBankGenerator:
                 )
                 continue
 
-            clean_prompt = proposal.prompt.strip().lower()
-            if clean_prompt in existing_prompts:
-                self._reject(
-                    proposal,
-                    ActionRejectionReason.DUPLICATE_SEMANTIC_KEY,
-                    "exact SAM3 prompt already exists",
-                )
-                continue
-
             corr_group = (
                 proposal.correlation_group
                 or derive_correlation_group(
@@ -364,6 +341,50 @@ class ActionBankGenerator:
             adjusted_priority = proposal.priority
 
             avg_utility = group_avg_utilities.get(corr_group_key)
+            if enforce_qwen_contract:
+                record = group_records.get(corr_group_key)
+                if record is not None and proposal.family.value == "DISCOVERY":
+                    gains = list(
+                        getattr(record, "new_nodes_by_execution", []) or []
+                    )
+                    families = list(
+                        getattr(record, "families_by_execution", []) or []
+                    )
+                    if len(families) == len(gains):
+                        gains = [
+                            gain
+                            for gain, family in zip(gains, families)
+                            if getattr(family, "value", family) == "DISCOVERY"
+                        ]
+                    # Successful discovery is not a calibrated utility value;
+                    # zero-gain executions are direct evidence of exhaustion.
+                    avg_utility = (
+                        0.0
+                        if gains and float(gains[-1]) <= 0.0
+                        else None
+                    )
+                elif record is not None:
+                    effects = list(
+                        getattr(
+                            record,
+                            "realized_discrimination_proxy_by_execution",
+                            [],
+                        )
+                        or []
+                    )
+                    families = list(
+                        getattr(record, "families_by_execution", []) or []
+                    )
+                    if len(families) == len(effects):
+                        effects = [
+                            effect
+                            for effect, family in zip(effects, families)
+                            if getattr(family, "value", family)
+                            == proposal.family.value
+                        ]
+                    avg_utility = (
+                        sum(effects) / len(effects) if effects else None
+                    )
 
             if avg_utility is not None:
                 threshold = (
@@ -429,4 +450,3 @@ class ActionBankGenerator:
             added_entries.append(entry) 
 
         return added_entries
-

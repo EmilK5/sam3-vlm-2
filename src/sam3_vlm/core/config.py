@@ -82,6 +82,10 @@ class ActionSelectionConfig:
     gamma_redundancy: float = 0.5
     lambda_cost: float = 0.1
     eta_qwen_priority: float = 0.2
+    # Empirical controller terms.  Discovery is judged by newly registered
+    # nodes, while verification/confounder actions are judged by belief change.
+    recent_zero_gain_penalty: float = 0.5
+    ineffective_discrimination_scale: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,17 @@ class BeliefConfig:
     prior_pseudocount: float = 1.0
     discount_repeat_weight: float = 0.8
     num_confounders: int = 2
+    # Optional reporting-only commitment rule.  A target posterior at or above
+    # this threshold contributes 1.0 to the count without mutating the node's
+    # posterior.  ``None`` preserves a purely soft posterior sum.
+    target_count_commit_threshold: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        threshold = self.target_count_commit_threshold
+        if threshold is not None and not (0.0 < threshold <= 1.0):
+            raise ValueError(
+                "target_count_commit_threshold must be in (0, 1] or None"
+            )
 
 
 @dataclass(frozen=True)

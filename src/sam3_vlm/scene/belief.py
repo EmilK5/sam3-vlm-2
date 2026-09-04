@@ -51,6 +51,13 @@ class SemanticRecord:
     variance_change_by_execution: List[float] = field(default_factory=list)
     realized_discrimination_proxy_by_execution: List[float] = field(default_factory=list)
     realized_utility_by_execution: List[float] = field(default_factory=list)
+    # Execution-aligned provenance.  The aggregate ``prompts`` and ``family``
+    # fields above remain for compatibility with older artifacts.
+    action_ids_by_execution: List[str] = field(default_factory=list)
+    semantic_keys_by_execution: List[str] = field(default_factory=list)
+    prompts_by_execution: List[str] = field(default_factory=list)
+    families_by_execution: List[str] = field(default_factory=list)
+    spatial_modes_by_execution: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +100,11 @@ class SemanticMemory:
         rec.variance_change_by_execution.append(variance_change)
         rec.realized_discrimination_proxy_by_execution.append(realized_discrimination_proxy)
         rec.realized_utility_by_execution.append(realized_discrimination_proxy)
+        rec.action_ids_by_execution.append(action.action_id)
+        rec.semantic_keys_by_execution.append(action.semantic_key)
+        rec.prompts_by_execution.append(action.prompt)
+        rec.families_by_execution.append(action.family.value)
+        rec.spatial_modes_by_execution.append(action.spatial_mode.value)
         return rec
 
 

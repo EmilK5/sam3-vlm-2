@@ -202,6 +202,14 @@ The final represented-object estimate uses posterior target mass rather than onl
 
 with registration/discovery uncertainty handled separately.
 
+The generic controller keeps this purely soft estimate by default. The real M8
+deployment config enables a conservative reporting commitment threshold of
+`0.9`: a represented node whose target posterior is at least `0.9` contributes
+exactly `1.0` to the reported count. This does not mutate or freeze the node
+posterior. Runs retain `raw_soft_count`, `committed_target_nodes`, and the
+configured threshold in `summary.json` discovery diagnostics so the heuristic
+is explicit and reversible during evaluation.
+
 ---
 
 ## Research motivation

@@ -142,6 +142,13 @@ python -m sam3_vlm.experiments.m8_smoke \
   - `final_graph.json` (Detected semantics)
   - `summary.json` (E2E metrics)
 
+The M8 config uses `belief.target_count_commit_threshold: 0.9`. The final
+reported count therefore commits target posteriors at or above `0.9` to a
+per-node contribution of `1.0`, without changing the stored posterior. The
+unmodified posterior sum is available as
+`discovery_statistics.raw_soft_count`, alongside the threshold and number of
+committed nodes.
+
 ### Diagnosing Pilot Failures
 Open `pilot_report.json`. Look in `.samples` for any sample where `"success": false`.
 - If `failure_category` is present, look at `failure_message` for infrastructure crashes (e.g., CUDA OOM or Qwen payload errors).

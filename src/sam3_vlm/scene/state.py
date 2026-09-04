@@ -114,27 +114,49 @@ class DiscoveryState:
 
 @dataclass
 class CountEstimate:
-    """Soft count and uncertainty estimation (V4 Design Spec §14.2)."""
+    """Represented-object count and uncertainty (V4 Design Spec §14.2)."""
     mean_count: float = 0.0
     variance: float = 0.0
     std_dev: float = 0.0
+    raw_soft_count: float = 0.0
+    committed_node_count: int = 0
 
 
 class CountEstimator:
     """Computes soft counts and variances from node belief probabilities (M5)."""
 
     @staticmethod
-    def estimate(graph: SceneGraph, target_class: str) -> CountEstimate:
+    def estimate(
+        graph: SceneGraph,
+        target_class: str,
+        target_commit_threshold: Optional[float] = None,
+    ) -> CountEstimate:
+        if target_commit_threshold is not None and not (
+            0.0 < target_commit_threshold <= 1.0
+        ):
+            raise ValueError("target_commit_threshold must be in (0, 1] or None")
+
         mean_count = 0.0
+        raw_soft_count = 0.0
         variance = 0.0
+        committed_node_count = 0
         for node in graph.active_nodes():
             p = node.class_belief.probabilities.get(target_class, 0.0)
-            mean_count += p
+            raw_soft_count += p
+            if target_commit_threshold is not None and p >= target_commit_threshold:
+                mean_count += 1.0
+                committed_node_count += 1
+            else:
+                mean_count += p
+            # Preserve uncertainty from the underlying posterior.  The reporting
+            # commitment rule must not pretend the Bayesian state became certain.
             variance += p * (1.0 - p)
         return CountEstimate(
             mean_count=mean_count,
             variance=variance,
             std_dev=variance ** 0.5,
+            raw_soft_count=raw_soft_count,
+            committed_node_count=committed_node_count,
         )
 
 
@@ -167,6 +189,7 @@ class SceneState:
     actions_since_replan: int = 0
     replans_executed: int = 0
     last_plan_accepted_actions: int = 0
+    last_plan_action_ids: List[str] = field(default_factory=list)
 
     def set_stop_reason(self, candidate: Optional[StopReason]) -> None:
         """Set stop reason with deterministic frozen M6 precedence."""

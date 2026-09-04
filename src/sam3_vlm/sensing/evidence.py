@@ -181,6 +181,8 @@ class QwenEvidencePack:
             "target_support_score is target-family SAM3 sensor support, not a posterior probability.",
             "latest_observation fields describe the most recent semantic experiment and may be a confounder or non-retrieval.",
             "Your role is to analyze candidate appearances (e.g. shadow, leaf, occluded fruit) and propose scene-level sensing actions.",
+            "On replanning, never repeat an exact SAM3 prompt listed in tried_sam3_prompts or semantic history.",
+            "If discovery_saturated is true, prefer useful verification/confounder actions and return no actions when no useful experiment remains.",
             "Do NOT attempt to output final object counts or raw bounding boxes directly.",
             "",
             "=== SCENE EVIDENCE PACK ===",

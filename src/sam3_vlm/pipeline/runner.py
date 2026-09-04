@@ -17,7 +17,11 @@ from sam3_vlm.planning.stopping import (
     DiscoveryAndUncertaintySaturatedStoppingCondition,
     IterationStoppingCondition,
 )
-from sam3_vlm.planning.replanning import ReplanningPolicy, ReplanEvidenceBuilder
+from sam3_vlm.planning.replanning import (
+    ReplanningPolicy,
+    ReplanEvidenceBuilder,
+    discovery_is_plateaued,
+)
 from sam3_vlm.planning.utility import DefaultUtilityEvaluator
 from sam3_vlm.pipeline.cleanup import CleanupController
 from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy
@@ -64,6 +68,7 @@ class Runner:
         self.scene_state: Optional[SceneState] = None
         self.id_gen = IDGenerator()
         self.target_class = "target"
+        self._pending_replan_reason: Optional[str] = None
         
         # Sub-components
         self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen, recorder=self.recorder)
@@ -143,7 +148,12 @@ class Runner:
                     number_of_replans=self.scene_state.replans_executed,
                     discovery_statistics={
                         "coverage_ratio": getattr(self.scene_state.discovery_state.spatial_coverage, "coverage_ratio", 0.0) if hasattr(self.scene_state.discovery_state, "spatial_coverage") else 0.0,
-                        "saturated": getattr(self.scene_state.discovery_state, "saturated", False)
+                        "saturated": discovery_is_plateaued(
+                            self.scene_state, self.config
+                        ),
+                        "raw_soft_count": self.scene_state.count_estimate.raw_soft_count,
+                        "target_count_commit_threshold": self.config.belief.target_count_commit_threshold,
+                        "committed_target_nodes": self.scene_state.count_estimate.committed_node_count,
                     }
                 )
                 # Serialize graph properly
@@ -167,6 +177,10 @@ class Runner:
 
                 "last_plan_accepted_actions": (
                     self.scene_state.last_plan_accepted_actions
+                ),
+
+                "last_plan_action_ids": list(
+                    self.scene_state.last_plan_action_ids
                 ),
 
                 "belief_classes": list(
@@ -214,6 +228,15 @@ class Runner:
             self.scene_state.belief_classes
             if self._uses_canonical_m8_policy()
             else None
+        )
+
+    def _estimate_count(self):
+        return CountEstimator.estimate(
+            self.scene_state.graph,
+            self.target_class,
+            target_commit_threshold=(
+                self.config.belief.target_count_commit_threshold
+            ),
         )
 
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
@@ -308,6 +331,7 @@ class Runner:
                         )
                     self.state = RunnerState.CLEANUP
                 else:
+                    self._pending_replan_reason = "ACTION_BANK_EXHAUSTED"
                     self.state = RunnerState.REPLAN
                 return
                 
@@ -381,7 +405,7 @@ class Runner:
             new_nodes_count = 0
             
             # Compute pre-update stats for logging
-            pre_count = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            pre_count = self._estimate_count()
             pre_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
             # 5-8. Associate, Create Nodes, Update Beliefs
@@ -417,7 +441,7 @@ class Runner:
                     )
 
             # Recompute soft count and variance
-            self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            self.scene_state.count_estimate = self._estimate_count()
             
             post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
@@ -460,7 +484,9 @@ class Runner:
                 self.scene_state.discovery_state.record_discovery_gain(
                     new_nodes_count,
                     [n.node_id for n in assoc_result.new_nodes],
-                    plateau_window=self.config.replanning.discovery_plateau_steps + 1,
+                    plateau_window=max(
+                        1, self.config.replanning.discovery_plateau_steps
+                    ),
                 )
             if self.recorder:
                 self.recorder.record_discovery_state_updated(self.scene_state.discovery_state.to_dict())
@@ -482,13 +508,17 @@ class Runner:
             # Check replanning
             should_replan, replan_reason = self.replanning_policy.should_replan(self.scene_state, self.config)
             if should_replan:
+                self._pending_replan_reason = replan_reason
                 self.state = RunnerState.REPLAN
             else:
                 self.state = RunnerState.GLOBAL_SENSING
                 
         elif self.state == RunnerState.REPLAN:
             if self.recorder:
-                self.recorder.record_replan_triggered("REPLAN_POLICY_TRUE")
+                self.recorder.record_replan_triggered(
+                    self._pending_replan_reason or "ACTION_BANK_EXHAUSTED"
+                )
+            self._pending_replan_reason = None
             self._request_replan()
                 
         elif self.state == RunnerState.CLEANUP_DECISION:
@@ -628,7 +658,7 @@ class Runner:
             pre_count = self.scene_state.count_estimate
             pre_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
-            self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+            self.scene_state.count_estimate = self._estimate_count()
             post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
             if self.recorder:
@@ -824,6 +854,9 @@ class Runner:
             
         self._freeze_confounder_labels(planner_output)
         self.scene_state.last_plan_accepted_actions = len(new_entries)
+        self.scene_state.last_plan_action_ids = [
+            entry.action.action_id for entry in new_entries
+        ]
         if self.recorder:
             invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
             invalid_total += len(self.bank_generator.last_rejections)
@@ -887,6 +920,9 @@ class Runner:
             
         self._freeze_confounder_labels(planner_output)
         self.scene_state.last_plan_accepted_actions = len(new_entries)
+        self.scene_state.last_plan_action_ids = [
+            entry.action.action_id for entry in new_entries
+        ]
         if self.recorder:
             invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
             invalid_total += len(self.bank_generator.last_rejections)
@@ -905,6 +941,19 @@ class Runner:
         qwen_exhausted = self.scene_state.budget.qwen_calls >= self.config.budget.max_qwen_calls
         replans_exhausted = self.scene_state.replans_executed >= self.config.replanning.max_replans
         strict_m8 = self._uses_canonical_m8_policy()
+
+        if (
+            strict_m8
+            and self.scene_state.replans_executed > 0
+            and self.scene_state.actions_since_replan > 0
+            and not self._last_plan_had_marginal_value()
+        ):
+            # The preceding replan was measured and produced no new discovery
+            # or useful discrimination.  Another expensive Qwen call would be
+            # based on no materially improved scene state.
+            self.scene_state.set_stop_reason(StopReason.LOW_MARGINAL_UTILITY)
+            self.state = RunnerState.CLEANUP
+            return
 
         if qwen_exhausted or replans_exhausted:
             best_entry = self._choose_best_action()
@@ -939,7 +988,10 @@ class Runner:
             return
 
         self.evidence_pack = self.replan_evidence_builder.build(
-            self.scene_state, self.image, assets_dir=self.config.assets_dir
+            self.scene_state,
+            self.image,
+            assets_dir=self.config.assets_dir,
+            config=self.config,
         )
         self._execute_replan()
         if strict_m8 and self.scene_state.last_plan_accepted_actions == 0:
@@ -947,6 +999,60 @@ class Runner:
             self.state = RunnerState.CLEANUP
         else:
             self.state = RunnerState.GLOBAL_SENSING
+
+    def _last_plan_had_marginal_value(self) -> bool:
+        """Return true unless every latest-plan action is measured as useless."""
+        action_ids = set(self.scene_state.last_plan_action_ids or [])
+        if not action_ids:
+            return False
+
+        measured_ids = set()
+        for record in self.scene_state.semantic_memory.records.values():
+            recorded_action_ids = list(
+                getattr(record, "action_ids_by_execution", []) or []
+            )
+            for index, action_id in enumerate(recorded_action_ids):
+                if action_id not in action_ids:
+                    continue
+                measured_ids.add(action_id)
+                families = list(
+                    getattr(record, "families_by_execution", []) or []
+                )
+                family = families[index] if index < len(families) else getattr(
+                    record.family, "value", record.family
+                )
+                if getattr(family, "value", family) == ActionFamily.DISCOVERY.value:
+                    gains = record.new_nodes_by_execution
+                    if index < len(gains) and gains[index] > (
+                        self.config.stopping.discovery_saturation_threshold
+                    ):
+                        return True
+                else:
+                    effects = record.realized_discrimination_proxy_by_execution
+                    variance = record.variance_change_by_execution
+                    entropy_gain = effects[index] if index < len(effects) else 0.0
+                    variance_gain = (
+                        max(0.0, -variance[index])
+                        if index < len(variance)
+                        else 0.0
+                    )
+                    if max(entropy_gain, variance_gain) > (
+                        self.config.stopping.utility_min_threshold
+                    ):
+                        return True
+
+        # An unexecuted action whose utility has not yet been measured is still
+        # potentially useful.  Evaluated below-threshold entries are not.
+        for entry in self.scene_state.action_bank.entries:
+            if entry.action.action_id not in action_ids or entry.executed:
+                continue
+            if entry.total_utility is None or entry.total_utility >= (
+                self.config.stopping.utility_min_threshold
+            ):
+                return True
+            measured_ids.add(entry.action.action_id)
+
+        return measured_ids != action_ids
 
     def _choose_best_action(self):
         """Recompute utility for all unexecuted actions and return the best."""
@@ -1064,5 +1170,5 @@ class Runner:
         if not self.scene_state:
             return 0.0
             
-        self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
+        self.scene_state.count_estimate = self._estimate_count()
         return self.scene_state.count_estimate.mean_count

@@ -237,8 +237,29 @@ def load_m8_config(args, config_path="configs/m8_real_smoke.json") -> M8Deployme
                 v4_kwargs["belief"] = BeliefConfig(**data["belief"])
             if "association" in data:
                 v4_kwargs["association"] = AssociationConfig(**data["association"])
+            if "action_selection" in data:
+                v4_kwargs["action_selection"] = ActionSelectionConfig(
+                    **data["action_selection"]
+                )
                 
-            allowed = {"sam3_model", "qwen_model", "qwen_base_url", "require_cuda", "compile_sam3", "budget", "tiling", "cleanup", "replanning", "bootstrap", "belief", "association", "seed", "output_root", "pilot_sample_limit"}
+            allowed = {
+                "sam3_model",
+                "qwen_model",
+                "qwen_base_url",
+                "require_cuda",
+                "compile_sam3",
+                "budget",
+                "tiling",
+                "cleanup",
+                "replanning",
+                "bootstrap",
+                "belief",
+                "association",
+                "action_selection",
+                "seed",
+                "output_root",
+                "pilot_sample_limit",
+            }
             for k, v in data.items():
                 if k not in allowed:
                     raise ValueError(f"Unknown config key: {k}")

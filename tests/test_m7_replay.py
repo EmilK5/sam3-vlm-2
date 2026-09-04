@@ -6,14 +6,17 @@ from sam3_vlm.pipeline.runner import Runner
 from sam3_vlm.logging.writer import RunRecorder
 from sam3_vlm.logging.artifacts import RunArtifactPaths
 from sam3_vlm.logging.schema import RunManifest
-from sam3_vlm.core.config import V4Config
+from sam3_vlm.core.config import BeliefConfig, V4Config
 from sam3_vlm.models.sam3 import MockSAM3Adapter
 from sam3_vlm.models.qwen import MockQwenPlanner
 
 from sam3_vlm.logging.replay import ReplayEngine
 
 def test_replay_engine():
-    config = V4Config(budget=__import__('sam3_vlm').core.config.BudgetConfig(max_sam3_calls=5))
+    config = V4Config(
+        budget=__import__('sam3_vlm').core.config.BudgetConfig(max_sam3_calls=5),
+        belief=BeliefConfig(target_count_commit_threshold=0.9),
+    )
     
     # We want to use MockSAM3Adapter to yield the same synthetic detection
     # during both global and tiled phases, forcing the 'match existing node' path.

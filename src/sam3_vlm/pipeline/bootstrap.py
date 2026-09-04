@@ -198,7 +198,9 @@ class BootstrapPipeline:
         state.discovery_state.record_discovery_gain(
             len(result.new_nodes),
             [node.node_id for node in result.new_nodes],
-            plateau_window=self.config.replanning.discovery_plateau_steps + 1,
+            plateau_window=max(
+                1, self.config.replanning.discovery_plateau_steps
+            ),
         )
         state.semantic_memory.record_execution(
             action,
@@ -406,6 +408,13 @@ class BootstrapPipeline:
                 "active_nodes": len(state.graph.active_nodes()),
                 "tiled_bootstrap_executed": tiled_executed,
                 "coverage_ratio": state.discovery_state.spatial_coverage.coverage_ratio,
+                "discovery_saturated": state.discovery_state.saturated,
+                "plateau_score": state.discovery_state.plateau_score,
+                "tried_sam3_prompts": [
+                    prompt
+                    for record in state.semantic_memory.records.values()
+                    for prompt in record.prompts
+                ],
                 "search_region": state.search_region.bbox().as_tuple(),
                 "search_region_locked": state.search_region_locked,
                 "search_region_source": state.search_region_source,

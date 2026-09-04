@@ -137,6 +137,7 @@ class ReplayEngine:
             "replans_executed",
             "actions_since_replan",
             "last_plan_accepted_actions",
+            "last_plan_action_ids",
             "last_replan_evidence_iteration",
             "search_region_locked",
             "search_region_source",
@@ -348,9 +349,13 @@ class ReplayEngine:
                     node_created_event=EventKind.NODE_CREATED.value,
                 )
 
+        belief_config = (self.manifest.v4_config or {}).get("belief", {})
         state.count_estimate = CountEstimator.estimate(
             state.graph,
             state.target_class,
+            target_commit_threshold=belief_config.get(
+                "target_count_commit_threshold"
+            ),
         )
 
         return state
@@ -392,6 +397,16 @@ def canonical_scene_state(state: SceneState) -> dict:
             if state.count_estimate
             else 0.0
         ),
+        "raw_soft_count": (
+            state.count_estimate.raw_soft_count
+            if state.count_estimate
+            else 0.0
+        ),
+        "committed_node_count": (
+            state.count_estimate.committed_node_count
+            if state.count_estimate
+            else 0
+        ),
         "stop_reason": (
             state.stop_reason.value
             if state.stop_reason
@@ -412,6 +427,11 @@ def canonical_scene_state(state: SceneState) -> dict:
     if hasattr(state, "last_plan_accepted_actions"):
         result["last_plan_accepted_actions"] = (
             state.last_plan_accepted_actions
+        )
+
+    if hasattr(state, "last_plan_action_ids"):
+        result["last_plan_action_ids"] = list(
+            state.last_plan_action_ids or []
         )
 
     if hasattr(state, "search_region"):

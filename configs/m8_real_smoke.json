@@ -31,7 +31,12 @@
     "tiled_nms_iom_threshold": 0.9
   },
   "belief": {
-    "num_confounders": 2
+    "num_confounders": 2,
+    "target_count_commit_threshold": 0.9
+  },
+  "action_selection": {
+    "recent_zero_gain_penalty": 0.5,
+    "ineffective_discrimination_scale": 0.25
   },
   "cleanup": {
     "cleanup_min_utility": 0.05

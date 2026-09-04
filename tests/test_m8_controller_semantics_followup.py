@@ -18,6 +18,7 @@ from sam3_vlm.planning.qwen_planner import PlannerOutput, ProposedAction
 from sam3_vlm.scene.belief import SemanticMemory
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.state import SceneState
+from sam3_vlm.sensing.action import SensingAction
 
 
 class _NoopPlanner:
@@ -118,6 +119,36 @@ def test_strict_m8_zero_gain_zero_utility_still_penalizes_history():
     generator = ActionBankGenerator()
 
     entries = generator.generate_entries(
+        PlannerOutput(proposed_actions=[_target_proposal("occluded green fruit")]),
+        memory,
+        ActionBank(),
+        IDGenerator(),
+        config=V4Config(),
+        enforce_qwen_contract=True,
+        allowed_belief_classes=["target", "confounder1", "confounder2"],
+    )
+
+    assert len(entries) == 1
+    assert entries[0].qwen_priority == pytest.approx(0.08)
+
+
+def test_strict_m8_discovery_priority_ignores_discrimination_from_zero_gain():
+    memory = SemanticMemory()
+    action = SensingAction(
+        action_id="a1",
+        semantic_key="target",
+        prompt="shaded green fruit",
+        family=ActionFamily.DISCOVERY,
+        correlation_group="target",
+    )
+    memory.record_execution(
+        action,
+        "sam1",
+        new_nodes=0,
+        realized_discrimination_proxy=0.8,
+    )
+
+    entries = ActionBankGenerator().generate_entries(
         PlannerOutput(proposed_actions=[_target_proposal("occluded green fruit")]),
         memory,
         ActionBank(),

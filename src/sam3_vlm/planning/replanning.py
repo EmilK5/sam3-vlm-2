@@ -6,6 +6,17 @@ from sam3_vlm.scene.state import SceneState
 from sam3_vlm.sensing.evidence import ContactSheetBuilder, QwenEvidencePack
 
 
+def discovery_is_plateaued(state: SceneState, config: V4Config) -> bool:
+    """Return the controller's rolling zero-gain discovery decision."""
+    plateau_steps = max(1, config.replanning.discovery_plateau_steps)
+    recent = state.discovery_state.recent_new_node_counts
+    return (
+        len(recent) >= plateau_steps
+        and sum(recent[-plateau_steps:])
+        <= config.stopping.discovery_saturation_threshold
+    )
+
+
 class ReplanningPolicy:
     """Determines when Qwen should be called based on scene state."""
 
@@ -34,16 +45,13 @@ class ReplanningPolicy:
 
         # 3. Discovery plateau with high uncertainty
         # Plateau: recent_new_node_counts sum is low
-        plateau_steps = config.replanning.discovery_plateau_steps
-        if len(state.discovery_state.recent_new_node_counts) >= plateau_steps:
-            rolling_sum = sum(state.discovery_state.recent_new_node_counts[-plateau_steps:])
-            if rolling_sum <= config.stopping.discovery_saturation_threshold:
-                # We have a plateau. Is there still high uncertainty?
-                entropy = sum(n.class_belief.entropy for n in state.graph.active_nodes())
-                if entropy > config.replanning.unresolved_entropy_threshold:
-                    return True, "DISCOVERY_PLATEAU_WITH_UNCERTAINTY"
-                if state.count_estimate.variance > config.replanning.count_variance_threshold:
-                    return True, "DISCOVERY_PLATEAU_WITH_COUNT_VARIANCE"
+        if discovery_is_plateaued(state, config):
+            # We have a plateau. Is there still high uncertainty?
+            entropy = sum(n.class_belief.entropy for n in state.graph.active_nodes())
+            if entropy > config.replanning.unresolved_entropy_threshold:
+                return True, "DISCOVERY_PLATEAU_WITH_UNCERTAINTY"
+            if state.count_estimate.variance > config.replanning.count_variance_threshold:
+                return True, "DISCOVERY_PLATEAU_WITH_COUNT_VARIANCE"
 
         return False, None
 
@@ -54,7 +62,17 @@ class ReplanEvidenceBuilder:
     def __init__(self, contact_sheet_builder: ContactSheetBuilder):
         self.contact_sheet_builder = contact_sheet_builder
 
-    def build(self, state: SceneState, image: Any = None, assets_dir: str = "assets") -> QwenEvidencePack:
+    @staticmethod
+    def _value_at(values, index, default):
+        return values[index] if index < len(values) else default
+
+    def build(
+        self,
+        state: SceneState,
+        image: Any = None,
+        assets_dir: str = "assets",
+        config: Optional[V4Config] = None,
+    ) -> QwenEvidencePack:
         # Build contact sheet from current graph
         contact_sheet = self.contact_sheet_builder.build_contact_sheet(
             graph=state.graph,
@@ -68,20 +86,110 @@ class ReplanEvidenceBuilder:
 
         # Build compact semantic history summary
         history_lines = ["=== SEMANTIC HISTORY ==="]
+        tried_prompts = []
         for key, record in state.semantic_memory.records.items():
             if record.execution_count > 0:
-                avg_ent = sum(record.entropy_change_by_execution) / record.execution_count
-                avg_var = sum(record.variance_change_by_execution) / record.execution_count
-                avg_disc = sum(record.realized_discrimination_proxy_by_execution) / record.execution_count
-                history_lines.append(
-                    f"- group='{key}': execs={record.execution_count}, nodes_found={sum(record.new_nodes_by_execution)}, "
-                    f"affected={sum(record.affected_nodes_by_execution)}, "
-                    f"avg_ent_delta={avg_ent:.2f}, avg_var_delta={avg_var:.2f}, avg_disc={avg_disc:.2f}, "
-                    f"avg_util={sum(record.realized_utility_by_execution)/record.execution_count:.2f}"
+                tried_prompts.extend(
+                    prompt
+                    for prompt in record.prompts
+                    if prompt not in tried_prompts
                 )
+                avg_ent = (
+                    sum(record.entropy_change_by_execution)
+                    / record.execution_count
+                )
+                avg_var = (
+                    sum(record.variance_change_by_execution)
+                    / record.execution_count
+                )
+                avg_disc = (
+                    sum(record.realized_discrimination_proxy_by_execution)
+                    / record.execution_count
+                )
+                avg_util = (
+                    sum(record.realized_utility_by_execution)
+                    / record.execution_count
+                )
+                history_lines.append(
+                    f"- group='{key}': executions={record.execution_count}; "
+                    f"tried_prompts={record.prompts!r}; "
+                    f"nodes_found={sum(record.new_nodes_by_execution)}; "
+                    f"affected={sum(record.affected_nodes_by_execution)}; "
+                    f"avg_ent_delta={avg_ent:.2f}; "
+                    f"avg_var_delta={avg_var:.2f}; "
+                    f"avg_disc={avg_disc:.2f}; avg_util={avg_util:.2f}"
+                )
+                prompts = list(
+                    getattr(record, "prompts_by_execution", []) or []
+                )
+                semantic_keys = list(
+                    getattr(record, "semantic_keys_by_execution", []) or []
+                )
+                families = list(
+                    getattr(record, "families_by_execution", []) or []
+                )
+                spatial_modes = list(
+                    getattr(record, "spatial_modes_by_execution", []) or []
+                )
+                for index in range(record.execution_count):
+                    prompt = self._value_at(
+                        prompts,
+                        index,
+                        record.prompts[index]
+                        if index < len(record.prompts)
+                        else "unknown",
+                    )
+                    semantic_key = self._value_at(
+                        semantic_keys,
+                        index,
+                        record.semantic_keys[0]
+                        if record.semantic_keys
+                        else key,
+                    )
+                    family = self._value_at(
+                        families,
+                        index,
+                        getattr(record.family, "value", record.family),
+                    )
+                    spatial_mode = self._value_at(
+                        spatial_modes,
+                        index,
+                        "UNKNOWN",
+                    )
+                    new_nodes = self._value_at(
+                        record.new_nodes_by_execution, index, 0
+                    )
+                    affected = self._value_at(
+                        record.affected_nodes_by_execution, index, 0
+                    )
+                    entropy_delta = self._value_at(
+                        record.entropy_change_by_execution, index, 0.0
+                    )
+                    variance_delta = self._value_at(
+                        record.variance_change_by_execution, index, 0.0
+                    )
+                    discrimination = self._value_at(
+                        record.realized_discrimination_proxy_by_execution,
+                        index,
+                        0.0,
+                    )
+                    history_lines.append(
+                        f"  execution[{index + 1}]: semantic_key={semantic_key!r}; "
+                        f"sam3_prompt={prompt!r}; family={getattr(family, 'value', family)}; "
+                        f"spatial_mode={getattr(spatial_mode, 'value', spatial_mode)}; "
+                        f"new_nodes={new_nodes}; affected_nodes={affected}; "
+                        f"entropy_delta={float(entropy_delta):.6f}; "
+                        f"variance_delta={float(variance_delta):.6f}; "
+                        f"discrimination_proxy={float(discrimination):.6f}"
+                    )
         
         scene_summary = "\n".join(history_lines) if len(history_lines) > 1 else "No semantic history yet."
 
+        saturated = (
+            discovery_is_plateaued(state, config)
+            if config is not None
+            else bool(state.discovery_state.saturated)
+        )
         pack = QwenEvidencePack(
             original_image_id=state.image_id,
             user_prompt=state.user_prompt,
@@ -93,6 +201,9 @@ class ReplanEvidenceBuilder:
                 "recent_new_nodes_count": len(state.discovery_state.recent_new_nodes),
                 "recent_new_node_counts": list(state.discovery_state.recent_new_node_counts),
                 "coverage_ratio": state.discovery_state.spatial_coverage.coverage_ratio,
+                "discovery_saturated": saturated,
+                "plateau_score": state.discovery_state.plateau_score,
+                "tried_sam3_prompts": tried_prompts,
                 "unresolved_entropy": sum(n.class_belief.entropy for n in state.graph.active_nodes()),
                 "count_variance": state.count_estimate.variance,
                 "search_region": state.search_region.bbox().as_tuple() if state.search_region else None,

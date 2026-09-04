@@ -150,6 +150,24 @@ class RealQwenPlanner:
                 f"- Existing confounder slot mapping is FROZEN: {existing_mapping}. "
                 "Do not rename/reorder those slots on replanning.\n"
             )
+        tried_prompts = list(
+            evidence_pack.discovery_diagnostics.get(
+                "tried_sam3_prompts", []
+            )
+            or []
+        )
+        if tried_prompts:
+            text += (
+                f"- EXACT PROMPT BLACKLIST: {tried_prompts}. Never propose any "
+                "of these SAM3 prompts again, even with a different spatial mode.\n"
+            )
+        if evidence_pack.discovery_diagnostics.get("discovery_saturated", False):
+            text += (
+                "- DISCOVERY IS SATURATED: do not propose further DISCOVERY "
+                "variants for the target. Propose only a genuinely useful "
+                "VERIFICATION or CONFOUNDER experiment; return an empty "
+                "proposed_actions list if none remains.\n"
+            )
         text += (
             "\nReturn JSON:\n"
             "{\n"

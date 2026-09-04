@@ -48,7 +48,11 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
         user_prompt="find target",
         target_class="target",
         image_path=img1_path,
-        contact_sheet=ContactSheet(crops=[], total_candidates=0, contact_sheet_image_path=img2_path)
+        contact_sheet=ContactSheet(crops=[], total_candidates=0, contact_sheet_image_path=img2_path),
+        discovery_diagnostics={
+            "discovery_saturated": True,
+            "tried_sam3_prompts": ["green fruit", "shadowed green fruit"],
+        },
     )
     
     planner.plan_scene(pack, BudgetState(), V4Config())
@@ -70,6 +74,9 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     assert len(content) == 3
     assert content[0]["type"] == "text"
     assert "find target" in content[0]["text"]
+    assert "EXACT PROMPT BLACKLIST" in content[0]["text"]
+    assert "shadowed green fruit" in content[0]["text"]
+    assert "DISCOVERY IS SATURATED" in content[0]["text"]
     
     assert content[1]["type"] == "image_url"
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
@@ -130,5 +137,4 @@ def test_qwen_payload_unsupported_mime(mock_openai_client, tmp_path):
     
     with pytest.raises(ValueError, match="Unsupported image extension for Qwen: .bmp"):
         planner.plan_scene(evidence, BudgetState(), V4Config())
-
 

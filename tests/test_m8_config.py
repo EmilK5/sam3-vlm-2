@@ -1,6 +1,5 @@
 import pytest
 import json
-import os
 from sam3_vlm.experiments.m8_smoke import load_m8_config, M8DeploymentConfig
 
 class DummyArgs:
@@ -16,7 +15,8 @@ def test_load_m8_config_precedence(tmp_path, monkeypatch):
         "seed": 100,
         "pilot_sample_limit": 5,
         "budget": {"max_qwen_calls": 2},
-        "tiling": {"grid_rows": 4}
+        "tiling": {"grid_rows": 4},
+        "action_selection": {"recent_zero_gain_penalty": 0.75},
     }
 
     monkeypatch.setenv("QWEN_MODEL", "env_qwen")
@@ -40,11 +40,9 @@ def test_load_m8_config_precedence(tmp_path, monkeypatch):
     
     assert cfg.v4_config.budget.max_qwen_calls == 2
     assert cfg.v4_config.tiling.grid_rows == 4
+    assert cfg.v4_config.action_selection.recent_zero_gain_penalty == pytest.approx(0.75)
     assert cfg.v4_config.device == "cpu"
     
-    del os.environ["QWEN_MODEL"]
-    del os.environ["QWEN_BASE_URL"]
-
 def test_load_m8_config_invalid_key(tmp_path):
     config_dict = {
         "budget": {"max_qwen_calls": 10},
@@ -67,3 +65,10 @@ def test_load_m8_config_missing_file():
     assert cfg.require_cuda is True
     assert cfg.sam3_model == "facebook/sam3"
     assert cfg.pilot_sample_limit == 10
+
+
+def test_real_m8_config_enables_conservative_count_commitment(monkeypatch):
+    monkeypatch.delenv("QWEN_MODEL", raising=False)
+    monkeypatch.delenv("QWEN_BASE_URL", raising=False)
+    cfg = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
+    assert cfg.v4_config.belief.target_count_commit_threshold == pytest.approx(0.9)
