@@ -149,7 +149,7 @@ class Runner:
                     controller_runtime_ms=self.scene_state.budget.controller_runtime_ms,
                     number_of_replans=self.scene_state.replans_executed,
                     discovery_statistics={
-                        "coverage_ratio": getattr(self.scene_state.discovery_state.spatial_coverage, "coverage_ratio", 0.0) if hasattr(self.scene_state.discovery_state, "spatial_coverage") else 0.0,
+                        "coverage_ratio": self.scene_state.discovery_state.spatial_coverage.coverage_ratio,
                         "saturated": discovery_is_plateaued(
                             self.scene_state, self.config
                         ),
@@ -238,12 +238,10 @@ class Runner:
         )
 
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
-        from sam3_vlm.core.types import SpatialMode
         if action.spatial_mode == SpatialMode.TILED:
             if action.tiling:
                 return action.tiling.grid_rows * action.tiling.grid_cols
-            else:
-                return self.config.tiling.grid_rows * self.config.tiling.grid_cols
+            return self.config.tiling.grid_rows * self.config.tiling.grid_cols
         return 0
 
     def _check_hard_budgets(self, predicted_tiles: int = 0) -> Optional[StopReason]:
@@ -371,35 +369,7 @@ class Runner:
             budget.total_runtime_ms += observation.runtime_ms
             
             if self.recorder:
-                mask_artifacts = []
-                for det in observation.detections:
-                    if "mask" in det.raw_metadata:
-                        art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
-                        det.mask_artifact = art_ref["relative_path"]
-                        mask_artifacts.append(art_ref)
-                
-                # Save comprehensive detection metadata
-                compact_detections = []
-                for det in observation.detections:
-                    box = det.geometry.bbox()
-                    compact_detections.append({
-                        "detection_id": det.detection_id,
-                        "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
-                        "score": det.score,
-                        "source_tile_id": getattr(det, 'source_tile_id', None),
-                        "mask_artifact": getattr(det, 'mask_artifact', None)
-                    })
-
-                self.recorder.record_sam3_action_completed(
-                    action.action_id, observation.call_id,
-                    {
-                        "num_detections": len(observation.detections), 
-                        "runtime_ms": observation.runtime_ms, 
-                        "mask_artifacts": mask_artifacts,
-                        "searched_regions": [{"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space} for r in observation.searched_regions] if hasattr(observation, 'searched_regions') else [],
-                        "detections": compact_detections
-                    }
-                )
+                self.recorder.record_sam3_observation(action, observation)
                 self.recorder.record_budget_updated(budget.__dict__)
             
             new_nodes_count = 0
@@ -470,7 +440,6 @@ class Runner:
                 realized_discrimination_proxy=discrimination_proxy,
             )
             if self.recorder:
-                import dataclasses
                 records_dict = {k: dataclasses.asdict(v) for k, v in self.scene_state.semantic_memory.records.items()}
                 self.recorder.record_semantic_memory_updated({"records": records_dict})
             
@@ -534,7 +503,7 @@ class Runner:
                 self.state = RunnerState.FINALIZE
                 return
                 
-            max_cleanup_calls = getattr(self.config.budget, "max_cleanup_calls", 5)
+            max_cleanup_calls = self.config.budget.max_cleanup_calls
             if max_cleanup_calls <= 0 and self._uses_canonical_m8_policy():
                 # In real M8 cleanup can be deliberately disabled; that is not
                 # cleanup budget exhaustion. Frozen generic M6 semantics below
@@ -599,32 +568,9 @@ class Runner:
             self._record_controller_state()
             
             if self.recorder:
-                mask_artifacts = []
-                compact_detections = []
-                for det in observation.detections:
-                    if "mask" in det.raw_metadata:
-                        art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
-                        det.mask_artifact = art_ref["relative_path"]
-                        mask_artifacts.append(art_ref)
-                        
-                    box = det.geometry.bbox()
-                    compact_detections.append({
-                        "detection_id": det.detection_id,
-                        "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
-                        "score": det.score,
-                        "source_tile_id": getattr(det, 'source_tile_id', None),
-                        "mask_artifact": getattr(det, 'mask_artifact', None)
-                    })
-                    
-                self.recorder.record_sam3_action_completed(
-                    cleanup_action.action_id, observation.call_id, 
-                    {
-                        "num_detections": len(observation.detections), 
-                        "runtime_ms": observation.runtime_ms, 
-                        "mask_artifacts": mask_artifacts,
-                        "searched_regions": [{"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space} for r in observation.searched_regions] if hasattr(observation, 'searched_regions') else [],
-                        "detections": compact_detections
-                    }
+                self.recorder.record_sam3_observation(
+                    cleanup_action,
+                    observation,
                 )
                 self.recorder.record_cleanup_action_completed(cleanup_action.action_id)
                 self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
@@ -673,7 +619,6 @@ class Runner:
                 realized_discrimination_proxy=max(0.0, pre_entropy - post_entropy)
             )
             if self.recorder:
-                import dataclasses
                 records_dict = {k: dataclasses.asdict(v) for k, v in self.scene_state.semantic_memory.records.items()}
                 self.recorder.record_semantic_memory_updated({"records": records_dict})
                 self.recorder.record_discovery_state_updated(self.scene_state.discovery_state.to_dict())

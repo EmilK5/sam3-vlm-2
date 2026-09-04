@@ -13,7 +13,6 @@ class ValidatorResult:
     valid: bool
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
 
 class RunValidator:
     """Validates structural integrity, provenance, and schemas of an M7 run."""

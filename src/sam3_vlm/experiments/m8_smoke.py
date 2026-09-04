@@ -291,7 +291,7 @@ def OracleHider(paths: RunArtifactPaths):
         if graph_bak.exists():
             shutil.move(graph_bak, graph_path)
 
-def assemble_e2e_runner(
+def _build_run_recorder(
     paths: RunArtifactPaths, config: V4Config, sensor, planner, run_id: str,
     prompt: str, target_class: str, image_id: str, seed: int | None = None,
     experiment_name: str | None = None,
@@ -304,10 +304,33 @@ def assemble_e2e_runner(
     }
     manifest.model_identifiers = {
         "sam3": str(getattr(sensor, "model_id", type(sensor).__name__)),
-        "qwen": str(getattr(planner, "model", type(planner).__name__)),
+        "qwen": (
+            str(getattr(planner, "model", type(planner).__name__))
+            if planner is not None
+            else "none"
+        ),
     }
     manifest.seed = seed
-    recorder = RunRecorder(paths, manifest)
+    return RunRecorder(paths, manifest)
+
+
+def assemble_e2e_runner(
+    paths: RunArtifactPaths, config: V4Config, sensor, planner, run_id: str,
+    prompt: str, target_class: str, image_id: str, seed: int | None = None,
+    experiment_name: str | None = None,
+):
+    recorder = _build_run_recorder(
+        paths,
+        config,
+        sensor,
+        planner,
+        run_id,
+        prompt,
+        target_class,
+        image_id,
+        seed,
+        experiment_name,
+    )
     runner = Runner(config, sensor=sensor, planner=planner, recorder=recorder)
     return runner, recorder
 
@@ -510,229 +533,392 @@ def m8_3_full_run(args):
         logger.error(f"FAIL: M8.3 Full run failed: {e}")
         return False
 
+@dataclasses.dataclass(frozen=True)
+class PilotVariant:
+    name: str
+    config: V4Config
+    uses_qwen: bool
+    count_type: str
+
+
+def _pilot_variants(base: V4Config) -> list[PilotVariant]:
+    no_qwen_budget = dataclasses.replace(
+        base.budget,
+        max_qwen_calls=0,
+        max_cleanup_calls=0,
+    )
+    global_only = dataclasses.replace(
+        base,
+        budget=no_qwen_budget,
+        bootstrap=dataclasses.replace(
+            base.bootstrap,
+            enable_tiled_bootstrap=False,
+            locked_context_prompt=None,
+            enable_pseudoexemplar_refinement=False,
+        ),
+    )
+    sam3_bootstrap = dataclasses.replace(base, budget=no_qwen_budget)
+    one_qwen_round = dataclasses.replace(
+        base,
+        budget=dataclasses.replace(
+            base.budget,
+            max_qwen_calls=1,
+            max_cleanup_calls=0,
+        ),
+        replanning=dataclasses.replace(base.replanning, max_replans=0),
+    )
+    return [
+        PilotVariant(
+            "A_SAM3_Global",
+            global_only,
+            uses_qwen=False,
+            count_type="hard_candidate_count",
+        ),
+        PilotVariant(
+            "B_SAM3_Bootstrap",
+            sam3_bootstrap,
+            uses_qwen=False,
+            count_type="hard_candidate_count",
+        ),
+        PilotVariant(
+            "C_Qwen_OneRound",
+            one_qwen_round,
+            uses_qwen=True,
+            count_type="posterior_count",
+        ),
+        PilotVariant(
+            "D_Qwen_TwoRound",
+            base,
+            uses_qwen=True,
+            count_type="posterior_count",
+        ),
+    ]
+
+
+def _load_pilot_samples(args, limit: int) -> list[dict]:
+    if not args.manifest:
+        raise ValueError("--manifest is required for the pilot experiment")
+
+    with open(args.manifest, "r") as file:
+        samples = json.load(file)
+    if not isinstance(samples, list) or not samples:
+        raise ValueError("pilot manifest must be a non-empty JSON list")
+
+    normalized = []
+    sample_ids = set()
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            raise ValueError(f"pilot sample {index} must be a JSON object")
+        missing = {"sample_id", "image_path", "gt_count"} - set(sample)
+        if missing:
+            raise ValueError(
+                f"pilot sample {index} is missing {sorted(missing)}"
+            )
+
+        sample_id = str(sample["sample_id"]).strip()
+        image_path = str(sample["image_path"]).strip()
+        gt_count = sample["gt_count"]
+        if not sample_id or sample_id in sample_ids:
+            raise ValueError(f"invalid or duplicate sample_id: {sample_id!r}")
+        if not os.path.isfile(image_path):
+            raise ValueError(f"pilot image does not exist: {image_path}")
+        if (
+            isinstance(gt_count, bool)
+            or not isinstance(gt_count, (int, float))
+            or not math.isfinite(float(gt_count))
+            or float(gt_count) < 0
+            or not float(gt_count).is_integer()
+        ):
+            raise ValueError(
+                f"pilot gt_count for {sample_id!r} must be a non-negative integer"
+            )
+
+        sample_ids.add(sample_id)
+        normalized.append(
+            {
+                "sample_id": sample_id,
+                "image_path": image_path,
+                "target": str(sample.get("target") or args.target).strip(),
+                "gt_count": int(gt_count),
+            }
+        )
+
+    return normalized[:limit]
+
+
+def _run_sam3_baseline(
+    *,
+    paths: RunArtifactPaths,
+    config: V4Config,
+    sensor,
+    run_id: str,
+    prompt: str,
+    image_id: str,
+    image,
+    seed: int,
+    experiment_name: str,
+):
+    recorder = _build_run_recorder(
+        paths,
+        config,
+        sensor,
+        None,
+        run_id,
+        prompt,
+        "target",
+        image_id,
+        seed,
+        experiment_name,
+    )
+    start = time.perf_counter()
+    try:
+        recorder.record_run_started()
+        recorder.record_bootstrap_started()
+        result = BootstrapPipeline(
+            sensor,
+            config=config,
+            recorder=recorder,
+        ).execute_bootstrap(
+            image_id=image_id,
+            image=image,
+            user_prompt=prompt,
+            target_class="target",
+        )
+        state = result.state
+        count = float(len(state.graph.active_nodes()))
+        recorder.record_bootstrap_completed(len(state.graph.active_nodes()))
+        recorder.record_stop_decided("SAM3_BASELINE_COMPLETE")
+
+        wall_ms = (time.perf_counter() - start) * 1000.0
+        budget = state.budget
+        budget.wall_runtime_ms = wall_ms
+        budget.controller_runtime_ms = max(
+            0.0,
+            wall_ms - budget.sam3_runtime_ms,
+        )
+        budget.total_runtime_ms = max(
+            budget.total_runtime_ms,
+            wall_ms,
+            budget.sam3_runtime_ms,
+        )
+        recorder.record_budget_updated(budget.__dict__)
+        summary = RunSummary(
+            run_id=run_id,
+            final_soft_count=count,
+            count_variance=0.0,
+            final_stop_reason="SAM3_BASELINE_COMPLETE",
+            node_count=len(state.graph.nodes),
+            sam3_calls=budget.sam3_calls,
+            sam3_tiles=budget.sam3_tiles,
+            qwen_calls=0,
+            cleanup_calls=0,
+            runtime_ms=wall_ms,
+            wall_runtime_ms=wall_ms,
+            sam3_runtime_ms=budget.sam3_runtime_ms,
+            qwen_runtime_ms=0.0,
+            controller_runtime_ms=budget.controller_runtime_ms,
+            number_of_replans=0,
+            discovery_statistics={
+                "coverage_ratio": state.discovery_state.spatial_coverage.coverage_ratio,
+                "saturated": state.discovery_state.saturated,
+                "candidate_count": int(count),
+            },
+        )
+        recorder.finalize_success(summary, state.graph.to_dict())
+        return count, state
+    except Exception as exc:
+        recorder.record_run_failed(str(exc))
+        raise
+
+
 def m8_4_and_5_pilot(args):
-    logger.info("=== M8.4 & M8.5 Small Multi-Image Pilot ===")
+    logger.info("=== M8.4 & M8.5 Five-Image Variant Comparison ===")
     dep = load_m8_config(args)
-    
-    samples = []
-    if args.manifest:
-        with open(args.manifest, "r") as f: samples = json.load(f)
-    elif os.path.isdir(args.image):
-        import glob
-        for p in glob.glob(os.path.join(args.image, "*.jpg")):
-            samples.append({"sample_id": os.path.basename(p), "image_path": p, "target": args.target})
-    else:
-        samples = [{"sample_id": os.path.basename(args.image), "image_path": args.image, "target": args.target}]
-        
-    samples = samples[:dep.pilot_sample_limit]
-    if not samples:
-        logger.error("No images found for pilot.")
+    variants = _pilot_variants(dep.v4_config)
+    try:
+        samples = _load_pilot_samples(args, dep.pilot_sample_limit)
+    except Exception as exc:
+        logger.error(f"FAIL: Invalid pilot manifest: {exc}")
         return False
-        
+
     if args.dry_run:
-        logger.info(f"Dry run: Skipping execution of {len(samples)} samples.")
+        logger.info(
+            "Dry run: %d samples x %d variants (%d runs).",
+            len(samples),
+            len(variants),
+            len(samples) * len(variants),
+        )
         return True
-        
+
     try:
         sam3, qwen = _get_models(args)
-    except Exception as e:
-        logger.error(f"FAIL: Models missing for pilot: {e}")
+    except Exception as exc:
+        logger.error(f"FAIL: Models missing for pilot: {exc}")
         return False
-        
-    base_config = dep.v4_config
-    
-    variants = {
-        "A_OneShot": "A_OneShot",
-        "B_FixedBank": dataclasses.replace(
-            base_config,
-            replanning=dataclasses.replace(
-                base_config.replanning,
-                max_replans=0,
-            ),
-        ),
-        "C_V4_NoExemplarCleanup": base_config
-    }
-    
-    pilot_success = True
+
     report = {
         "metadata": {
             "experiment": "M8_Pilot",
             "target": args.target,
+            "sample_count": len(samples),
             "resolved_config": dataclasses.asdict(dep.v4_config),
-            "variants": ["A_OneShot", "B_FixedBank", "C_V4_NoExemplarCleanup"]
+            "variants": [variant.name for variant in variants],
+            "variant_configs": {
+                variant.name: dataclasses.asdict(variant.config)
+                for variant in variants
+            },
         },
         "samples": [],
-        "aggregates": {}
+        "aggregates": {},
     }
-    
-    for var_name, config in variants.items():
-        logger.info(f"\n--- Running Variant: {var_name} ---")
+    pilot_success = True
+
+    for variant in variants:
+        logger.info(f"\n--- Running Variant: {variant.name} ---")
         metrics_list = []
         for sample in samples:
-            img_path = sample["image_path"]
-            img_name = sample["sample_id"]
-            prompt = sample.get("target", args.target)
-            gt_count = sample.get("gt_count")
-            
-            logger.info(f"Processing {img_name} [{var_name}]...")
-            run_id = f"pilot_{var_name}_{img_name}_{uuid.uuid4().hex[:6]}"
-            paths = RunArtifactPaths(base_dir=Path(os.path.join(dep.output_root, "pilot", var_name, run_id)))
-            
+            image_id = sample["sample_id"]
+            prompt = sample["target"]
+            gt_count = sample["gt_count"]
+            run_id = f"pilot_{variant.name}_{image_id}_{uuid.uuid4().hex[:6]}"
+            paths = RunArtifactPaths(
+                base_dir=Path(dep.output_root) / "pilot" / variant.name / run_id
+            )
+            run_config = dataclasses.replace(
+                variant.config,
+                assets_dir=str(paths.base_dir / "assets"),
+            )
+            logger.info(f"Processing {image_id} [{variant.name}]...")
+
             try:
-                img_pil = Image.open(img_path).convert("RGB")
-                start_t = time.time()
-                
-                valid_run = True
-                sam3_c, qwen_c, clean_c, rep_c, it_c = 0, 0, 0, 0, 0
-                
-                
-                stop_reason = None
-                validator_status = None
-                replay_status = None
-                sam3_t = 0
-                failure_category = None
-                failure_message = None
-                
-                if var_name == "A_OneShot":
-                    cfg = dataclasses.replace(
-                        base_config,
-                        assets_dir=str(paths.base_dir / "assets"),
-                        bootstrap=dataclasses.replace(
-                            base_config.bootstrap,
-                            enable_tiled_bootstrap=False,
-                            locked_context_prompt=None,
-                            enable_pseudoexemplar_refinement=False,
-                        ),
-                    ) 
-                    manifest = RunManifest(run_id=run_id, user_prompt=prompt, target_class="target", image_id=img_name)
-                    manifest.v4_config = dataclasses.asdict(cfg)
-                    manifest.experiment_config = {"experiment": "M8_Pilot:A_OneShot", "resolved_device": cfg.device}
-                    manifest.model_identifiers = {
-                        "sam3": str(getattr(sam3, "model_id", type(sam3).__name__)),
-                        "qwen": str(getattr(qwen, "model", type(qwen).__name__)),
-                    }
-                    manifest.seed = dep.seed
-                    recorder = RunRecorder(paths, manifest)
-                    
-                    recorder.record_run_started()
-                    pipeline = BootstrapPipeline(sam3, config=cfg, recorder=recorder)
-                    calls_before = getattr(sam3, "call_count", 0)
-                    result = pipeline.execute_bootstrap(image_id=img_name, image=img_pil, user_prompt=prompt, target_class="target")
-                    calls_after = getattr(sam3, "call_count", 1)
-                    count = float(len(result.state.graph.nodes))
-                    sam3_c = calls_after - calls_before
-                    sam3_t = 0
-                    stop_reason = "ONE_SHOT_COMPLETE"
-                    
-                    # Finalize with the same split runtime semantics as full V4 runs.
-                    wall_ms = (time.time() - start_t) * 1000.0
-                    sam3_ms = result.state.budget.sam3_runtime_ms
-                    summary = RunSummary(
-                        run_id=run_id, final_soft_count=count, count_variance=0.0,
-                        node_count=len(result.state.graph.nodes),
-                        sam3_calls=sam3_c, runtime_ms=wall_ms, wall_runtime_ms=wall_ms,
-                        sam3_runtime_ms=sam3_ms, qwen_runtime_ms=0.0,
-                        controller_runtime_ms=max(0.0, wall_ms - sam3_ms),
+                with Image.open(sample["image_path"]) as loaded_image:
+                    image = loaded_image.convert("RGB")
+                start = time.perf_counter()
+
+                if variant.uses_qwen:
+                    runner, _ = assemble_e2e_runner(
+                        paths,
+                        run_config,
+                        sam3,
+                        qwen,
+                        run_id,
+                        prompt,
+                        "target",
+                        image_id,
+                        seed=dep.seed,
+                        experiment_name=f"M8_Pilot:{variant.name}",
                     )
-                    recorder.finalize_success(summary, result.state.graph.to_dict())
-                else:
-                    run_config = dataclasses.replace(
-                        config,
-                        assets_dir=str(paths.base_dir / "assets"),
+                    count = runner.run(
+                        image=image,
+                        user_prompt=prompt,
+                        target_class="target",
+                        image_id=image_id,
                     )
-                    runner, recorder = assemble_e2e_runner(
-                        paths, run_config, sam3, qwen, run_id, prompt, "target", img_name,
-                        seed=dep.seed, experiment_name=f"M8_Pilot:{var_name}",
-                    )
-                    count = runner.run(image=img_pil, user_prompt=prompt, target_class="target", image_id=img_name)
-                    valid_run = _run_validator_and_replay(paths, runner.scene_state)
-                    stop_reason = runner.scene_state.stop_reason.name if runner.scene_state.stop_reason else "UNKNOWN"
-                    sam3_t = runner.scene_state.budget.sam3_tiles
+                    state = runner.scene_state
+                    valid_run = _run_validator_and_replay(paths, state)
                     validator_status = "PASS" if valid_run else "FAIL"
-                    replay_status = "PASS" if valid_run else "FAIL"
-                    
-                runtime = time.time() - start_t
-                
-                # Fetch summary metrics
-                if paths.summary_json.exists():
-                    with open(paths.summary_json) as f:
-                        s = json.load(f)
-                        sam3_c = s.get("sam3_calls", sam3_c)
-                        qwen_c = s.get("qwen_calls", qwen_c)
-                        clean_c = s.get("cleanup_calls", clean_c)
-                        rep_c = s.get("replans_executed", rep_c)
-                        it_c = s.get("iterations", it_c)
-                        
-                total_bytes = sum(f.stat().st_size for f in paths.base_dir.rglob('*') if f.is_file())
-                
-                cm = CountingMetrics(
-                    absolute_error=abs(count - gt_count) if gt_count is not None else 0.0,
-                    signed_error=count - gt_count if gt_count is not None else 0.0,
-                    squared_error=(count - gt_count)**2 if gt_count is not None else 0.0,
-                    relative_error=(abs(count - gt_count)/gt_count) if (gt_count and gt_count > 0) else None,
-                    true_count=gt_count if gt_count is not None else 0,
-                    predicted_count=count,
-                    sam3_calls=sam3_c,
-                    qwen_calls=qwen_c,
-                    cleanup_calls=clean_c,
-                    replans=rep_c,
-                    iterations=it_c,
-                    total_runtime_ms=runtime * 1000,
-                    storage_bytes=total_bytes
+                    replay_status = validator_status
+                else:
+                    count, state = _run_sam3_baseline(
+                        paths=paths,
+                        config=run_config,
+                        sensor=sam3,
+                        run_id=run_id,
+                        prompt=prompt,
+                        image_id=image_id,
+                        image=image,
+                        seed=dep.seed,
+                        experiment_name=f"M8_Pilot:{variant.name}",
+                    )
+                    valid_run = True
+                    validator_status = "NOT_APPLICABLE"
+                    replay_status = "NOT_APPLICABLE"
+
+                runtime_ms = (time.perf_counter() - start) * 1000.0
+                with open(paths.summary_json, "r") as file:
+                    summary = json.load(file)
+
+                sam3_calls = int(summary.get("sam3_calls", 0))
+                sam3_tiles = int(summary.get("sam3_tiles", 0))
+                qwen_calls = int(summary.get("qwen_calls", 0))
+                cleanup_calls = int(summary.get("cleanup_calls", 0))
+                replans = int(summary.get("number_of_replans", 0))
+                total_bytes = sum(
+                    file.stat().st_size
+                    for file in paths.base_dir.rglob("*")
+                    if file.is_file()
                 )
-                metrics_list.append(cm)
-                
-                entry = {
-                    "variant": var_name,
-                    "sample_id": img_name,
-                    "predicted_count": count,
-                    "count_type": "hard_one_shot" if var_name == "A_OneShot" else "posterior",
-                    "gt_count": gt_count,
-                    "runtime_ms": runtime * 1000,
-                    "success": valid_run,
-                    "run_id": run_id,
-                    "storage_bytes": total_bytes,
-                    "sam3_calls": sam3_c,
-                    "sam3_tiles": sam3_t,
-                    "qwen_calls": qwen_c,
-                    "cleanup_calls": clean_c,
-                    "replans": rep_c,
-                    "iterations": it_c,
-                    "stop_reason": stop_reason,
-                    "validator_status": validator_status,
-                    "replay_status": replay_status,
-                    "failure_category": failure_category,
-                    "failure_message": failure_message,
-                    "artifact_directory": str(paths.base_dir),
-                    "experiment_id": "M8_Pilot",
-                    "resolved_config_reference": "m8_real_smoke"
-                }
-                
-                if gt_count is not None:
-                    entry["absolute_error"] = cm.absolute_error
-                    entry["signed_error"] = cm.signed_error
-                    entry["squared_error"] = cm.squared_error
-                    entry["relative_error"] = cm.relative_error
-                    
-                report["samples"].append(entry)
-                if not valid_run: pilot_success = False
-                    
-            except Exception as e:
-                logger.error(f"Error on {img_name}: {e}")
-                report["samples"].append({
-                    "variant": var_name, "sample_id": img_name, "success": False,
-                    "failure_category": "INFRASTRUCTURE_FAILURE",
-                    "failure_message": str(e)
-                })
+                absolute_error = abs(count - gt_count)
+                relative_error = (
+                    absolute_error / gt_count if gt_count > 0 else None
+                )
+                metrics = CountingMetrics(
+                    absolute_error=absolute_error,
+                    signed_error=count - gt_count,
+                    squared_error=(count - gt_count) ** 2,
+                    relative_error=relative_error,
+                    true_count=gt_count,
+                    predicted_count=count,
+                    sam3_calls=sam3_calls,
+                    sam3_tiles=sam3_tiles,
+                    qwen_calls=qwen_calls,
+                    cleanup_calls=cleanup_calls,
+                    replans=replans,
+                    iterations=state.iteration,
+                    total_runtime_ms=runtime_ms,
+                    storage_bytes=total_bytes,
+                )
+                metrics_list.append(metrics)
+                report["samples"].append(
+                    {
+                        "variant": variant.name,
+                        "sample_id": image_id,
+                        "predicted_count": count,
+                        "count_type": variant.count_type,
+                        "gt_count": gt_count,
+                        "absolute_error": absolute_error,
+                        "signed_error": count - gt_count,
+                        "squared_error": (count - gt_count) ** 2,
+                        "relative_error": relative_error,
+                        "runtime_ms": runtime_ms,
+                        "success": valid_run,
+                        "run_id": run_id,
+                        "storage_bytes": total_bytes,
+                        "sam3_calls": sam3_calls,
+                        "sam3_tiles": sam3_tiles,
+                        "qwen_calls": qwen_calls,
+                        "cleanup_calls": cleanup_calls,
+                        "replans": replans,
+                        "iterations": state.iteration,
+                        "stop_reason": summary.get("final_stop_reason"),
+                        "validator_status": validator_status,
+                        "replay_status": replay_status,
+                        "failure_category": None,
+                        "failure_message": None,
+                        "artifact_directory": str(paths.base_dir),
+                    }
+                )
+                pilot_success = pilot_success and valid_run
+            except Exception as exc:
+                logger.error(f"Error on {image_id}: {exc}")
+                report["samples"].append(
+                    {
+                        "variant": variant.name,
+                        "sample_id": image_id,
+                        "success": False,
+                        "failure_category": "INFRASTRUCTURE_FAILURE",
+                        "failure_message": str(exc),
+                    }
+                )
                 pilot_success = False
-                
-        # Calculate agg report
-        agg = aggregate_count_metrics(metrics_list)
-        logger.info(f"Aggregate for {var_name}: {agg}")
-        report["aggregates"][var_name] = agg
-                
-    report_path = os.path.join(dep.output_root, "pilot_report.json")
-    with open(report_path, "w") as f: json.dump(report, f, indent=2)
+
+        aggregate = aggregate_count_metrics(metrics_list)
+        logger.info(f"Aggregate for {variant.name}: {aggregate}")
+        report["aggregates"][variant.name] = aggregate
+
+    report_path = Path(dep.output_root) / "pilot_report.json"
+    with open(report_path, "w") as file:
+        json.dump(report, file, indent=2)
     logger.info(f"Pilot completed. Success: {pilot_success}. Report at {report_path}")
     return pilot_success
 
@@ -740,7 +926,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", type=str, choices=["preflight", "M8.0", "M8.1", "M8.2", "M8.3", "pilot", "all"], default="all")
     parser.add_argument("--image", type=str, default="test.jpg", help="Path to test image or directory")
-    parser.add_argument("--manifest", type=str, default=None, help="Optional pilot JSON manifest")
+    parser.add_argument("--manifest", type=str, default=None, help="Required JSON manifest for the pilot")
     parser.add_argument("--target", type=str, default="green citrus", help="Target concept")
     parser.add_argument("--output_dir", type=str, default=None)
     

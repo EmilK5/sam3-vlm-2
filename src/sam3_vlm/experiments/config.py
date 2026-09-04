@@ -19,17 +19,6 @@ class ExperimentConfig:
     # E.g., max images to process
     max_samples: Optional[int] = None
     
-    # Ablation Flags
-    tiled_bootstrap_enabled: bool = True
-    qwen_replanning_enabled: bool = True
-    cleanup_enabled: bool = True
-    confounder_actions_enabled: bool = True
-    semantic_dedup_enabled: bool = True
-    residual_cleanup_enabled: bool = True
-    soft_count_reporting: bool = True
-    one_shot_mode: bool = False
-    fixed_prompt_bank_enabled: bool = False
-    
     def apply_to(self, base_config: V4Config) -> V4Config:
         """Apply overrides to a base V4Config."""
         import dataclasses

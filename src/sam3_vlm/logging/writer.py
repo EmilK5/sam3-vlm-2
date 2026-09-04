@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import shutil
 import time
 from typing import Any, Dict, Optional, List
 from pathlib import Path
@@ -203,6 +202,59 @@ class RunRecorder:
             "sam3_call_id": call_id,
             "observation": observation_dict
         })
+
+    def record_sam3_observation(self, action: Any, observation: Any) -> None:
+        """Persist one SAM3 observation in the canonical compact format."""
+        mask_artifacts = []
+        detections = []
+        for detection in observation.detections:
+            if "mask" in detection.raw_metadata:
+                artifact = self.save_mask_artifact(
+                    detection.detection_id,
+                    detection.raw_metadata["mask"],
+                )
+                detection.mask_artifact = artifact["relative_path"]
+                mask_artifacts.append(artifact)
+            box = detection.geometry.bbox()
+            detections.append(
+                {
+                    "detection_id": detection.detection_id,
+                    "geometry": {
+                        "box": box.as_tuple(),
+                        "coordinate_space": box.coordinate_space,
+                    },
+                    "score": detection.score,
+                    "source_tile_id": getattr(
+                        detection,
+                        "source_tile_id",
+                        None,
+                    ),
+                    "mask_artifact": getattr(
+                        detection,
+                        "mask_artifact",
+                        None,
+                    ),
+                }
+            )
+
+        self.record_sam3_action_completed(
+            action.action_id,
+            observation.call_id,
+            {
+                "num_detections": len(observation.detections),
+                "runtime_ms": observation.runtime_ms,
+                "model_metadata": dict(observation.model_metadata),
+                "mask_artifacts": mask_artifacts,
+                "searched_regions": [
+                    {
+                        "box": region.bbox().as_tuple(),
+                        "coordinate_space": region.bbox().coordinate_space,
+                    }
+                    for region in observation.searched_regions
+                ],
+                "detections": detections,
+            },
+        )
 
     def record_association_completed(self, action_id: str, matched_count: int, new_count: int):
         from sam3_vlm.logging.schema import EventKind

@@ -87,7 +87,22 @@ class MockQwenPlanner:
         canonical_m8 = bool(evidence_pack.belief_classes) and (
             evidence_pack.belief_classes[0] == "target"
         )
-        selected_actions = actions[:1] if canonical_m8 else actions
+        selected_actions = (
+            [
+                ProposedAction(
+                    semantic_key="target",
+                    prompt=f"small {target_noun}",
+                    family=ActionFamily.DISCOVERY,
+                    priority=0.90,
+                    semantic_prior={"target": 1.0},
+                    suggested_threshold=0.25,
+                    suggested_spatial_mode=SpatialMode.GLOBAL,
+                    rationale="Search a smaller target appearance mode.",
+                )
+            ]
+            if canonical_m8
+            else actions
+        )
         return PlannerOutput(
             scene_summary=(
                 f"Mock Qwen planning call {self.call_count}: "

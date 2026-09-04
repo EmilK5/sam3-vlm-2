@@ -99,7 +99,20 @@ python -m sam3_vlm.experiments.m8_smoke \
 
 ## 4. The Pilot Experiment
 
-Once the smoke test passes cleanly, run the pilot separately. The pilot strictly requires a JSON manifest.
+Once the smoke test passes cleanly, run the pilot separately. The pilot strictly requires a JSON manifest with a ground-truth count for every image.
+
+The first comparison uses four variants:
+
+| Variant | SAM3 setup | Qwen |
+|---|---|---|
+| `A_SAM3_Global` | One global target prompt | None |
+| `B_SAM3_Bootstrap` | Context lock, target refinement, and target tiling | None |
+| `C_Qwen_OneRound` | Full SAM3 bootstrap plus one target prompt | One call, no replan |
+| `D_Qwen_TwoRound` | Full SAM3 bootstrap plus adaptive target prompts | Up to two calls and one replan |
+
+With five images, this produces 20 runs. The two SAM3-only variants report the
+hard number of registered candidate nodes. The Qwen variants report the
+posterior count using the configured `0.8` commitment rule.
 
 Example Manifest (`pilot_manifest.json`):
 ```json
@@ -122,7 +135,31 @@ python -m sam3_vlm.experiments.m8_smoke \
     --stage pilot \
     --require-cuda \
     --manifest "$M8_MANIFEST" \
+    --max-samples 5 \
     --output_dir "$M8_OUTPUT_ROOT"
+```
+
+Inspect the aggregate comparison:
+
+```bash
+python - <<'PY'
+import json
+import os
+
+path = os.path.join(os.environ["M8_OUTPUT_ROOT"], "pilot_report.json")
+with open(path) as file:
+    report = json.load(file)
+
+for variant, metrics in report["aggregates"].items():
+    print(
+        variant,
+        "MAE=", round(metrics["MAE"], 3),
+        "SAM3=", round(metrics["avg_sam3_calls"], 2),
+        "tiles=", round(metrics["avg_sam3_tiles"], 2),
+        "Qwen=", round(metrics["avg_qwen_calls"], 2),
+        "runtime_s=", round(metrics["avg_runtime_ms"] / 1000, 1),
+    )
+PY
 ```
 
 ---

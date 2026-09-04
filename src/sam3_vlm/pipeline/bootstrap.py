@@ -72,40 +72,6 @@ class BootstrapPipeline:
             return int(image.size[0]), int(image.size[1])
         return 1000, 1000
 
-    def _record_observation(self, action: SensingAction, observation) -> None:
-        if not self.recorder:
-            return
-        mask_artifacts = []
-        compact_detections = []
-        for det in observation.detections:
-            if "mask" in det.raw_metadata:
-                art_ref = self.recorder.save_mask_artifact(det.detection_id, det.raw_metadata["mask"])
-                det.mask_artifact = art_ref["relative_path"]
-                mask_artifacts.append(art_ref)
-            box = det.geometry.bbox()
-            compact_detections.append({
-                "detection_id": det.detection_id,
-                "geometry": {"box": box.as_tuple(), "coordinate_space": box.coordinate_space},
-                "score": det.score,
-                "source_tile_id": getattr(det, "source_tile_id", None),
-                "mask_artifact": getattr(det, "mask_artifact", None),
-            })
-        self.recorder.record_sam3_action_completed(
-            action.action_id,
-            observation.call_id,
-            {
-                "num_detections": len(observation.detections),
-                "runtime_ms": observation.runtime_ms,
-                "model_metadata": dict(observation.model_metadata),
-                "mask_artifacts": mask_artifacts,
-                "searched_regions": [
-                    {"box": r.bbox().as_tuple(), "coordinate_space": r.bbox().coordinate_space}
-                    for r in observation.searched_regions
-                ],
-                "detections": compact_detections,
-            },
-        )
-
     def _execute_sensor_action(self, state: SceneState, image: Any, action: SensingAction):
         if self.recorder:
             self.recorder.record_sam3_action_selected(action.action_id, action.semantic_key)
@@ -120,8 +86,8 @@ class BootstrapPipeline:
         state.budget.sam3_runtime_ms += observation.runtime_ms
         state.budget.model_runtime_ms += observation.runtime_ms
         state.budget.total_runtime_ms += observation.runtime_ms
-        self._record_observation(action, observation)
         if self.recorder:
+            self.recorder.record_sam3_observation(action, observation)
             self.recorder.record_budget_updated(state.budget.__dict__)
         return observation
 

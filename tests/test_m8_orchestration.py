@@ -1,10 +1,13 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import os
 import json
 from PIL import Image
 
 from sam3_vlm.experiments.m8_smoke import (
+    _load_pilot_samples,
+    _pilot_variants,
+    load_m8_config,
     m8_0_validate_adapters,
     m8_1_sam3_smoke,
     m8_2_qwen_smoke,
@@ -94,16 +97,73 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path):
     assert "samples" in report
     
     samples = report["samples"]
-    assert len(samples) == 6 # 3 variants * 2 images (limit enforced)
+    assert len(samples) == 8  # 4 variants * 2 images (limit enforced)
     
-    one_shot = [r for r in samples if r["variant"] == "A_OneShot"]
+    one_shot = [r for r in samples if r["variant"] == "A_SAM3_Global"]
     assert len(one_shot) == 2
     for r in one_shot:
         assert r["sam3_calls"] == 1
         assert r["qwen_calls"] == 0
         assert r["replans"] == 0
         assert r["cleanup_calls"] == 0
-        assert r["count_type"] == "hard_one_shot"
+        assert r["count_type"] == "hard_candidate_count"
+
+    sam3_bootstrap = [
+        r for r in samples if r["variant"] == "B_SAM3_Bootstrap"
+    ]
+    assert len(sam3_bootstrap) == 2
+    assert all(r["qwen_calls"] == 0 for r in sam3_bootstrap)
+
+    one_qwen = [r for r in samples if r["variant"] == "C_Qwen_OneRound"]
+    assert len(one_qwen) == 2
+    assert all(r["qwen_calls"] == 1 for r in one_qwen)
+
+    assert report["metadata"]["variants"] == [
+        "A_SAM3_Global",
+        "B_SAM3_Bootstrap",
+        "C_Qwen_OneRound",
+        "D_Qwen_TwoRound",
+    ]
+
+
+def test_pilot_variants_isolate_sam3_and_qwen_costs():
+    base = load_m8_config(DummyArgs()).v4_config
+    variants = {variant.name: variant for variant in _pilot_variants(base)}
+
+    global_only = variants["A_SAM3_Global"]
+    assert global_only.config.budget.max_qwen_calls == 0
+    assert global_only.config.bootstrap.locked_context_prompt is None
+    assert global_only.config.bootstrap.enable_tiled_bootstrap is False
+    assert global_only.config.bootstrap.enable_pseudoexemplar_refinement is False
+
+    sam3_bootstrap = variants["B_SAM3_Bootstrap"]
+    assert sam3_bootstrap.config.budget.max_qwen_calls == 0
+    assert sam3_bootstrap.config.bootstrap.locked_context_prompt == "tree canopy"
+
+    one_round = variants["C_Qwen_OneRound"]
+    assert one_round.config.budget.max_qwen_calls == 1
+    assert one_round.config.replanning.max_replans == 0
+
+    two_round = variants["D_Qwen_TwoRound"]
+    assert two_round.config.budget.max_qwen_calls == 2
+    assert two_round.config.replanning.max_replans == 1
+
+
+def test_pilot_manifest_requires_ground_truth(tmp_path):
+    image_path = tmp_path / "image.jpg"
+    Image.new("RGB", (16, 16)).save(image_path)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            [{"sample_id": "i1", "image_path": str(image_path)}]
+        )
+    )
+
+    with pytest.raises(ValueError, match="gt_count"):
+        _load_pilot_samples(
+            DummyArgs(manifest=str(manifest_path)),
+            limit=5,
+        )
 
 @patch("sam3_vlm.experiments.m8_smoke.preflight", return_value=True)
 @patch("sam3_vlm.experiments.m8_smoke.m8_0_validate_adapters", return_value=False)

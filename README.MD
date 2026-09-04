@@ -623,6 +623,17 @@ Tests must not be weakened solely to make failing code pass.
 
 # Planned research ablations
 
+The current five-image pilot starts with four controlled variants:
+
+- one global SAM3 target pass with no Qwen;
+- the complete SAM3 bootstrap with no Qwen;
+- the complete bootstrap plus one Qwen target prompt;
+- the current adaptive target-only pipeline with up to two Qwen prompts.
+
+This first comparison isolates the value of spatial/refined SAM3 bootstrap,
+one semantic planning call, and one adaptive replan without reintroducing
+confounder experiments.
+
 Important comparisons include:
 
 - user prompt only vs V4,

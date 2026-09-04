@@ -8,6 +8,7 @@ from sam3_vlm.core.config import V4Config
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import ActionFamily, SpatialMode, StopReason
 from sam3_vlm.models.sam3 import MockSAM3Adapter
+from sam3_vlm.models.qwen import MockQwenPlanner
 from sam3_vlm.pipeline.runner import Runner, RunnerState
 from sam3_vlm.planning.action_bank import (
     ActionBank,
@@ -19,6 +20,7 @@ from sam3_vlm.scene.belief import SemanticMemory
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.state import SceneState
 from sam3_vlm.sensing.action import SensingAction
+from sam3_vlm.sensing.evidence import ContactSheet, QwenEvidencePack
 
 
 class _NoopPlanner:
@@ -51,6 +53,24 @@ def _target_proposal(prompt: str, priority: float = 0.8) -> ProposedAction:
         semantic_prior={"target": 0.8},
         suggested_spatial_mode=SpatialMode.TILED,
     )
+
+
+def test_mock_qwen_uses_the_target_only_m8_contract():
+    output = MockQwenPlanner().plan_scene(
+        QwenEvidencePack(
+            original_image_id="img",
+            user_prompt="green fruit",
+            target_class="target",
+            contact_sheet=ContactSheet(),
+            belief_classes=["target", "confounder1", "confounder2"],
+        )
+    )
+
+    assert len(output.proposed_actions) == 1
+    action = output.proposed_actions[0]
+    assert action.semantic_key == "target"
+    assert action.family == ActionFamily.DISCOVERY
+    assert action.semantic_prior == {"target": 1.0}
 
 
 @pytest.mark.parametrize(

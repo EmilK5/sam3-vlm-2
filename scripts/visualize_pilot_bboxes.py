@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Visualize final pilot graph boxes for A/B/C variants.
+"""Visualize final graph boxes for the pilot variants.
 
 Usage:
     python scripts/visualize_pilot_bboxes.py \
@@ -8,7 +8,7 @@ Usage:
         --output-dir results/bbox_visualizations
 
 The script reads each run's artifacts/graph/final_graph.json and draws the
-final graph nodes over the original image. It also creates an A/B/C comparison
+final graph nodes over the original image. It also creates a comparison
 image per sample.
 """
 
@@ -17,12 +17,17 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
 
-VARIANT_ORDER = ["A_OneShot", "B_FixedBank", "C_V4_NoExemplarCleanup"]
+VARIANT_ORDER = [
+    "A_SAM3_Global",
+    "B_SAM3_Bootstrap",
+    "C_Qwen_OneRound",
+    "D_Qwen_TwoRound",
+]
 
 
 def _load_json(path: Path) -> Any:
@@ -92,9 +97,11 @@ def _extract_target_probability(node: Dict[str, Any]) -> Optional[float]:
     return None
 
 
-def _box_color(target_p: Optional[float], variant: str) -> Tuple[int, int, int]:
-    # A is a hard one-shot baseline; use a single neutral color.
-    if variant == "A_OneShot" or target_p is None:
+def _box_color(
+    target_p: Optional[float],
+    show_posterior: bool,
+) -> Tuple[int, int, int]:
+    if not show_posterior or target_p is None:
         return (0, 140, 255)
     if target_p >= 0.70:
         return (20, 180, 70)
@@ -134,6 +141,7 @@ def _draw_variant(
     line_width: int,
     show_node_ids: bool,
     show_probabilities: bool,
+    show_posterior: bool,
 ) -> Image.Image:
     graph = _load_json(graph_path)
     canvas = image.copy().convert("RGB")
@@ -148,14 +156,14 @@ def _draw_variant(
         if box is None:
             continue
         target_p = _extract_target_probability(node)
-        color = _box_color(target_p, variant)
+        color = _box_color(target_p, show_posterior)
         x1, y1, x2, y2 = box
         draw.rectangle((x1, y1, x2, y2), outline=color, width=line_width)
 
         parts: List[str] = []
         if show_node_ids:
             parts.append(node_id.replace("node_", "#"))
-        if show_probabilities and variant != "A_OneShot" and target_p is not None:
+        if show_probabilities and show_posterior and target_p is not None:
             parts.append(f"p={target_p:.2f}")
         if parts:
             label = " ".join(parts)
@@ -193,7 +201,7 @@ def _make_comparison(images: List[Tuple[str, Image.Image]]) -> Image.Image:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Draw A/B/C pilot final graph bounding boxes.")
+    parser = argparse.ArgumentParser(description="Draw pilot final graph bounding boxes.")
     parser.add_argument("--pilot-report", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--output-dir", type=Path, default=None)
@@ -255,6 +263,7 @@ def main() -> int:
                 line_width=max(1, args.line_width),
                 show_node_ids=not args.no_node_ids,
                 show_probabilities=not args.no_probabilities,
+                show_posterior=row.get("count_type") == "posterior_count",
             )
             out_path = output_dir / f"{sample_id}__{variant}.jpg"
             rendered.save(out_path, quality=95)
@@ -264,7 +273,7 @@ def main() -> int:
 
         if comparison_parts:
             comparison = _make_comparison(comparison_parts)
-            comparison_path = output_dir / f"{sample_id}__ABC.jpg"
+            comparison_path = output_dir / f"{sample_id}__comparison.jpg"
             comparison.save(comparison_path, quality=95)
             print(f"WROTE {comparison_path}")
 
