@@ -8,7 +8,7 @@ class DummyArgs:
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-def test_load_m8_config_precedence(tmp_path):
+def test_load_m8_config_precedence(tmp_path, monkeypatch):
     config_dict = {
         "sam3_model": "json_sam3",
         "qwen_model": "json_qwen",
@@ -18,13 +18,13 @@ def test_load_m8_config_precedence(tmp_path):
         "budget": {"max_qwen_calls": 2},
         "tiling": {"grid_rows": 4}
     }
+
+    monkeypatch.setenv("QWEN_MODEL", "env_qwen")
+    monkeypatch.setenv("QWEN_BASE_URL", "env_url")
     
     p = tmp_path / "valid.json"
     with open(p, "w") as f:
         json.dump(config_dict, f)
-        
-    os.environ["QWEN_MODEL"] = "env_qwen"
-    os.environ["QWEN_BASE_URL"] = "env_url"
     
     # CLI takes precedence over all
     args = DummyArgs(require_cuda=False, output_dir="cli_out", max_samples=3)
