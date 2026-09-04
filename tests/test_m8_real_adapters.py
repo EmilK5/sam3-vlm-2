@@ -131,7 +131,8 @@ def test_real_e2e_bounded(tmp_path):
     config = V4Config(
         budget=BudgetConfig(max_qwen_calls=1, max_sam3_calls=3, max_sam3_tiles=4, max_cleanup_calls=0),
         stopping=StoppingConfig(max_iterations=1),
-        replanning=ReplanningConfig(max_replans=0)
+        replanning=ReplanningConfig(max_replans=0),
+        assets_dir=str(tmp_path / "assets"),
     )
     
     from sam3_vlm.experiments.m8_smoke import assemble_e2e_runner, _run_validator_and_replay

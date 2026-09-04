@@ -61,6 +61,7 @@ def test_m8_3_full_run_with_mocks(mock_models, tmp_path):
     args = DummyArgs(image=p, output_dir=str(tmp_path / "runs"))
     
     assert m8_3_full_run(args) is True
+    assert list((tmp_path / "runs").rglob("assets/m8_test_img.jpg"))
 
 def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path):
     img = Image.new("RGB", (64, 64))
@@ -104,33 +105,41 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path):
         assert r["cleanup_calls"] == 0
         assert r["count_type"] == "hard_one_shot"
 
+@patch("sam3_vlm.experiments.m8_smoke.preflight", return_value=True)
 @patch("sam3_vlm.experiments.m8_smoke.m8_0_validate_adapters", return_value=False)
 @patch("sam3_vlm.experiments.m8_smoke.m8_1_sam3_smoke")
-def test_stage_fail_fast(mock_1, mock_0):
+def test_stage_fail_fast(mock_1, mock_0, mock_preflight, tmp_path):
     import sys
-    test_args = ["--stage", "all", "--dry-run", "--output_dir", "fake_out", "--qwen-base-url", "fake", "--allow-cpu"]
+    test_args = ["--stage", "all", "--dry-run", "--output_dir", str(tmp_path / "out"), "--qwen-base-url", "fake", "--allow-cpu"]
     with patch.object(sys, 'argv', ["m8_smoke.py"] + test_args):
         assert main() == 1
+    mock_preflight.assert_called_once()
     mock_0.assert_called_once()
     mock_1.assert_not_called()
 
+@patch("sam3_vlm.experiments.m8_smoke.preflight", return_value=True)
+@patch("sam3_vlm.experiments.m8_smoke.m8_0_validate_adapters", return_value=True)
+@patch("sam3_vlm.experiments.m8_smoke.m8_1_sam3_smoke", return_value=True)
+@patch("sam3_vlm.experiments.m8_smoke.m8_2_qwen_smoke", return_value=True)
 @patch("sam3_vlm.experiments.m8_smoke.m8_3_full_run", return_value=True)
 @patch("sam3_vlm.experiments.m8_smoke.m8_4_and_5_pilot")
-def test_stage_all_excludes_pilot(mock_pilot, mock_full):
+def test_stage_all_excludes_pilot(
+    mock_pilot,
+    mock_full,
+    mock_qwen_smoke,
+    mock_sam3_smoke,
+    mock_validate,
+    mock_preflight,
+    tmp_path,
+):
     import sys
-    test_args = ["--stage", "all", "--dry-run", "--output_dir", "fake_out", "--qwen-base-url", "fake", "--allow-cpu"]
+    test_args = ["--stage", "all", "--dry-run", "--output_dir", str(tmp_path / "out"), "--qwen-base-url", "fake", "--allow-cpu"]
     with patch.object(sys, 'argv', ["m8_smoke.py"] + test_args):
-        # assuming preflight and others mock return True automatically if not patched?
-        # actually preflight will fail if output_dir is fake_out and it's not mocked
-        pass
-    
-    with patch("sam3_vlm.experiments.m8_smoke.preflight", return_value=True), \
-         patch("sam3_vlm.experiments.m8_smoke.m8_0_validate_adapters", return_value=True), \
-         patch("sam3_vlm.experiments.m8_smoke.m8_1_sam3_smoke", return_value=True), \
-         patch("sam3_vlm.experiments.m8_smoke.m8_2_qwen_smoke", return_value=True):
-        
-        with patch.object(sys, 'argv', ["m8_smoke.py"] + test_args):
-            assert main() == 0
+        assert main() == 0
             
+    mock_preflight.assert_called_once()
+    mock_validate.assert_called_once()
+    mock_sam3_smoke.assert_called_once()
+    mock_qwen_smoke.assert_called_once()
     mock_full.assert_called_once()
     mock_pilot.assert_not_called()

@@ -13,9 +13,10 @@ def test_multimodal_evidence_pack_visual_assets():
     crop = CropCandidateAnnotation(
         node_id="n1",
         box=Box(10.0, 10.0, 50.0, 50.0),
-        sam3_score=0.9,
+        target_support_score=0.9,
         support_count=2,
-        provenance="sam3_1",
+        target_support_semantic_key="target",
+        target_support_call_id="sam3_1",
         crop_image_path="crops/n1.jpg",
     )
     cs = ContactSheet(
@@ -45,9 +46,10 @@ def test_qwen_unverified_candidate_prompt_instructions():
     crop = CropCandidateAnnotation(
         node_id="n1",
         box=Box(10.0, 10.0, 50.0, 50.0),
-        sam3_score=0.9,
+        target_support_score=0.9,
         support_count=2,
-        provenance="sam3_1",
+        target_support_semantic_key="target",
+        target_support_call_id="sam3_1",
     )
     cs = ContactSheet(crops=[crop], total_candidates=1)
     pack = QwenEvidencePack(

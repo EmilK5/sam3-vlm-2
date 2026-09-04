@@ -1,8 +1,4 @@
 import pytest
-import os
-import tempfile
-import json
-from pathlib import Path
 import numpy as np
 
 from sam3_vlm.pipeline.runner import Runner
@@ -16,10 +12,10 @@ from sam3_vlm.logging.validator import RunValidator
 from sam3_vlm.core.types import Detection
 from sam3_vlm.core.geometry import GeometryRef, Box
 
-def test_m7_2_acceptance():
+def test_m7_2_acceptance(tmp_path):
     """Verify that a full mock run yields a 100% valid event stream according to RunValidator,
     which now implies referential integrity and replay equivalence."""
-    config = V4Config()
+    config = V4Config(assets_dir=str(tmp_path / "assets"))
     
     dense_mask = np.ones((10, 10), dtype=bool)
     synth_det = Detection(
@@ -32,45 +28,41 @@ def test_m7_2_acceptance():
     sensor = MockSAM3Adapter(synthetic_detections=[synth_det])
     planner = MockQwenPlanner()
     
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        base_dir = Path(tmp_dir) / "run_artifacts"
-        paths = RunArtifactPaths(base_dir=base_dir)
-        manifest = RunManifest(run_id="test_m7_2_acceptance", image_id="test.jpg", target_class="target")
-        recorder = RunRecorder(paths, manifest)
-        
-        runner = Runner(config, sensor, planner, recorder=recorder)
-        # Ensure the final count is evaluated
-        final_count = runner.run(image="mock", image_id="test.jpg", user_prompt="Find target", target_class="target")
-        
-        orig_state = runner.scene_state
-        
-        validator = RunValidator(paths)
-        result = validator.validate()
-        
-        if not result.valid:
-            print("Validation Errors:", result.errors)
-            with open(paths.events_jsonl) as f:
-                print("Events:")
-                print(f.read())
-                
-        assert result.valid, f"Run validation failed: {result.errors}"
-        
-        # Test 100% Replay equivalence
-        # Delete Oracle files to ensure no leakage
-        if paths.run_json.exists():
-            pass # Keep run.json for config
-        if paths.summary_json.exists():
-            paths.summary_json.unlink()
-        graph_path = paths.base_dir / "artifacts" / "graph" / "final_graph.json"
-        if graph_path.exists():
-            graph_path.unlink()
-            
-        from sam3_vlm.logging.replay import ReplayEngine, canonical_scene_state
-        engine = ReplayEngine(paths)
-        replayed_state = engine.replay_state()
-        
-        c_orig = canonical_scene_state(orig_state)
-        c_repl = canonical_scene_state(replayed_state)
-        
-        # We need to manually fix float differences if any, but they should be exactly equal
-        assert c_orig == c_repl
+    paths = RunArtifactPaths(base_dir=tmp_path / "run_artifacts")
+    manifest = RunManifest(run_id="test_m7_2_acceptance", image_id="test.jpg", target_class="target")
+    recorder = RunRecorder(paths, manifest)
+
+    runner = Runner(config, sensor, planner, recorder=recorder)
+    # Ensure the final count is evaluated
+    runner.run(image="mock", image_id="test.jpg", user_prompt="Find target", target_class="target")
+
+    orig_state = runner.scene_state
+
+    validator = RunValidator(paths)
+    result = validator.validate()
+
+    if not result.valid:
+        print("Validation Errors:", result.errors)
+        with open(paths.events_jsonl) as f:
+            print("Events:")
+            print(f.read())
+
+    assert result.valid, f"Run validation failed: {result.errors}"
+
+    # Test 100% Replay equivalence
+    # Delete Oracle files to ensure no leakage
+    if paths.summary_json.exists():
+        paths.summary_json.unlink()
+    graph_path = paths.base_dir / "artifacts" / "graph" / "final_graph.json"
+    if graph_path.exists():
+        graph_path.unlink()
+
+    from sam3_vlm.logging.replay import ReplayEngine, canonical_scene_state
+    engine = ReplayEngine(paths)
+    replayed_state = engine.replay_state()
+
+    c_orig = canonical_scene_state(orig_state)
+    c_repl = canonical_scene_state(replayed_state)
+
+    # We need to manually fix float differences if any, but they should be exactly equal
+    assert c_orig == c_repl

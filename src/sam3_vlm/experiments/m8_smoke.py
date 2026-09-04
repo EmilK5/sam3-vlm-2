@@ -526,9 +526,13 @@ def m8_3_full_run(args):
         
         run_id = f"m8_3_{uuid.uuid4().hex[:8]}"
         paths = RunArtifactPaths(base_dir=Path(os.path.join(dep.output_root, "M8.3", run_id)))
+        run_config = dataclasses.replace(
+            dep.v4_config,
+            assets_dir=str(paths.base_dir / "assets"),
+        )
         
         runner, recorder = assemble_e2e_runner(
-            paths, dep.v4_config, sam3, qwen, run_id, args.target, "target", "m8_test_img",
+            paths, run_config, sam3, qwen, run_id, args.target, "target", "m8_test_img",
             seed=dep.seed, experiment_name="M8.3",
         )
         img_pil = Image.open(args.image).convert("RGB")
@@ -623,6 +627,7 @@ def m8_4_and_5_pilot(args):
                 if var_name == "A_OneShot":
                     cfg = dataclasses.replace(
                         base_config,
+                        assets_dir=str(paths.base_dir / "assets"),
                         bootstrap=dataclasses.replace(
                             base_config.bootstrap,
                             enable_tiled_bootstrap=False,
@@ -662,8 +667,12 @@ def m8_4_and_5_pilot(args):
                     )
                     recorder.finalize_success(summary, result.state.graph.to_dict())
                 else:
+                    run_config = dataclasses.replace(
+                        config,
+                        assets_dir=str(paths.base_dir / "assets"),
+                    )
                     runner, recorder = assemble_e2e_runner(
-                        paths, config, sam3, qwen, run_id, prompt, "target", img_name,
+                        paths, run_config, sam3, qwen, run_id, prompt, "target", img_name,
                         seed=dep.seed, experiment_name=f"M8_Pilot:{var_name}",
                     )
                     count = runner.run(image=img_pil, user_prompt=prompt, target_class="target", image_id=img_name)
@@ -803,4 +812,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

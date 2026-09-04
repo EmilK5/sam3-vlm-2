@@ -12,14 +12,15 @@ from sam3_vlm.planning.action_bank import ActionBank, ActionBankGenerator
 from sam3_vlm.planning.qwen_planner import QwenPlannerService
 
 
-def test_evidence_pack_to_action_bank_integration():
+def test_evidence_pack_to_action_bank_integration(tmp_path):
     """Verify end-to-end integration: Bootstrap -> EvidencePack -> MockQwenPlanner -> ActionBankGenerator -> ActionBank."""
     id_gen = IDGenerator()
     synth_dets = [
         Detection("d1", GeometryRef(Box(10.0, 10.0, 50.0, 50.0)), score=0.88),
     ]
     sensor = MockSAM3Adapter(id_gen=id_gen, synthetic_detections=synth_dets)
-    bootstrap_pipeline = BootstrapPipeline(sensor=sensor, id_gen=id_gen)
+    cfg = V4Config(assets_dir=str(tmp_path / "assets"))
+    bootstrap_pipeline = BootstrapPipeline(sensor=sensor, id_gen=id_gen, config=cfg)
 
     # 1. Bootstrap
     b_result = bootstrap_pipeline.execute_bootstrap(
@@ -34,8 +35,6 @@ def test_evidence_pack_to_action_bank_integration():
     # 2. Qwen Planning Pass
     mock_qwen = MockQwenPlanner()
     planner_service = QwenPlannerService(planner_backend=mock_qwen)
-    cfg = V4Config()
-
     planner_output = planner_service.plan_scene(evidence_pack, scene_state.budget, cfg)
     assert scene_state.budget.qwen_calls == 1
     assert len(planner_output.proposed_actions) == 3

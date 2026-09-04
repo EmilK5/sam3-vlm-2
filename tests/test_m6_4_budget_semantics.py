@@ -61,6 +61,24 @@ def test_m6_4_tile_budget_outranks_cleanup_budget():
     assert runner.scene_state.stop_reason == StopReason.TILE_BUDGET
 
 
+def test_runtime_finalization_is_monotonic_and_covers_model_latency():
+    runner = Runner(V4Config(), MockSAM3Adapter(), MockPlanner())
+    runner.scene_state = SceneState("img", "t", "t", SceneGraph(), SemanticMemory())
+    budget = runner.scene_state.budget
+    budget.sam3_runtime_ms = 700.0
+    budget.qwen_runtime_ms = 500.0
+    budget.total_runtime_ms = 1500.0
+    runner._elapsed_wall_ms = lambda: 1000.0
+
+    runner._finalize_runtime_accounting()
+
+    assert budget.model_runtime_ms == 1200.0
+    assert budget.wall_runtime_ms == 1000.0
+    assert budget.total_runtime_ms == 1500.0
+    assert budget.total_runtime_ms >= budget.model_runtime_ms
+    assert budget.total_runtime_ms >= budget.wall_runtime_ms
+
+
 def test_m6_4_hard_reason_cannot_be_overwritten_by_cleanup_complete():
     config = V4Config()
     runner = Runner(config, MockSAM3Adapter(), MockPlanner())
@@ -214,4 +232,3 @@ def test_m6_4_tiled_near_tile_cap_is_rejected():
     assert runner.scene_state.stop_reason == StopReason.TILE_BUDGET
     assert not adapter.called # Ensure observe was NOT called
     assert not entry.executed # Action should not be marked as executed
-

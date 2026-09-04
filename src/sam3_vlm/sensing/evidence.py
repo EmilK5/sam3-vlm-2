@@ -2,8 +2,9 @@
 
 from dataclasses import dataclass, field
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from sam3_vlm.core.geometry import Box
+from sam3_vlm.core.types import ActionFamily
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.node import Node
 from sam3_vlm.sensing.observation import SAM3Observation
@@ -15,19 +16,52 @@ class CropCandidateAnnotation:
 
     node_id: str
     box: Box
-    sam3_score: float
+    target_support_score: float
     support_count: int
-    provenance: str
+    target_support_semantic_key: Optional[str] = None
+    target_support_call_id: Optional[str] = None
+    target_support_action_id: Optional[str] = None
+    latest_observation_score: Optional[float] = None
+    latest_observation_semantic_key: Optional[str] = None
+    latest_observation_relation: Optional[str] = None
+    latest_observation_call_id: Optional[str] = None
+    target_posterior: Optional[float] = None
     class_belief: Dict[str, float] = field(default_factory=dict)
     crop_image_path: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.target_posterior is None and "target" in self.class_belief:
+            self.target_posterior = float(self.class_belief["target"])
+
+    @property
+    def sam3_score(self) -> float:
+        """Backward-compatible alias with explicit target-support semantics."""
+        return self.target_support_score
+
+    @property
+    def provenance(self) -> Optional[str]:
+        """Backward-compatible alias for target-support call provenance."""
+        return self.target_support_call_id
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "node_id": self.node_id,
             "box": self.box.as_tuple(),
-            "sam3_score": self.sam3_score,
+            "target_support_score": self.target_support_score,
+            "target_support_semantic_key": self.target_support_semantic_key,
+            "target_support_call_id": self.target_support_call_id,
+            "target_support_action_id": self.target_support_action_id,
+            "latest_observation_score": self.latest_observation_score,
+            "latest_observation_semantic_key": self.latest_observation_semantic_key,
+            "latest_observation_relation": self.latest_observation_relation,
+            "latest_observation_call_id": self.latest_observation_call_id,
+            "target_posterior": self.target_posterior,
+            # Deprecated aliases retained so older replay/artifact consumers can
+            # read the new schema without interpreting a latest-action score as
+            # target support.
+            "sam3_score": self.target_support_score,
             "support_count": self.support_count,
-            "provenance": self.provenance,
+            "provenance": self.target_support_call_id,
             "class_belief": dict(self.class_belief),
             "crop_image_path": self.crop_image_path,
         }
@@ -39,9 +73,22 @@ class CropCandidateAnnotation:
         return cls(
             node_id=data["node_id"],
             box=box,
-            sam3_score=data["sam3_score"],
+            target_support_score=float(
+                data.get("target_support_score", data.get("sam3_score", 0.5))
+            ),
             support_count=data["support_count"],
-            provenance=data["provenance"],
+            target_support_semantic_key=data.get("target_support_semantic_key"),
+            target_support_call_id=data.get(
+                "target_support_call_id", data.get("provenance")
+            ),
+            target_support_action_id=data.get("target_support_action_id"),
+            latest_observation_score=data.get("latest_observation_score"),
+            latest_observation_semantic_key=data.get(
+                "latest_observation_semantic_key"
+            ),
+            latest_observation_relation=data.get("latest_observation_relation"),
+            latest_observation_call_id=data.get("latest_observation_call_id"),
+            target_posterior=data.get("target_posterior"),
             class_belief=dict(data.get("class_belief", {})),
             crop_image_path=data.get("crop_image_path"),
         )
@@ -131,6 +178,8 @@ class QwenEvidencePack:
             "=== IMPORTANT QWEN INSTRUCTIONS ===",
             "These crop panels are UNVERIFIED visual sensor candidates from SAM3.",
             "Do NOT label them as ground truth or final positive detections.",
+            "target_support_score is target-family SAM3 sensor support, not a posterior probability.",
+            "latest_observation fields describe the most recent semantic experiment and may be a confounder or non-retrieval.",
             "Your role is to analyze candidate appearances (e.g. shadow, leaf, occluded fruit) and propose scene-level sensing actions.",
             "Do NOT attempt to output final object counts or raw bounding boxes directly.",
             "",
@@ -147,15 +196,35 @@ class QwenEvidencePack:
             f"Sampled Contact Sheet Crops ({len(self.contact_sheet.crops)} crops):",
         ]
         for c in self.contact_sheet.crops:
-            top_class = (
-                max(c.class_belief.items(), key=lambda x: x[1])[0]
-                if c.class_belief
-                else "unclassified"
-            )
             crop_path_str = f" | crop_img={c.crop_image_path}" if c.crop_image_path else ""
+            belief_str = (
+                "{" + ", ".join(
+                    f"{name}:{probability:.3f}"
+                    for name, probability in sorted(c.class_belief.items())
+                ) + "}"
+                if c.class_belief
+                else "{}"
+            )
+            latest_score = (
+                f"{c.latest_observation_score:.2f}"
+                if c.latest_observation_score is not None
+                else "none"
+            )
+            target_posterior = (
+                f"{c.target_posterior:.3f}"
+                if c.target_posterior is not None
+                else "none"
+            )
             lines.append(
                 f"  - [{c.node_id}] box=({c.box.x1:.1f}, {c.box.y1:.1f}, {c.box.x2:.1f}, {c.box.y2:.1f}) | "
-                f"score={c.sam3_score:.2f} | support={c.support_count} | prov={c.provenance} | system_belief={top_class}{crop_path_str}"
+                f"target_support_score={c.target_support_score:.2f} | "
+                f"target_support_key={c.target_support_semantic_key or 'unknown'} | "
+                f"target_support_call={c.target_support_call_id or 'unknown'} | "
+                f"latest_observation_score={latest_score} | "
+                f"latest_semantic_key={c.latest_observation_semantic_key or 'none'} | "
+                f"latest_relation={c.latest_observation_relation or 'none'} | "
+                f"target_posterior={target_posterior} | class_belief={belief_str} | "
+                f"support={c.support_count}{crop_path_str}"
             )
         lines.append("==========================")
         return "\n".join(lines)
@@ -167,12 +236,28 @@ class EvidencePack:
 
     observations: List[SAM3Observation] = field(default_factory=list)
 
-def _anchor_support_observation(node):
-    """Return stable sensor support for a graph candidate.
+def _target_family_call_ids(semantic_memory: Any) -> Set[str]:
+    """Return call IDs belonging to target-oriented semantic experiments."""
+    target_call_ids: Set[str] = set()
+    records = getattr(semantic_memory, "records", {}) if semantic_memory else {}
+    for record in records.values():
+        family = getattr(record, "family", None)
+        family_value = getattr(family, "value", family)
+        if family_value in {
+            ActionFamily.DISCOVERY.value,
+            ActionFamily.VERIFICATION.value,
+        }:
+            target_call_ids.update(getattr(record, "sam3_call_ids", ()) or ())
+    return target_call_ids
 
-    A contact-sheet score should describe the semantic sensing experiment that
-    grounded/created the candidate, not whichever unrelated experiment happened
-    to run most recently.
+
+def _target_support_observation(node: Node, semantic_memory: Any = None):
+    """Return stable target-family sensor support for a graph candidate.
+
+    When semantic history is available, target-oriented DISCOVERY and
+    VERIFICATION calls define the eligible evidence.  The first grounded
+    detection and its semantic key provide a backward-compatible fallback for
+    bootstrap callers and older replay states.
 
     The anchor semantic key is taken from the first sensor-grounded detection
     observation. Repeated detections under that same semantic key may strengthen
@@ -183,40 +268,27 @@ def _anchor_support_observation(node):
     if not observations:
         return None
 
-    # Find the first actual sensor detection. This is the experiment that
-    # grounded the node in the graph.
-    anchor = next(
-        (
-            obs
-            for obs in observations
-            if getattr(obs, "detection_id", None) is not None
-            and getattr(obs, "score", None) is not None
-        ),
-        None,
-    )
+    grounded = [
+        obs
+        for obs in observations
+        if getattr(obs, "detection_id", None) is not None
+        and getattr(obs, "score", None) is not None
+    ]
+    anchor = grounded[0] if grounded else None
 
     if anchor is None:
         return None
 
-    anchor_key = anchor.semantic_key
-
-    # A repeated execution of the same semantic experiment may strengthen the
-    # candidate. Use its strongest real detection, not a later NOT_RETRIEVED=0.
-    same_anchor_detections = [
-        obs
-        for obs in observations
-        if obs.semantic_key == anchor_key
-        and getattr(obs, "detection_id", None) is not None
-        and getattr(obs, "score", None) is not None
+    target_call_ids = _target_family_call_ids(semantic_memory)
+    target_detections = [
+        obs for obs in grounded if obs.sam3_call_id in target_call_ids
     ]
+    if not target_detections:
+        target_detections = [
+            obs for obs in grounded if obs.semantic_key == anchor.semantic_key
+        ]
 
-    if not same_anchor_detections:
-        return anchor
-
-    return max(
-        same_anchor_detections,
-        key=lambda obs: float(obs.score),
-    )
+    return max(target_detections, key=lambda obs: float(obs.score))
 
 class ContactSheetBuilder:
     """Stratified and spatially distributed candidate crop sampler (V4 Design Spec §5.3)."""
@@ -228,6 +300,8 @@ class ContactSheetBuilder:
         image: Any = None,
         assets_dir: str = "assets",
         image_id: str = "bootstrap",
+        semantic_memory: Any = None,
+        target_class: str = "target",
     ) -> ContactSheet:
         """Sample candidate crops across confidence/support strata and spatial quadrants."""
         active_nodes = graph.active_nodes()
@@ -242,7 +316,7 @@ class ContactSheetBuilder:
         outlier_stratum: List[Node] = []
 
         for node in active_nodes:
-            support_obs = _anchor_support_observation(node)
+            support_obs = _target_support_observation(node, semantic_memory)
             score = (
                 float(support_obs.score)
                 if support_obs is not None and support_obs.score is not None
@@ -286,7 +360,8 @@ class ContactSheetBuilder:
         crops_dir = assets_path / "crops"
 
         for node in sampled_nodes:
-            support_obs = _anchor_support_observation(node)
+            support_obs = _target_support_observation(node, semantic_memory)
+            latest_obs = node.observations[-1] if node.observations else None
 
             score = (
                 float(support_obs.score)
@@ -294,11 +369,14 @@ class ContactSheetBuilder:
                 else 0.5
             )
 
-            prov = (
-                support_obs.sam3_call_id
-                if support_obs is not None
-                else node.created_by_call_id
+            target_support_call_id = (
+                support_obs.sam3_call_id if support_obs is not None else node.created_by_call_id
             )
+            latest_relation = getattr(latest_obs, "relation", None)
+            latest_relation_value = getattr(latest_relation, "value", latest_relation)
+            target_posterior = node.class_belief.probabilities.get(target_class)
+            if target_posterior is None and target_class != "target":
+                target_posterior = node.class_belief.probabilities.get("target")
 
             crop_path_str = None
             if image is not None:
@@ -314,9 +392,36 @@ class ContactSheetBuilder:
                 CropCandidateAnnotation(
                     node_id=node.node_id,
                     box=node.geometry.bbox(),
-                    sam3_score=score,
+                    target_support_score=score,
                     support_count=node.diagnostics.support_count,
-                    provenance=prov,
+                    target_support_semantic_key=(
+                        support_obs.semantic_key if support_obs is not None else None
+                    ),
+                    target_support_call_id=target_support_call_id,
+                    target_support_action_id=(
+                        support_obs.action_id if support_obs is not None else None
+                    ),
+                    latest_observation_score=(
+                        float(latest_obs.score)
+                        if latest_obs is not None and latest_obs.score is not None
+                        else None
+                    ),
+                    latest_observation_semantic_key=(
+                        latest_obs.semantic_key if latest_obs is not None else None
+                    ),
+                    latest_observation_relation=(
+                        str(latest_relation_value)
+                        if latest_relation_value is not None
+                        else None
+                    ),
+                    latest_observation_call_id=(
+                        latest_obs.sam3_call_id if latest_obs is not None else None
+                    ),
+                    target_posterior=(
+                        float(target_posterior)
+                        if target_posterior is not None
+                        else None
+                    ),
                     class_belief=dict(node.class_belief.probabilities),
                     crop_image_path=crop_path_str,
                 )
@@ -342,4 +447,3 @@ class ContactSheetBuilder:
             strata_counts=strata_counts,
             contact_sheet_image_path=contact_sheet_path_str,
         )
-

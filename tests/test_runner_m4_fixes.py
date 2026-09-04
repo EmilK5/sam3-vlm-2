@@ -131,9 +131,9 @@ def test_runner_plateau_allows_discrimination():
 
 
 
-def test_runner_id_collision():
+def test_runner_id_collision(tmp_path):
     # 6. Post-bootstrap new-node IDs never collide
-    config = V4Config()
+    config = V4Config(assets_dir=str(tmp_path / "assets"))
     sensor = MockSAM3Adapter()
     
     from sam3_vlm.sensing.observation import SAM3Observation

@@ -26,12 +26,13 @@ class FixedMockPlanner(MockQwenPlanner):
         )
 
 
-def test_runner_end_to_end_mock():
+def test_runner_end_to_end_mock(tmp_path):
     import dataclasses
     from sam3_vlm.core.config import BudgetConfig
     
     config = V4Config(
-        budget=BudgetConfig(max_sam3_calls=5, max_qwen_calls=2)
+        budget=BudgetConfig(max_sam3_calls=5, max_qwen_calls=2),
+        assets_dir=str(tmp_path / "assets"),
     )
     
     sensor = MockSAM3Adapter()

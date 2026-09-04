@@ -376,6 +376,8 @@ class BootstrapPipeline:
             image=image,
             assets_dir=self.config.assets_dir,
             image_id=image_id,
+            semantic_memory=state.semantic_memory,
+            target_class=state.target_class,
         )
 
         image_path_str = None

@@ -61,7 +61,9 @@ class ReplanEvidenceBuilder:
             max_crops=24,
             image=image,
             assets_dir=assets_dir,
-            image_id=f"{state.image_id}_replan_{state.qwen_round}"
+            image_id=f"{state.image_id}_replan_{state.qwen_round}",
+            semantic_memory=state.semantic_memory,
+            target_class=state.target_class,
         )
 
         # Build compact semantic history summary

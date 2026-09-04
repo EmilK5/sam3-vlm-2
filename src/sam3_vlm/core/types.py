@@ -81,7 +81,8 @@ class BudgetState:
     qwen_runtime_ms: float = 0.0
     controller_runtime_ms: float = 0.0
     wall_runtime_ms: float = 0.0
-    # Kept for schema compatibility; finalized to wall-clock runtime.
+    # Conservative effective runtime: monotonic and never lower than either
+    # wall-clock time or cumulative adapter-reported model latency.
     total_runtime_ms: float = 0.0
 
 

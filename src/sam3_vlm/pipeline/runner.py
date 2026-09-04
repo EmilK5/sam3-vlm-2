@@ -986,7 +986,15 @@ class Runner:
         budget.wall_runtime_ms = self._elapsed_wall_ms()
         budget.model_runtime_ms = budget.sam3_runtime_ms + budget.qwen_runtime_ms
         budget.controller_runtime_ms = max(0.0, budget.wall_runtime_ms - budget.model_runtime_ms)
-        budget.total_runtime_ms = budget.wall_runtime_ms
+        # Adapter-reported model latency can exceed locally observed wall time
+        # (for example in mocks, remote services, or rounded telemetry).  Never
+        # let finalization move the aggregate runtime backwards or below either
+        # of its authoritative measurements.
+        budget.total_runtime_ms = max(
+            budget.total_runtime_ms,
+            budget.wall_runtime_ms,
+            budget.model_runtime_ms,
+        )
 
     def _freeze_confounder_labels(self, planner_output) -> None:
         """Bind generic confounder slots once; replans may not rename them."""
@@ -1058,4 +1066,3 @@ class Runner:
             
         self.scene_state.count_estimate = CountEstimator.estimate(self.scene_state.graph, self.target_class)
         return self.scene_state.count_estimate.mean_count
-

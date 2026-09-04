@@ -9,7 +9,7 @@ from sam3_vlm.models.qwen import DummyQwenPlanner
 from sam3_vlm.pipeline.bootstrap import BootstrapPipeline, BootstrapResult
 
 
-def test_bootstrap_pipeline_execution():
+def test_bootstrap_pipeline_execution(tmp_path):
     """Verify end-to-end bootstrap pass: global pass + tiled pass -> initial SceneState + QwenEvidencePack."""
     synth_dets = [
         Detection("d1", GeometryRef(Box(10.0, 10.0, 50.0, 50.0)), score=0.88),
@@ -18,7 +18,10 @@ def test_bootstrap_pipeline_execution():
     sensor = MockSAM3Adapter(synthetic_detections=synth_dets)
     planner = DummyQwenPlanner()  # Used only to verify zero calls
 
-    pipeline = BootstrapPipeline(sensor=sensor)
+    pipeline = BootstrapPipeline(
+        sensor=sensor,
+        config=V4Config(assets_dir=str(tmp_path / "assets")),
+    )
 
     result = pipeline.execute_bootstrap(
         image_id="img_001",
