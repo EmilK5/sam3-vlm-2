@@ -167,6 +167,56 @@ class EvidencePack:
 
     observations: List[SAM3Observation] = field(default_factory=list)
 
+def _anchor_support_observation(node):
+    """Return stable sensor support for a graph candidate.
+
+    A contact-sheet score should describe the semantic sensing experiment that
+    grounded/created the candidate, not whichever unrelated experiment happened
+    to run most recently.
+
+    The anchor semantic key is taken from the first sensor-grounded detection
+    observation. Repeated detections under that same semantic key may strengthen
+    the score. NOT_RETRIEVED observations and later confounder experiments do
+    not overwrite it.
+    """
+    observations = list(getattr(node, "observations", ()) or ())
+    if not observations:
+        return None
+
+    # Find the first actual sensor detection. This is the experiment that
+    # grounded the node in the graph.
+    anchor = next(
+        (
+            obs
+            for obs in observations
+            if getattr(obs, "detection_id", None) is not None
+            and getattr(obs, "score", None) is not None
+        ),
+        None,
+    )
+
+    if anchor is None:
+        return None
+
+    anchor_key = anchor.semantic_key
+
+    # A repeated execution of the same semantic experiment may strengthen the
+    # candidate. Use its strongest real detection, not a later NOT_RETRIEVED=0.
+    same_anchor_detections = [
+        obs
+        for obs in observations
+        if obs.semantic_key == anchor_key
+        and getattr(obs, "detection_id", None) is not None
+        and getattr(obs, "score", None) is not None
+    ]
+
+    if not same_anchor_detections:
+        return anchor
+
+    return max(
+        same_anchor_detections,
+        key=lambda obs: float(obs.score),
+    )
 
 class ContactSheetBuilder:
     """Stratified and spatially distributed candidate crop sampler (V4 Design Spec §5.3)."""
@@ -192,9 +242,10 @@ class ContactSheetBuilder:
         outlier_stratum: List[Node] = []
 
         for node in active_nodes:
+            support_obs = _anchor_support_observation(node)
             score = (
-                node.observations[-1].score
-                if node.observations and node.observations[-1].score is not None
+                float(support_obs.score)
+                if support_obs is not None and support_obs.score is not None
                 else 0.5
             )
 
@@ -235,9 +286,19 @@ class ContactSheetBuilder:
         crops_dir = assets_path / "crops"
 
         for node in sampled_nodes:
-            latest_obs = node.observations[-1] if node.observations else None
-            score = latest_obs.score if latest_obs and latest_obs.score is not None else 0.5
-            prov = latest_obs.sam3_call_id if latest_obs else node.created_by_call_id
+            support_obs = _anchor_support_observation(node)
+
+            score = (
+                float(support_obs.score)
+                if support_obs is not None and support_obs.score is not None
+                else 0.5
+            )
+
+            prov = (
+                support_obs.sam3_call_id
+                if support_obs is not None
+                else node.created_by_call_id
+            )
 
             crop_path_str = None
             if image is not None:

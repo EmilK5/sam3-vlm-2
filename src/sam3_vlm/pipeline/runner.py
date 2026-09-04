@@ -21,7 +21,9 @@ from sam3_vlm.planning.replanning import ReplanningPolicy, ReplanEvidenceBuilder
 from sam3_vlm.planning.utility import DefaultUtilityEvaluator
 from sam3_vlm.pipeline.cleanup import CleanupController
 from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy
+from sam3_vlm.scene.association_dual import IoUIoMAssociationPolicy
 from sam3_vlm.scene.belief import SemanticMemory, BeliefUpdater
+from sam3_vlm.scene.exemplars import select_target_pseudoexemplars
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.state import SceneState, CountEstimator
 from sam3_vlm.pipeline.bootstrap import BootstrapPipeline
@@ -67,7 +69,11 @@ class Runner:
         self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen, recorder=self.recorder)
         self.planner_service = QwenPlannerService(planner)
         self.bank_generator = ActionBankGenerator()
-        self.association_policy = IoUAssociationPolicy()
+        self.association_policy = (
+            IoUIoMAssociationPolicy()
+            if self.config.association.enable_iom_dedup
+            else IoUAssociationPolicy()
+        )
         self.belief_updater = BeliefUpdater()
         self.utility_evaluator = DefaultUtilityEvaluator()
         
@@ -307,6 +313,7 @@ class Runner:
                 
             from sam3_vlm.core.types import ActionFamily
             action = self._constrain_action_to_search_region(best_entry.action)
+            action = self._attach_target_pseudoexemplars(action)
             
             if self.recorder:
                 self.recorder.record_sam3_action_selected(action.action_id, action.semantic_key)
@@ -1008,6 +1015,41 @@ class Runner:
         if x2 <= x1 or y2 <= y1:
             raise ValueError("Controller cleanup ROI lies outside the locked search region.")
         return dataclasses.replace(action, roi=Box(x1=x1, y1=y1, x2=x2, y2=y2))
+
+    def _attach_target_pseudoexemplars(self, action):
+        """Ground target-oriented M8 actions in controller-selected visual seeds."""
+        if (
+            not self.scene_state
+            or not self.config.bootstrap.enable_pseudoexemplar_refinement
+            or not self._uses_canonical_m8_policy()
+            or action.family not in (ActionFamily.DISCOVERY, ActionFamily.VERIFICATION)
+        ):
+            return action
+
+        # A non-target semantic prior marks a genuinely different concept query;
+        # do not silently turn confounder sensing into target sensing.
+        prior = action.semantic_prior or {}
+        if prior:
+            target_weight = float(prior.get("target", 0.0))
+            other_weight = max(
+                (float(v) for key, v in prior.items() if key != "target"),
+                default=0.0,
+            )
+            if target_weight <= other_weight:
+                return action
+
+        pseudo = select_target_pseudoexemplars(
+            self.scene_state.graph,
+            max_count=self.config.bootstrap.pseudoexemplar_max_count,
+            min_score=self.config.bootstrap.pseudoexemplar_min_score,
+        )
+        if not pseudo.node_ids:
+            return action
+        return dataclasses.replace(
+            action,
+            positive_exemplar_ids=pseudo.node_ids,
+            positive_exemplar_boxes=pseudo.boxes,
+        )
 
     def _compute_final_count(self) -> float:
         """Compute the final soft count from graph beliefs."""

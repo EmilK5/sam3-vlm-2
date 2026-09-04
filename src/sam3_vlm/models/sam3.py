@@ -89,6 +89,31 @@ def _tiles_within_domain(domain: Box, tiling) -> List[BoxGeometry]:
     ]
 
 
+def _localize_exemplar_boxes(exemplar_boxes, crop_region: Box):
+    """Translate fully-contained image-global exemplar boxes into crop space.
+
+    Matching the previous citrus implementation, a tile only receives an
+    exemplar when the complete exemplar lies inside that tile.  Partial boxes
+    are not clipped because a clipped fruit is a different visual prompt.
+    """
+    localized = []
+    for raw_box in exemplar_boxes or ():
+        x1, y1, x2, y2 = (float(v) for v in raw_box)
+        if (
+            x1 >= crop_region.x1
+            and y1 >= crop_region.y1
+            and x2 <= crop_region.x2
+            and y2 <= crop_region.y2
+        ):
+            localized.append([
+                x1 - crop_region.x1,
+                y1 - crop_region.y1,
+                x2 - crop_region.x1,
+                y2 - crop_region.y1,
+            ])
+    return localized
+
+
 class DummySAM3Sensor:
     def __init__(self, call_id_prefix: str = "sam3") -> None:
         self.call_count = 0
@@ -258,9 +283,25 @@ class RealSAM3Sensor:
             logger.info("Compiling SAM3 model graph...")
             self.model = torch.compile(self.model)
 
-    def _run_inference(self, image_pil: Any, text_prompt: str, threshold: float) -> tuple[np.ndarray, np.ndarray, list]:
+    def _run_inference(
+        self,
+        image_pil: Any,
+        text_prompt: str,
+        threshold: float,
+        positive_boxes=(),
+        negative_boxes=(),
+    ) -> tuple[np.ndarray, np.ndarray, list]:
         torch = self._torch
-        inputs = self.processor(images=image_pil, text=text_prompt, return_tensors="pt").to(self.model.device)
+        processor_kwargs = {
+            "images": image_pil,
+            "text": text_prompt,
+            "return_tensors": "pt",
+        }
+        prompt_boxes = list(positive_boxes) + list(negative_boxes)
+        if prompt_boxes:
+            processor_kwargs["input_boxes"] = [prompt_boxes]
+            processor_kwargs["input_boxes_labels"] = [[1] * len(positive_boxes) + [0] * len(negative_boxes)]
+        inputs = self.processor(**processor_kwargs).to(self.model.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
         results = self.processor.post_process_instance_segmentation(
@@ -333,8 +374,10 @@ class RealSAM3Sensor:
         domain = _clipped_domain(action, img_w, img_h)
         detections: List[Detection] = []
 
-        if action.positive_exemplar_ids or action.negative_exemplar_ids:
-            raise UnsupportedRealSAM3ActionError("Exemplars are explicitly unsupported in RealSAM3Sensor.")
+        if action.positive_exemplar_ids and len(action.positive_exemplar_ids) != len(action.positive_exemplar_boxes):
+            raise UnsupportedRealSAM3ActionError("Positive exemplar IDs require aligned executable boxes.")
+        if action.negative_exemplar_ids and len(action.negative_exemplar_ids) != len(action.negative_exemplar_boxes):
+            raise UnsupportedRealSAM3ActionError("Negative exemplar IDs require aligned executable boxes.")
 
         if action.spatial_mode == SpatialMode.TILED:
             tile_geoms = _tiles_within_domain(domain, action.tiling)
@@ -342,7 +385,15 @@ class RealSAM3Sensor:
             for tile_idx, tile_geom in enumerate(tile_geoms):
                 tile_box = tile_geom.box
                 crop = img_pil.crop((int(tile_box.x1), int(tile_box.y1), int(tile_box.x2), int(tile_box.y2)))
-                boxes, scores, masks = self._run_inference(crop, action.prompt, action.threshold)
+                positive_boxes = _localize_exemplar_boxes(action.positive_exemplar_boxes, tile_box)
+                negative_boxes = _localize_exemplar_boxes(action.negative_exemplar_boxes, tile_box)
+                boxes, scores, masks = self._run_inference(
+                    crop,
+                    action.prompt,
+                    action.threshold,
+                    positive_boxes=positive_boxes,
+                    negative_boxes=negative_boxes,
+                )
                 self._append_crop_detections(
                     detections,
                     boxes,
@@ -357,7 +408,15 @@ class RealSAM3Sensor:
             # ROI_BATCH use the same crop mechanics with a controller-owned ROI.
             searched_regions = [BoxGeometry(domain)]
             crop = img_pil.crop((int(domain.x1), int(domain.y1), int(domain.x2), int(domain.y2)))
-            boxes, scores, masks = self._run_inference(crop, action.prompt, action.threshold)
+            positive_boxes = _localize_exemplar_boxes(action.positive_exemplar_boxes, domain)
+            negative_boxes = _localize_exemplar_boxes(action.negative_exemplar_boxes, domain)
+            boxes, scores, masks = self._run_inference(
+                crop,
+                action.prompt,
+                action.threshold,
+                positive_boxes=positive_boxes,
+                negative_boxes=negative_boxes,
+            )
             coordinate_space = "image" if domain.as_tuple() == (0.0, 0.0, float(img_w), float(img_h)) else "local"
             self._append_crop_detections(
                 detections,
@@ -381,5 +440,9 @@ class RealSAM3Sensor:
                 "spatial_mode": action.spatial_mode.value,
                 "model_id": self.model_id,
                 "search_domain": domain.as_tuple(),
+                "positive_exemplar_count": len(action.positive_exemplar_boxes),
+                "negative_exemplar_count": len(action.negative_exemplar_boxes),
+                "positive_exemplar_ids": list(action.positive_exemplar_ids),
+                "negative_exemplar_ids": list(action.negative_exemplar_ids),
             },
         )

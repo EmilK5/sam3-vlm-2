@@ -1,6 +1,6 @@
 """Sensor-first bootstrap with optional locked context search domain."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Optional, Protocol
 
 from sam3_vlm.core.config import V4Config
@@ -9,7 +9,9 @@ from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import ActionFamily, ActionSource, SpatialMode
 from sam3_vlm.models.sam3 import SAM3Sensor
 from sam3_vlm.scene.association import AssociationPolicy, IoUAssociationPolicy
+from sam3_vlm.scene.association_dual import IoUIoMAssociationPolicy
 from sam3_vlm.scene.belief import BeliefUpdater, SemanticMemory, canonical_belief_classes
+from sam3_vlm.scene.exemplars import select_target_pseudoexemplars
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.state import DiscoveryState, SceneState
 from sam3_vlm.sensing.action import SensingAction
@@ -49,7 +51,11 @@ class BootstrapPipeline:
         recorder: Optional[Any] = None,
     ) -> None:
         self.sensor = sensor
-        self.association_policy = association_policy or IoUAssociationPolicy()
+        self.association_policy = association_policy or (
+            IoUIoMAssociationPolicy()
+            if config.association.enable_iom_dedup
+            else IoUAssociationPolicy()
+        )
         self.belief_updater = belief_updater or BeliefUpdater()
         self.tiling_policy = tiling_policy or DefaultTilingPolicy()
         self.id_gen = id_gen or IDGenerator()
@@ -295,7 +301,38 @@ class BootstrapPipeline:
         obs_global = self._execute_sensor_action(state, image, global_action)
         self._associate_discovery(state, global_action, obs_global)
 
-        # Pass 2: optional same-prompt tiling, strictly inside the same domain.
+        pseudo = select_target_pseudoexemplars(
+            state.graph,
+            max_count=self.config.bootstrap.pseudoexemplar_max_count,
+            min_score=self.config.bootstrap.pseudoexemplar_min_score,
+        )
+
+        # Pass 2: same target text + strong seed boxes. This happens before
+        # Qwen so semantic planning sees the visually refined bootstrap.
+        if self.config.bootstrap.enable_pseudoexemplar_refinement and pseudo.node_ids:
+            refine_action = SensingAction(
+                action_id=self.id_gen.next_action_id(),
+                semantic_key="target",
+                prompt=user_prompt,
+                family=ActionFamily.DISCOVERY,
+                spatial_mode=SpatialMode.GLOBAL,
+                source=ActionSource.USER_BOOTSTRAP,
+                search_region=state.search_region,
+                threshold=self.config.sam3.default_threshold,
+                semantic_prior={"target": 1.0},
+                correlation_group="target",
+                positive_exemplar_ids=pseudo.node_ids,
+                positive_exemplar_boxes=pseudo.boxes,
+            )
+            obs_refined = self._execute_sensor_action(state, image, refine_action)
+            self._associate_discovery(state, refine_action, obs_refined)
+            pseudo = select_target_pseudoexemplars(
+                state.graph,
+                max_count=self.config.bootstrap.pseudoexemplar_max_count,
+                min_score=self.config.bootstrap.pseudoexemplar_min_score,
+            )
+
+        # Pass 3: optional same-prompt tiling, strictly inside the same domain.
         domain_box = state.search_region.bbox()
         tiling_decision = self.tiling_policy.evaluate_tiling(
             image_width=max(1, int(round(domain_box.width))),
@@ -318,6 +355,12 @@ class BootstrapPipeline:
                 semantic_prior={state.target_class: 1.0},
                 correlation_group=state.target_class,
             )
+            if self.config.bootstrap.enable_pseudoexemplar_refinement and pseudo.node_ids:
+                tiled_action = replace(
+                    tiled_action,
+                    positive_exemplar_ids=pseudo.node_ids,
+                    positive_exemplar_boxes=pseudo.boxes,
+                )
             obs_tiled = self._execute_sensor_action(state, image, tiled_action)
             assoc_tiled = self._associate_discovery(state, tiled_action, obs_tiled)
             state.discovery_state.tiled_bootstrap_gain = float(len(assoc_tiled.new_nodes))

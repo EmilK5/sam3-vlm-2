@@ -1,0 +1,23 @@
+{
+  "run_id": "m8_3_a64fc4e4",
+  "schema_version": "1.0",
+  "final_soft_count": 14.790984299233424,
+  "count_variance": 4.607525206191373,
+  "final_stop_reason": "ACTION_BANK_EXHAUSTED",
+  "node_count": 23,
+  "qwen_calls": 2,
+  "sam3_calls": 5,
+  "sam3_tiles": 8,
+  "cleanup_calls": 0,
+  "runtime_ms": 136562.0044209063,
+  "wall_runtime_ms": 136562.0044209063,
+  "sam3_runtime_ms": 2712.1855225414038,
+  "qwen_runtime_ms": 133535.8169041574,
+  "controller_runtime_ms": 314.0019942075014,
+  "number_of_replans": 1,
+  "discovery_statistics": {
+    "coverage_ratio": 1.0,
+    "saturated": false
+  },
+  "evaluation_fields": {}
+}

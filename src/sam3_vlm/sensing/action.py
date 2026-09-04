@@ -1,6 +1,7 @@
 """Sensing action schema and validation for SAM3-VLM V4 (V4 Design Spec §4.1 / §21.7)."""
 
 from dataclasses import dataclass, field
+import math
 import re
 from typing import Dict, Optional, Tuple
 from sam3_vlm.core.config import TilingConfig
@@ -53,7 +54,11 @@ class SensingAction:
     source: ActionSource = ActionSource.QWEN
     roi: Optional[Geometry] = None
     positive_exemplar_ids: Tuple[str, ...] = field(default_factory=tuple)
+    # Image-global xyxy boxes corresponding to controller-selected exemplar IDs.
+    # IDs carry provenance; boxes are the executable SAM3 geometry prompts.
+    positive_exemplar_boxes: Tuple[Tuple[float, float, float, float], ...] = field(default_factory=tuple)
     negative_exemplar_ids: Tuple[str, ...] = field(default_factory=tuple)
+    negative_exemplar_boxes: Tuple[Tuple[float, float, float, float], ...] = field(default_factory=tuple)
     tiling: Optional[TilingConfig] = None
     qwen_priority: Optional[float] = None
     semantic_prior: Optional[Dict[str, float]] = None
@@ -75,6 +80,17 @@ class SensingAction:
         neg_set = set(self.negative_exemplar_ids)
         if pos_set.intersection(neg_set):
             raise ValueError("Positive and negative exemplar node IDs must be disjoint.")
+
+        for label, boxes in (
+            ("positive", self.positive_exemplar_boxes),
+            ("negative", self.negative_exemplar_boxes),
+        ):
+            for box in boxes:
+                if len(box) != 4 or not all(math.isfinite(float(v)) for v in box):
+                    raise ValueError(f"{label.capitalize()} exemplar boxes must be finite xyxy coordinates.")
+                x1, y1, x2, y2 = (float(v) for v in box)
+                if x2 <= x1 or y2 <= y1:
+                    raise ValueError(f"{label.capitalize()} exemplar boxes must have positive area.")
 
         if self.spatial_mode == SpatialMode.TILED and self.tiling is None:
             raise ValueError("SensingAction with TILED spatial_mode must specify tiling configuration.")

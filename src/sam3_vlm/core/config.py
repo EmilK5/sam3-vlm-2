@@ -50,6 +50,11 @@ class BootstrapConfig:
     locked_context_prompt: Optional[str] = None
     locked_context_threshold: float = 0.40
     locked_context_fallback_full_image: bool = True
+    # M8-only by configuration. Generic/M4-M7 runs keep this disabled unless
+    # explicitly requested so historical call-count semantics remain frozen.
+    enable_pseudoexemplar_refinement: bool = False
+    pseudoexemplar_max_count: int = 5
+    pseudoexemplar_min_score: float = 0.60
 
 
 @dataclass(frozen=True)
@@ -86,6 +91,11 @@ class AssociationConfig:
     iou_match_threshold: float = 0.5
     new_node_iou_threshold: float = 0.3
     tiled_nms_threshold: float = 0.7
+    # IoM dual-gate is opt-in so legacy/M4-M7 association semantics stay frozen.
+    enable_iom_dedup: bool = False
+    iom_match_threshold: float = 0.90
+    new_node_iom_threshold: float = 0.90
+    tiled_nms_iom_threshold: float = 0.90
 
 
 @dataclass(frozen=True)

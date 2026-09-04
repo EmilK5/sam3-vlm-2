@@ -235,8 +235,10 @@ def load_m8_config(args, config_path="configs/m8_real_smoke.json") -> M8Deployme
                 v4_kwargs["bootstrap"] = BootstrapConfig(**data["bootstrap"])
             if "belief" in data:
                 v4_kwargs["belief"] = BeliefConfig(**data["belief"])
+            if "association" in data:
+                v4_kwargs["association"] = AssociationConfig(**data["association"])
                 
-            allowed = {"sam3_model", "qwen_model", "qwen_base_url", "require_cuda", "compile_sam3", "budget", "tiling", "cleanup", "replanning", "bootstrap", "belief", "seed", "output_root", "pilot_sample_limit"}
+            allowed = {"sam3_model", "qwen_model", "qwen_base_url", "require_cuda", "compile_sam3", "budget", "tiling", "cleanup", "replanning", "bootstrap", "belief", "association", "seed", "output_root", "pilot_sample_limit"}
             for k, v in data.items():
                 if k not in allowed:
                     raise ValueError(f"Unknown config key: {k}")
@@ -625,6 +627,7 @@ def m8_4_and_5_pilot(args):
                             base_config.bootstrap,
                             enable_tiled_bootstrap=False,
                             locked_context_prompt=None,
+                            enable_pseudoexemplar_refinement=False,
                         ),
                     ) 
                     manifest = RunManifest(run_id=run_id, user_prompt=prompt, target_class="target", image_id=img_name)
