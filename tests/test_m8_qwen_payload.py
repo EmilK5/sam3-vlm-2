@@ -8,7 +8,10 @@ from sam3_vlm.core.types import BudgetState
 from sam3_vlm.core.config import PlannerConfig, V4Config
 
 @pytest.fixture
-def mock_openai_client():
+def mock_openai_client(monkeypatch):
+    # Unit tests must not inherit the live cluster credential exported by the
+    # caller. Tests that exercise environment lookup set it explicitly.
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
     import sys
     from unittest.mock import MagicMock
     mock_openai_module = MagicMock()
@@ -30,6 +33,22 @@ def mock_openai_client():
         
         client_instance.chat.completions.create.return_value = response_mock
         yield client_instance
+
+
+def test_qwen_api_key_comes_from_environment(mock_openai_client, monkeypatch):
+    monkeypatch.setenv("QWEN_API_KEY", "ollama")
+
+    RealQwenPlanner(
+        base_url="http://fake",
+        model="fake-model",
+        strict_model_errors=True,
+    )
+
+    mock_openai_client.constructor_mock.assert_called_once_with(
+        base_url="http://fake",
+        api_key="ollama",
+        max_retries=0,
+    )
 
 def test_qwen_payload_construction(mock_openai_client, tmp_path):
     planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)
