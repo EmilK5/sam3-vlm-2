@@ -124,8 +124,13 @@ class RealQwenPlanner:
         "candidates look convincing. An empty proposed_actions list is permitted only when discovery is "
         "explicitly saturated. Never propose more than one action. Only the controller may stop after "
         "evaluating sensor evidence and budget. "
-        "Every executable sam3_prompt MUST be only 2 or 3 words: exactly one or two directly visible "
-        "visual modifiers followed by one visible object noun. No verbs, clauses, locations, prepositions, "
+        "Every sam3_prompt, likely_confounders entry, and missing_appearance_modes entry MUST be "
+        "1 to 3 words: one object noun alone, or one or two basic visual adjectives followed by one noun. "
+        "Use simple everyday object names and basic descriptors. Prefer 'fruit' to 'citrus'. "
+        "Valid examples: 'fruit', 'leaf', 'green fruit', 'shiny green fruit', 'dark leaves'. "
+        "No stacked nouns such as 'leaf shadow artifact' or 'unripe citrus bud'; use 'shadow' or 'small bud'. "
+        "No adverbs such as 'partially' in 'partially shaded fruit'; use 'shaded fruit'. "
+        "No technical jargon, invented compounds, verbs, clauses, locations, prepositions, "
         "analysis methods, imaging methods, edge detection, spectral/multispectral language, clustering, "
         "channel analysis, or contrast enhancement may appear in sam3_prompt. Put all reasoning in rationale. "
         "Scene-level actions may use only GLOBAL or TILED spatial modes. Never output boxes/ROIs. "
@@ -173,8 +178,12 @@ class RealQwenPlanner:
         text = evidence_pack.to_prompt_text(enforce_qwen_contract=True)
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
-            "- sam3_prompt: exactly 2 or 3 words: one/two visible modifiers + one object noun.\n"
-            "- Examples of valid shape: 'green fruit', 'round green fruit', 'small red car'.\n"
+            "- sam3_prompt, likely_confounders, missing_appearance_modes: each phrase has 1 to 3 words.\n"
+            "- Grammar: noun alone, adjective + noun, or adjective + adjective + noun.\n"
+            "- Use only simple everyday object names and basic visual adjectives; prefer 'fruit' to 'citrus'.\n"
+            "- No adverbs, stacked nouns, technical jargon, or invented compounds.\n"
+            "- Valid: 'fruit', 'leaf', 'green fruit', 'shiny green fruit', 'dark leaves', 'small bud'.\n"
+            "- Invalid: 'leaf shadow artifact', 'unripe citrus bud', 'partially shaded fruit'.\n"
             "- rationale: unrestricted short reasoning; reasoning NEVER goes into sam3_prompt.\n"
             "- suggested_spatial_mode: GLOBAL or TILED only. The controller owns the locked search ROI.\n"
             "- Every action must use semantic_key='target', family='DISCOVERY', "
@@ -215,12 +224,12 @@ class RealQwenPlanner:
             "\nReturn JSON:\n"
             "{\n"
             '  "scene_summary": "<string>",\n'
-            '  "missing_appearance_modes": ["<string>"],\n'
-            '  "likely_confounders": ["<semantic label aligned to confounder slots>"],\n'
+            '  "missing_appearance_modes": ["<simple noun phrase, 1 to 3 words>"],\n'
+            '  "likely_confounders": ["<simple noun phrase, 1 to 3 words, aligned to confounder slots>"],\n'
             '  "proposed_actions": [\n'
             "    {\n"
             '      "semantic_key": "target",\n'
-            '      "sam3_prompt": "<2 or 3 words only>",\n'
+            '      "sam3_prompt": "<noun, adjective noun, or adjective adjective noun>",\n'
             '      "family": "DISCOVERY",\n'
             '      "priority": <float 0.0-1.0>,\n'
             '      "semantic_prior": {"target": 1.0},\n'

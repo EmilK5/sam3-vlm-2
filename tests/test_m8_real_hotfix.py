@@ -44,11 +44,12 @@ def _det(det_id, x1, y1, x2, y2, score=0.9):
 
 
 def test_sam3_prompt_contract_is_strict_visual_noun_phrase():
-    for prompt in ("green fruit", "round green fruit", "tree canopy", "flat leaf"):
+    for prompt in ("fruit", "leaf", "green fruit", "round green fruit", "tree canopy", "flat leaf", "Shiny Green Fruit"):
         validate_sam3_prompt_contract(prompt)
 
     for prompt in (
-        "fruit",
+        None,
+        "",
         "partially occluded round green fruit",
         "use green fruit",
         "spectral green fruit",
@@ -57,6 +58,11 @@ def test_sam3_prompt_contract_is_strict_visual_noun_phrase():
     ):
         with pytest.raises(ValueError):
             validate_sam3_prompt_contract(prompt)
+
+
+@pytest.mark.parametrize("prompt", ["dragonfruit", "speckled shell", "red kayak", "woven basket"])
+def test_qwen_prompt_vocabulary_is_open(prompt):
+    validate_sam3_prompt_contract(prompt)
 
 
 def test_belief_ontology_never_expands_from_qwen_aliases():

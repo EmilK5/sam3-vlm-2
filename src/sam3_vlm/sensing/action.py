@@ -22,17 +22,18 @@ _FORBIDDEN_PROMPT_TOKENS = {
 def validate_sam3_prompt_contract(prompt: str) -> None:
     """Enforce the executable SAM3 language contract.
 
-    Real sensing prompts are deliberately tiny: one or two visual modifiers
-    followed by a head noun (2--3 lexical tokens total).  POS tagging is not
-    introduced into the controller; the Qwen system prompt enforces adjective
-    semantics while this deterministic guard rejects prose, clauses, and
-    image-processing instructions.
+    Real sensing prompts are deliberately tiny: a noun alone or one or two visual
+    adjectives followed by a head noun (1--3 lexical tokens total). Vocabulary and
+    word roles are guided by the Qwen prompt, not a dictionary. This guard
+    checks length, lexical shape, and the existing method/prose restrictions.
     """
-    text = (prompt or "").strip()
+    if not isinstance(prompt, str):
+        raise ValueError("SAM3 prompt must be a string.")
+    text = prompt.strip()
     parts = text.split()
-    if len(parts) not in (2, 3):
+    if len(parts) not in (1, 2, 3):
         raise ValueError(
-            "SAM3 prompt must contain exactly one or two visual modifiers plus a noun (2-3 words)."
+            "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words)."
         )
     for token in parts:
         if not _PROMPT_TOKEN_RE.match(token):

@@ -238,6 +238,11 @@ committed nodes.
 
 M8 executes only novel target prompts. Qwen may describe likely confounders as
 context, but the controller does not issue separate confounder SAM3 queries.
+Qwen target prompts, confounder labels, and missing-appearance labels must be
+one noun alone or one/two basic adjectives followed by a noun (1–3 words).
+Simple wording and adjective/noun roles are guided by the Qwen instructions.
+Vocabulary remains open; no dictionary filters object names or descriptive
+labels. Executable prompts retain length, lexical, and method/prose checks.
 Each Qwen round contributes at most one target experiment, with at most one
 replan and two Qwen calls total.
 

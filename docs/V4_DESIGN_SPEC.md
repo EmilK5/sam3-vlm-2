@@ -25,9 +25,19 @@ architecture described in the remainder of this document:
   candidates look convincing. Only explicitly saturated discovery permits an
   empty `proposed_actions` list.
 - That proposal uses `semantic_key: target`, `family: DISCOVERY`, and exactly
-  `semantic_prior: {target: 1.0}`; its SAM3 prompt has two or three visible
-  grounding words, uses `GLOBAL` or `TILED`, supplies no ROI/geometry, and is
+  `semantic_prior: {target: 1.0}`; its SAM3 prompt has one to three words: an
+  object noun alone or one/two basic visual adjectives followed by a noun.
+  It uses `GLOBAL` or `TILED`, supplies no ROI/geometry, and is
   absent from `tried_sam3_prompts`.
+- The same short noun-phrase rule applies to `likely_confounders` and
+  `missing_appearance_modes`. Use simple everyday object names and descriptors;
+  avoid adverbs, stacked nouns, technical jargon, and invented compounds.
+  Reasoning belongs in `rationale` and `scene_summary`. Confounders remain
+  descriptive context only; this language rule does not enable confounder actions.
+- Vocabulary is open: simple wording and adjective/noun roles are instructions
+  to Qwen, with no fixed dictionary or rejection of unfamiliar object names.
+  The executable prompt guard checks 1–3 words, lexical shape, and the existing
+  method/prose restrictions. Descriptive labels receive no dictionary filtering.
 - A validly parsed empty unsaturated response is recorded as
   `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen artifact.
   It creates no fallback action, triggers no repair call, and follows the
