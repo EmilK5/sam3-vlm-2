@@ -233,6 +233,7 @@ class RealQwenPlanner:
             "Output JSON only."
         )
 
+        text_bytes = len((self.SYSTEM_PROMPT + text).encode("utf-8"))
         content = [{"type": "text", "text": text}]
 
         def get_mime_type(path: str) -> str:
@@ -246,6 +247,14 @@ class RealQwenPlanner:
             raise ValueError(f"Unsupported image extension for Qwen: {ext}")
 
         import base64
+
+        def append_image(path: str) -> None:
+            mime = get_mime_type(path)
+            with open(path, "rb") as file:
+                data = file.read()
+            b64 = base64.b64encode(data).decode("ascii")
+            content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+
         orig_path = evidence_pack.image_path
         if not orig_path:
             if self.strict_model_errors:
@@ -254,15 +263,13 @@ class RealQwenPlanner:
             if self.strict_model_errors:
                 raise ValueError(f"Original image not found at {orig_path}")
         else:
-            with open(orig_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode("ascii")
-            content.append({"type": "image_url", "image_url": {"url": f"data:{get_mime_type(orig_path)};base64,{b64}"}})
+            append_image(orig_path)
 
         cs_path = evidence_pack.contact_sheet.contact_sheet_image_path
         if cs_path and os.path.exists(cs_path):
-            with open(cs_path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode("ascii")
-            content.append({"type": "image_url", "image_url": {"url": f"data:{get_mime_type(cs_path)};base64,{b64}"}})
+            append_image(cs_path)
+
+        logger.info("Qwen payload: text_bytes=%d, images=%d", text_bytes, len(content) - 1)
 
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},

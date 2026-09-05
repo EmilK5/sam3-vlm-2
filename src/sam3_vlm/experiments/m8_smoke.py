@@ -878,7 +878,8 @@ def m8_4_and_5_pilot(args):
                     total_runtime_ms=runtime_ms,
                     storage_bytes=total_bytes,
                 )
-                metrics_list.append(metrics)
+                if valid_run:
+                    metrics_list.append(metrics)
                 report["samples"].append(
                     {
                         "variant": variant.name,
@@ -916,6 +917,10 @@ def m8_4_and_5_pilot(args):
                         "variant": variant.name,
                         "sample_id": image_id,
                         "success": False,
+                        "run_id": run_id,
+                        "artifact_directory": str(paths.base_dir),
+                        "gt_count": gt_count,
+                        "count_type": variant.count_type,
                         "failure_category": "INFRASTRUCTURE_FAILURE",
                         "failure_message": str(exc),
                     }
@@ -923,6 +928,12 @@ def m8_4_and_5_pilot(args):
                 pilot_success = False
 
         aggregate = aggregate_count_metrics(metrics_list)
+        aggregate.update(
+            n_samples=len(metrics_list),
+            n_expected=len(samples),
+            n_failed=len(samples) - len(metrics_list),
+            complete=len(metrics_list) == len(samples),
+        )
         logger.info(f"Aggregate for {variant.name}: {aggregate}")
         report["aggregates"][variant.name] = aggregate
 

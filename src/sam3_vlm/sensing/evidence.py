@@ -178,7 +178,7 @@ class QwenEvidencePack:
         expected = ["target"] + [f"confounder{i}" for i in range(1, len(classes))]
         return bool(classes) and self.target_class == "target" and classes == expected
 
-    def to_prompt_text(self, *, enforce_qwen_contract: bool = False) -> str:
+    def to_prompt_text(self, *, enforce_qwen_contract: bool = False, compact: bool = False) -> str:
         """Format evidence pack into a compact token-efficient text prompt for Qwen (V4 Design Spec §6.1)."""
         lines = [
             "=== IMPORTANT QWEN INSTRUCTIONS ===",
@@ -211,6 +211,16 @@ class QwenEvidencePack:
             f"Total Candidates Found: {self.contact_sheet.total_candidates}",
             f"Sampled Contact Sheet Crops ({len(self.contact_sheet.crops)} crops):",
         ]
+        if compact:
+            # Paths and repeated provenance belong in the lossless artifact,
+            # not the model context. Keep every sampled panel in visual order.
+            lines = [line for line in lines if not line.startswith(("Image Path:", "Contact Sheet Image:"))]
+            lines.append(
+                "Crop rows follow contact-sheet order, left-to-right then top-to-bottom. "
+                "Columns: node | box xyxy | target_support_score | target_support_key | "
+                "latest_observation_score | latest_semantic_key | latest_relation | "
+                "target_posterior | class_belief | support_count"
+            )
         for c in self.contact_sheet.crops:
             crop_path_str = f" | crop_img={c.crop_image_path}" if c.crop_image_path else ""
             belief_str = (
@@ -231,6 +241,15 @@ class QwenEvidencePack:
                 if c.target_posterior is not None
                 else "none"
             )
+            if compact:
+                lines.append(
+                    f"{c.node_id} | {c.box.x1:.0f},{c.box.y1:.0f},{c.box.x2:.0f},{c.box.y2:.0f} | "
+                    f"{c.target_support_score:.2f} | {c.target_support_semantic_key or 'unknown'} | "
+                    f"{latest_score} | {c.latest_observation_semantic_key or 'none'} | "
+                    f"{c.latest_observation_relation or 'none'} | {target_posterior} | "
+                    f"{belief_str} | {c.support_count}"
+                )
+                continue
             lines.append(
                 f"  - [{c.node_id}] box=({c.box.x1:.1f}, {c.box.y1:.1f}, {c.box.x2:.1f}, {c.box.y2:.1f}) | "
                 f"target_support_score={c.target_support_score:.2f} | "

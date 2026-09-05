@@ -41,7 +41,7 @@ export HF_TOKEN="your_hf_read_token_here"
 ### 1.5 Fast Qwen3.5-9B Ollama Profile
 
 Create the bounded Qwen model on the machine that runs Ollama. The project
-profile uses the official Q4_K_M quantization, an 8192-token context window,
+profile uses the official Q4_K_M quantization, a 16384-token context window,
 and a 512-token generation ceiling. Keeping the context far below the model's
 maximum is the main control on KV-cache memory.
 
@@ -64,6 +64,15 @@ ollama pull qwen3.5:9b-q4_K_M
 ollama create qwen3.5-9b-sam3 -f configs/ollama_qwen3_5_9b_fast.Modelfile
 ollama show qwen3.5-9b-sam3
 ```
+
+When upgrading an existing 8192-token alias, first run
+`ollama stop qwen3.5-9b-sam3`, then repeat the `ollama create` command above and
+verify `ollama show --modelfile qwen3.5-9b-sam3` reports `num_ctx 16384`.
+Updating the repository alone does not update the server's existing alias.
+The pilot exceeded the old context window with 8823–9074 input tokens; this
+doubles input capacity while retaining the 512-token response limit. The client
+sends the full formatted evidence and original image/contact-sheet bytes,
+without additional text compaction or image resizing.
 
 Point the experiment process at Ollama's OpenAI-compatible endpoint:
 

@@ -35,9 +35,12 @@ architecture described in the remainder of this document:
   available for an evidence-driven replan after a valid target experiment.
   Generic/non-M8 planner behavior and malformed-JSON repair remain unchanged.
 - The production planner is the local Ollama alias `qwen3.5-9b-sam3`, built
-  from `qwen3.5:9b-q4_K_M` with an 8192-token context and a 512-token output
+  from `qwen3.5:9b-q4_K_M` with a 16384-token context and a 512-token output
   limit. Requests use non-thinking JSON mode, a 45-second transport timeout,
   and no hidden client retries.
+- Qwen receives the full formatted evidence pack and both supplied images at
+  their original resolution. The client does not compact the evidence, resize
+  images, or impose an approximate text-byte limit to fit the context window.
 - A target posterior at or above `0.8` contributes `1.0` to the reported count.
   The posterior itself remains unchanged and the raw soft count is retained.
 - M8 rejects empty or whitespace-only output directories and resolves the

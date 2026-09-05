@@ -101,3 +101,15 @@ def test_real_m8_config_uses_bounded_target_only_experiment(monkeypatch):
     assert cfg.v4_config.planner.reasoning_effort == "none"
     assert cfg.v4_config.budget.max_qwen_calls == 2
     assert cfg.v4_config.replanning.max_replans == 1
+
+
+def test_ollama_profile_has_doubled_context_and_matching_output_limit():
+    profile = Path("configs/ollama_qwen3_5_9b_fast.Modelfile").read_text()
+    parameters = {
+        parts[1]: parts[2]
+        for line in profile.splitlines()
+        if (parts := line.split()) and parts[0] == "PARAMETER"
+    }
+    assert int(parameters["num_ctx"]) == 16384
+    config = json.loads(Path("configs/m8_real_smoke.json").read_text())
+    assert int(parameters["num_predict"]) == config["planner"]["max_output_tokens"] == 512

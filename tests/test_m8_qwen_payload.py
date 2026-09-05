@@ -1,3 +1,5 @@
+import base64
+
 import pytest
 from PIL import Image
 from unittest.mock import patch, MagicMock
@@ -116,6 +118,35 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     
     assert content[2]["type"] == "image_url"
     assert content[2]["image_url"]["url"].startswith("data:image/webp;base64,")
+
+
+def test_qwen_preserves_full_evidence_and_original_image_bytes(mock_openai_client, tmp_path):
+    original = tmp_path / "original.png"
+    sheet = tmp_path / "contact_sheet.png"
+    Image.new("RGB", (1600, 1200), "green").save(original)
+    Image.new("RGB", (1024, 1280), "yellow").save(sheet)
+    # Exceeds the former approximate byte guard. Transport must preserve the
+    # evidence; only the serving model can enforce its actual token capacity.
+    history = "semantic observation with complete provenance; " * 300 + "END_HISTORY"
+    pack = QwenEvidencePack(
+        original_image_id="full_context",
+        user_prompt="green fruit",
+        target_class="target",
+        image_path=str(original),
+        scene_summary=history,
+        contact_sheet=ContactSheet(contact_sheet_image_path=str(sheet)),
+    )
+    planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)
+    planner.plan_scene(pack, BudgetState(), V4Config())
+
+    content = mock_openai_client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+    assert history in content[0]["text"]
+    assert f"Image Path: {original}" in content[0]["text"]
+    assert f"Contact Sheet Image: {sheet}" in content[0]["text"]
+    for item, path in zip(content[1:], (original, sheet), strict=True):
+        header, encoded = item["image_url"]["url"].split(",", 1)
+        assert header == "data:image/png;base64"
+        assert base64.b64decode(encoded) == path.read_bytes()
 
 
 @pytest.mark.parametrize("diagnostics", [{}, {"discovery_saturated": False}])

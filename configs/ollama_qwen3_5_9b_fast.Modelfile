@@ -1,8 +1,7 @@
 FROM qwen3.5:9b-q4_K_M
 
-# The pipeline sends two images and a compact planner prompt. The upstream
-# model's 256K context is unnecessary here and can reserve substantial memory.
-PARAMETER num_ctx 8192
+# Allow the full evidence prompt and both images: pilot requests exceeded 8192.
+PARAMETER num_ctx 16384
 
 # Defense in depth: the OpenAI client also enforces this output limit.
 PARAMETER num_predict 512
