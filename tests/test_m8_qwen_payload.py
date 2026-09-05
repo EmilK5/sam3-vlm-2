@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from sam3_vlm.models.qwen import RealQwenPlanner
 from sam3_vlm.sensing.evidence import QwenEvidencePack, ContactSheet
 from sam3_vlm.core.types import BudgetState
-from sam3_vlm.core.config import V4Config
+from sam3_vlm.core.config import PlannerConfig, V4Config
 
 @pytest.fixture
 def mock_openai_client():
@@ -18,6 +18,7 @@ def mock_openai_client():
     with patch.dict(sys.modules, {"openai": mock_openai_module}):
         client_instance = MagicMock()
         mock_client_class.return_value = client_instance
+        client_instance.constructor_mock = mock_client_class
         
         # Mock response
         message_mock = MagicMock()
@@ -59,6 +60,15 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
     
     assert kwargs["model"] == "fake-model"
+    assert kwargs["max_tokens"] == 512
+    assert kwargs["timeout"] == 45.0
+    assert kwargs["response_format"] == {"type": "json_object"}
+    assert kwargs["extra_body"] == {"reasoning_effort": "none"}
+    mock_openai_client.constructor_mock.assert_called_once_with(
+        base_url="http://fake",
+        api_key="EMPTY",
+        max_retries=0,
+    )
     messages = kwargs["messages"]
     assert len(messages) == 2
     assert messages[0]["role"] == "system"
@@ -84,6 +94,50 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     
     assert content[2]["type"] == "image_url"
     assert content[2]["image_url"]["url"].startswith("data:image/webp;base64,")
+
+
+def test_qwen_generation_limits_are_configurable(mock_openai_client, tmp_path):
+    planner = RealQwenPlanner(
+        base_url="http://fake",
+        model="fake-model",
+        strict_model_errors=True,
+    )
+    image_path = str(tmp_path / "image.png")
+    Image.new("RGB", (10, 10)).save(image_path)
+    pack = QwenEvidencePack(
+        original_image_id="img_1",
+        user_prompt="find target",
+        target_class="target",
+        image_path=image_path,
+        contact_sheet=ContactSheet(crops=[], total_candidates=0),
+    )
+    config = V4Config(
+        planner=PlannerConfig(
+            max_output_tokens=256,
+            request_timeout_seconds=12.5,
+            reasoning_effort="low",
+        )
+    )
+
+    planner.plan_scene(pack, BudgetState(), config)
+
+    kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+    assert kwargs["max_tokens"] == 256
+    assert kwargs["timeout"] == 12.5
+    assert kwargs["extra_body"] == {"reasoning_effort": "low"}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"max_output_tokens": 0}, "max_output_tokens"),
+        ({"request_timeout_seconds": 0}, "request_timeout_seconds"),
+        ({"reasoning_effort": "extreme"}, "reasoning_effort"),
+    ],
+)
+def test_qwen_generation_limits_reject_invalid_values(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        PlannerConfig(**kwargs)
 
 def test_qwen_strict_error_propagation(mock_openai_client, tmp_path):
     planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)

@@ -63,6 +63,20 @@ class PlannerConfig:
 
     max_actions_per_prompt: int = 5
     temperature: float = 0.2
+    max_output_tokens: int = 512
+    request_timeout_seconds: float = 45.0
+    reasoning_effort: Optional[str] = "none"
+
+    def __post_init__(self) -> None:
+        if self.max_output_tokens < 1:
+            raise ValueError("max_output_tokens must be at least 1")
+        if self.request_timeout_seconds <= 0:
+            raise ValueError("request_timeout_seconds must be positive")
+        allowed_efforts = {None, "none", "low", "medium", "high"}
+        if self.reasoning_effort not in allowed_efforts:
+            raise ValueError(
+                "reasoning_effort must be one of none, low, medium, high, or None"
+            )
 
 
 @dataclass(frozen=True)

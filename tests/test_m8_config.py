@@ -71,7 +71,11 @@ def test_real_m8_config_uses_bounded_target_only_experiment(monkeypatch):
     monkeypatch.delenv("QWEN_MODEL", raising=False)
     monkeypatch.delenv("QWEN_BASE_URL", raising=False)
     cfg = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
+    assert cfg.qwen_model == "qwen3.5-9b-sam3"
     assert cfg.v4_config.belief.target_count_commit_threshold == pytest.approx(0.8)
     assert cfg.v4_config.planner.max_actions_per_prompt == 1
+    assert cfg.v4_config.planner.max_output_tokens == 512
+    assert cfg.v4_config.planner.request_timeout_seconds == pytest.approx(45.0)
+    assert cfg.v4_config.planner.reasoning_effort == "none"
     assert cfg.v4_config.budget.max_qwen_calls == 2
     assert cfg.v4_config.replanning.max_replans == 1

@@ -18,6 +18,10 @@ architecture described in the remainder of this document:
 - The information-value proxy is evaluated only for target actions.
 - Each planning round admits at most one action. The production configuration
   permits one replan, for at most two Qwen calls after bootstrap.
+- The production planner is the local Ollama alias `qwen3.5-9b-sam3`, built
+  from `qwen3.5:9b-q4_K_M` with an 8192-token context and a 512-token output
+  limit. Requests use non-thinking JSON mode, a 45-second transport timeout,
+  and no hidden client retries.
 - A target posterior at or above `0.8` contributes `1.0` to the reported count.
   The posterior itself remains unchanged and the raw soft count is retained.
 

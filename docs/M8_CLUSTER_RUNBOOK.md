@@ -38,12 +38,58 @@ huggingface-cli login
 export HF_TOKEN="your_hf_read_token_here"
 ```
 
-### 1.5 Qwen Endpoints
-Export exactly the following variables for your local cluster vLLM deployment:
+### 1.5 Fast Qwen3.5-9B Ollama Profile
+
+Create the bounded Qwen model on the machine that runs Ollama. The project
+profile uses the official Q4_K_M quantization, an 8192-token context window,
+and a 512-token generation ceiling. Keeping the context far below the model's
+maximum is the main control on KV-cache memory.
+
+If you start `ollama serve` manually, use one concurrent request and keep only
+one model loaded. Apply the same environment variables to the Ollama service
+configuration instead when Ollama is managed by systemd or another supervisor.
+These are allocation controls, not an exact byte-level RAM cap.
+
 ```bash
-export QWEN_BASE_URL="http://your.cluster.ip:8000/v1"
-export QWEN_MODEL="qwen2.5-vl-72b-instruct"
-export QWEN_API_KEY="your_api_key_or_EMPTY_if_vllm"
+export OLLAMA_NUM_PARALLEL=1
+export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_FLASH_ATTENTION=1
+ollama serve
+```
+
+Leave that process running and use a second shell for the remaining commands.
+
+```bash
+ollama pull qwen3.5:9b-q4_K_M
+ollama create qwen3.5-9b-sam3 -f configs/ollama_qwen3_5_9b_fast.Modelfile
+ollama show qwen3.5-9b-sam3
+```
+
+Point the experiment process at Ollama's OpenAI-compatible endpoint:
+
+```bash
+export QWEN_BASE_URL="http://127.0.0.1:11434/v1"
+export QWEN_MODEL="qwen3.5-9b-sam3"
+export QWEN_API_KEY="ollama"
+```
+
+Replace `127.0.0.1` with the Ollama host only when the model server runs on a
+different machine. The Python client additionally requests non-thinking JSON,
+limits each response to 512 tokens, applies a 45-second request timeout, and
+disables hidden SDK retries. The experiment-level Qwen budget still controls
+whether the pipeline makes one or two planner calls.
+
+After the first request, inspect the live allocation:
+
+```bash
+ollama ps
+```
+
+For the lowest latency, `PROCESSOR` should show the whole model on the GPU. To
+release the loaded model after an experiment:
+
+```bash
+ollama stop qwen3.5-9b-sam3
 ```
 
 ---

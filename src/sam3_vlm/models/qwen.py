@@ -150,7 +150,14 @@ class RealQwenPlanner:
         except ImportError:
             raise RuntimeError("openai package is required for RealQwenPlanner. Please install it.")
         logger.info(f"Loading real Qwen planner: {self.model} at {self.base_url}")
-        self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        # QwenPlannerService owns the single explicit repair attempt. Disable
+        # SDK-level retries so one timed-out request cannot silently multiply
+        # the configured inference deadline.
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key=self.api_key,
+            max_retries=0,
+        )
 
     def plan_scene(self, evidence_pack: QwenEvidencePack, budget: BudgetState, config: V4Config) -> str:
         self.call_count += 1
@@ -251,10 +258,19 @@ class RealQwenPlanner:
             {"role": "user", "content": content},
         ]
         try:
+            extra_body = {}
+            if config.planner.reasoning_effort is not None:
+                # Both current Ollama and vLLM OpenAI-compatible endpoints map
+                # reasoning_effort="none" to Qwen's enable_thinking=False.
+                extra_body["reasoning_effort"] = config.planner.reasoning_effort
             response = self.client.chat.completions.create(
                 model=self.model,
                 temperature=config.planner.temperature,
                 messages=messages,
+                max_tokens=config.planner.max_output_tokens,
+                response_format={"type": "json_object"},
+                timeout=config.planner.request_timeout_seconds,
+                extra_body=extra_body or None,
             )
             return response.choices[0].message.content
         except Exception as exc:

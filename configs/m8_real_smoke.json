@@ -1,6 +1,6 @@
 {
   "sam3_model": "facebook/sam3",
-  "qwen_model": "qwen2.5-vl-72b-instruct",
+  "qwen_model": "qwen3.5-9b-sam3",
   "require_cuda": true,
   "compile_sam3": false,
   "budget": {
@@ -35,7 +35,11 @@
     "target_count_commit_threshold": 0.8
   },
   "planner": {
-    "max_actions_per_prompt": 1
+    "max_actions_per_prompt": 1,
+    "temperature": 0.2,
+    "max_output_tokens": 512,
+    "request_timeout_seconds": 45.0,
+    "reasoning_effort": "none"
   },
   "cleanup": {
     "cleanup_min_utility": 0.05

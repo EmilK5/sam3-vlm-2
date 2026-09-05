@@ -159,7 +159,7 @@ def load_m8_config(args, config_path="configs/m8_real_smoke.json") -> M8Deployme
     """Load config with precedence: Code Defaults < JSON < Env < CLI."""
     # Defaults
     c_sam3_model = "facebook/sam3"
-    c_qwen_model = "qwen2.5-vl-72b-instruct"
+    c_qwen_model = "qwen3.5-9b-sam3"
     c_qwen_base_url = None
     c_require_cuda = True
     c_compile_sam3 = False

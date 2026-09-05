@@ -116,6 +116,14 @@ in its analysis, but the executable bank accepts only novel target
 counting target. The broader action families remain available to generic and
 historical V4 experiments.
 
+The default M8 deployment uses the Ollama alias `qwen3.5-9b-sam3`, built from
+`qwen3.5:9b-q4_K_M` with an 8192-token context and 512-token generation limit.
+Planner requests also disable thinking, require JSON, time out after 45 seconds,
+and use no hidden SDK retries. These bounds reduce latency and model memory
+without changing the one-round and two-round experiment definitions. See
+`configs/ollama_qwen3_5_9b_fast.Modelfile` and `docs/M8_CLUSTER_RUNBOOK.md` for
+the exact setup commands.
+
 ### Numerical controller — active perception
 
 The controller selects which proposed action to execute.
