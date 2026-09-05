@@ -236,6 +236,9 @@ def load_m8_config(args, config_path="configs/m8_real_smoke.json") -> M8Deployme
     if getattr(args, 'max_samples', None) is not None:
         c_pilot_limit = args.max_samples
         
+    if not isinstance(c_output_root, str) or not c_output_root.strip():
+        raise ValueError("M8 output directory (--output_dir / output_root) must be a non-empty path.")
+    c_output_root = str(Path(c_output_root).expanduser().resolve())
     v4_kwargs["device"] = "cuda" if c_require_cuda else "cpu"
     v4_kwargs["output_dir"] = c_output_root
     
@@ -411,6 +414,7 @@ def m8_1_sam3_smoke(args):
 
 def m8_2_qwen_smoke(args):
     logger.info("=== M8.2 Real Qwen planning validation ===")
+    logger.info("M8.2 is a planner-only smoke test; no summary.json is created.")
     if args.dry_run:
         logger.info("Dry run: Skipping execution.")
         return True
@@ -434,6 +438,9 @@ def m8_2_qwen_smoke(args):
         output = service.plan_scene(evidence, BudgetState(), dep.v4_config)
         os.remove(p)
         logger.info(f"Qwen proposed {len(output.proposed_actions)} actions.")
+        if service.last_contract_diagnostic:
+            logger.error("Qwen contract violation: %s", service.last_contract_diagnostic)
+            return False
         return True
     except Exception as e:
         logger.error(f"FAIL: M8.2 Qwen smoke failed: {e}")
@@ -507,11 +514,12 @@ def m8_3_full_run(args):
         logger.info("Dry run: Skipping execution.")
         return True
     try:
-        sam3, qwen = _get_models(args)
         dep = load_m8_config(args)
         
         run_id = f"m8_3_{uuid.uuid4().hex[:8]}"
         paths = RunArtifactPaths(base_dir=Path(os.path.join(dep.output_root, "M8.3", run_id)))
+        logger.info("M8.3 artifact directory: %s", paths.base_dir)
+        sam3, qwen = _get_models(args)
         run_config = dataclasses.replace(
             dep.v4_config,
             assets_dir=str(paths.base_dir / "assets"),
@@ -527,8 +535,10 @@ def m8_3_full_run(args):
             image=img_pil, user_prompt=args.target, target_class="target", image_id="m8_test_img"
         )
         
-        logger.info(f"Full run complete! Soft count: {final_count:.2f}")
-        return _run_validator_and_replay(paths, runner.scene_state)
+        if not _run_validator_and_replay(paths, runner.scene_state):
+            return False
+        logger.info("Full run validated! Soft count: %.2f. Summary: %s", final_count, paths.summary_json)
+        return True
     except Exception as e:
         logger.error(f"FAIL: M8.3 Full run failed: {e}")
         return False
@@ -941,6 +951,10 @@ def main() -> int:
     parser.add_argument("--max-samples", type=int, default=None)
     
     args = parser.parse_args()
+    try:
+        load_m8_config(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     
     stages = [args.stage] if args.stage != "all" else ["preflight", "M8.0", "M8.1", "M8.2", "M8.3"]
     success = True

@@ -234,12 +234,12 @@ class ActionBankGenerator:
                 if (
                     canonical_key != "target"
                     or proposal.family.value != "DISCOVERY"
-                    or set(proposal.semantic_prior or {}) != {"target"}
+                    or proposal.semantic_prior != {"target": 1.0}
                 ):
                     self._reject(
                         proposal,
                         ActionRejectionReason.NON_TARGET_ACTION,
-                        "M8 executes only DISCOVERY actions for semantic_key 'target'.",
+                        "M8 requires DISCOVERY actions for semantic_key 'target' with semantic_prior {'target': 1.0}.",
                     )
                     continue
 

@@ -1,5 +1,6 @@
 import pytest
 import json
+from pathlib import Path
 from sam3_vlm.experiments.m8_smoke import load_m8_config, M8DeploymentConfig
 
 class DummyArgs:
@@ -36,7 +37,8 @@ def test_load_m8_config_precedence(tmp_path, monkeypatch):
     assert cfg.require_cuda is False # CLI over JSON
     assert cfg.seed == 100
     assert cfg.pilot_sample_limit == 3 # CLI over JSON
-    assert cfg.output_root == "cli_out" # CLI over Defaults
+    assert cfg.output_root == str(Path("cli_out").resolve()) # CLI over Defaults
+    assert cfg.v4_config.output_dir == cfg.output_root
     
     assert cfg.v4_config.budget.max_qwen_calls == 2
     assert cfg.v4_config.tiling.grid_rows == 4
@@ -65,6 +67,26 @@ def test_load_m8_config_missing_file():
     assert cfg.require_cuda is True
     assert cfg.sam3_model == "facebook/sam3"
     assert cfg.pilot_sample_limit == 10
+
+
+@pytest.mark.parametrize("output_dir", ["", " ", "\t\n"])
+@pytest.mark.parametrize("source", ["cli", "config"])
+def test_empty_m8_output_is_rejected(tmp_path, output_dir, source):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"output_root": output_dir} if source == "config" else {}))
+    args = DummyArgs(output_dir=output_dir) if source == "cli" else DummyArgs()
+    with pytest.raises(ValueError, match="output directory.*non-empty"):
+        load_m8_config(args, config_path=path)
+
+
+def test_m8_output_paths_are_normalized(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"output_root": "runs/../chosen"}))
+    cfg = load_m8_config(DummyArgs(), config_path=path)
+    assert cfg.output_root == str(tmp_path / "chosen")
+    assert cfg.v4_config.output_dir == cfg.output_root
+    assert not Path(cfg.output_root).exists()  # Loading config has no write effects.
 
 
 def test_real_m8_config_uses_bounded_target_only_experiment(monkeypatch):

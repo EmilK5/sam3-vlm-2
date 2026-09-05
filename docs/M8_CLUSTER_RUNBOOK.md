@@ -232,6 +232,66 @@ context, but the controller does not issue separate confounder SAM3 queries.
 Each Qwen round contributes at most one target experiment, with at most one
 replan and two Qwen calls total.
 
+Qwen must propose exactly one novel target `DISCOVERY` experiment unless the
+controller's evidence explicitly reports saturated discovery. Convincing
+current candidates are not permission to abstain. An empty unsaturated plan
+persists `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen
+artifact and ends under `NO_VALID_ACTIONS`, without an invented action or an
+extra repair call. Inspect that field alongside `output.proposed_actions`,
+`metadata.rejections`, `repair_attempted`, `fallback_used`, and
+`qwen_runtime_ms`.
+
+Empty or whitespace-only `--output_dir` / config `output_root` values fail
+explicitly. Relative paths are resolved against the active shell's working
+directory, and `~` is expanded. M8.3 logs its absolute artifact directory before
+model loading and its absolute `summary.json` path after validation and replay
+succeed. Pilot completion likewise logs the absolute `pilot_report.json` path.
+M8.2 only exercises the planner and intentionally creates no `summary.json`.
+
+For the Qwen3.5 contract patch, first rerun M8.2 and M8.3 on the same difficult
+image, directly from an interactive GPU shell:
+
+```bash
+cd /home/ekielar/sam3-vlm-2
+git pull --ff-only
+source .venv/bin/activate
+python -m pip install -e .
+
+export QWEN_BASE_URL="http://127.0.0.1:11434/v1"
+export QWEN_MODEL="qwen3.5-9b-sam3"
+export QWEN_API_KEY="ollama"
+export M8_TARGET="green citrus"
+export M8_IMAGE="/absolute/path/to/the/same/test/image.jpg"
+export M8_OUTPUT_ROOT="$(pwd)/runs/qwen35_9b_smoke"
+
+bash scripts/check_m8_cluster_ready.sh
+
+time python -m sam3_vlm.experiments.m8_smoke \
+  --stage M8.2 --require-cuda --target "$M8_TARGET" \
+  --qwen-base-url "$QWEN_BASE_URL" --qwen-model "$QWEN_MODEL" \
+  --output_dir "${M8_OUTPUT_ROOT:?Set M8_OUTPUT_ROOT}"
+
+time python -m sam3_vlm.experiments.m8_smoke \
+  --stage M8.3 --require-cuda --image "$M8_IMAGE" --target "$M8_TARGET" \
+  --qwen-base-url "$QWEN_BASE_URL" --qwen-model "$QWEN_MODEL" \
+  --output_dir "${M8_OUTPUT_ROOT:?Set M8_OUTPUT_ROOT}"
+```
+
+Use the logged absolute summary path to inspect that exact run. If setting a
+shell variable for inspection, guard it before building child paths:
+
+```bash
+export LATEST_M8_RUN="/absolute/run/directory/from/the/M8.3/log"
+cat "${LATEST_M8_RUN:?Set the logged M8.3 run directory}/summary.json"
+ls "${LATEST_M8_RUN:?Set the logged M8.3 run directory}/artifacts/qwen"
+```
+
+Return the new summary and each Qwen artifact's proposed actions, rejections,
+contract diagnostic, repair/fallback flags, and runtime. Do not start the
+five-image A/B/C/D pilot until this same-image M8.3 run actually executes a
+valid Qwen-derived target action and passes validator/canonical replay. Then
+continue with all four variants in section 4.
+
 ### Diagnosing Pilot Failures
 Open `pilot_report.json`. Look in `.samples` for any sample where `"success": false`.
 - If `failure_category` is present, look at `failure_message` for infrastructure crashes (e.g., CUDA OOM or Qwen payload errors).

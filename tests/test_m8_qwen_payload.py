@@ -107,12 +107,38 @@ def test_qwen_payload_construction(mock_openai_client, tmp_path):
     assert "shadowed green fruit" in content[0]["text"]
     assert "DISCOVERY IS SATURATED" in content[0]["text"]
     assert "Every action must use semantic_key='target'" in content[0]["text"]
+    assert "An empty proposed_actions list is permitted only when discovery is explicitly saturated" in content[0]["text"]
+    assert "otherwise return an empty proposed_actions list" in content[0]["text"]
+    assert "DISCOVERY IS NOT SATURATED" not in content[0]["text"]
     
     assert content[1]["type"] == "image_url"
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
     
     assert content[2]["type"] == "image_url"
     assert content[2]["image_url"]["url"].startswith("data:image/webp;base64,")
+
+
+@pytest.mark.parametrize("diagnostics", [{}, {"discovery_saturated": False}])
+def test_unsaturated_real_qwen_payload_requires_one_experiment(mock_openai_client, tmp_path, diagnostics):
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (10, 10)).save(image_path)
+    planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)
+    pack = QwenEvidencePack(
+        "img", "green citrus", "target", ContactSheet(),
+        image_path=str(image_path), discovery_diagnostics=diagnostics,
+    )
+    planner.plan_scene(pack, BudgetState(), V4Config())
+    messages = mock_openai_client.chat.completions.create.call_args.kwargs["messages"]
+    system = messages[0]["content"]
+    dynamic = messages[1]["content"][0]["text"]
+    for text in (system, dynamic):
+        assert "Qwen never decides whether the pipeline should stop" in text
+        assert "exactly one novel target DISCOVERY experiment" in text
+        assert "even when current candidates look convincing" in text
+        assert "Only the controller may stop after evaluating sensor evidence and budget" in text
+        assert "An empty proposed_actions list is permitted only when discovery is explicitly saturated" in text
+        assert "If no useful new target prompt remains, return no actions" not in text
+    assert "DISCOVERY IS NOT SATURATED" in dynamic
 
 
 def test_qwen_generation_limits_are_configurable(mock_openai_client, tmp_path):

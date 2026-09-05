@@ -172,7 +172,13 @@ class QwenEvidencePack:
     def from_json(cls, json_str: str) -> "QwenEvidencePack":
         return cls.from_dict(json.loads(json_str))
 
-    def to_prompt_text(self) -> str:
+    @property
+    def uses_canonical_m8_policy(self) -> bool:
+        classes = list(self.belief_classes or [])
+        expected = ["target"] + [f"confounder{i}" for i in range(1, len(classes))]
+        return bool(classes) and self.target_class == "target" and classes == expected
+
+    def to_prompt_text(self, *, enforce_qwen_contract: bool = False) -> str:
         """Format evidence pack into a compact token-efficient text prompt for Qwen (V4 Design Spec §6.1)."""
         lines = [
             "=== IMPORTANT QWEN INSTRUCTIONS ===",
@@ -183,7 +189,14 @@ class QwenEvidencePack:
             "Use possible confounders only to formulate a more specific target description.",
             "Every executable action must be a novel scene-level prompt for the target.",
             "On replanning, never repeat an exact SAM3 prompt listed in tried_sam3_prompts or semantic history.",
-            "If no useful new target prompt remains, return no actions.",
+            (
+                "Qwen never decides whether the pipeline should stop. Unless discovery_saturated is explicitly true, "
+                "proposed_actions must contain exactly one novel target DISCOVERY experiment, even when current "
+                "candidates look convincing. An empty proposed_actions list is permitted only when discovery is "
+                "explicitly saturated. Only the controller may stop after evaluating sensor evidence and budget."
+                if enforce_qwen_contract or self.uses_canonical_m8_policy
+                else "If no useful new target prompt remains, return no actions."
+            ),
             "Do NOT attempt to output final object counts or raw bounding boxes directly.",
             "",
             "=== SCENE EVIDENCE PACK ===",

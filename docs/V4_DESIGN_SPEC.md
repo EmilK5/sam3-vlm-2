@@ -18,12 +18,34 @@ architecture described in the remainder of this document:
 - The information-value proxy is evaluated only for target actions.
 - Each planning round admits at most one action. The production configuration
   permits one replan, for at most two Qwen calls after bootstrap.
+- The numerical controller owns stopping; Qwen never decides whether the
+  pipeline should stop. In strict/canonical M8, unless the evidence pack's
+  `discovery_diagnostics.discovery_saturated` is explicitly `true`, Qwen must
+  propose exactly one novel target `DISCOVERY` experiment, even when current
+  candidates look convincing. Only explicitly saturated discovery permits an
+  empty `proposed_actions` list.
+- That proposal uses `semantic_key: target`, `family: DISCOVERY`, and exactly
+  `semantic_prior: {target: 1.0}`; its SAM3 prompt has two or three visible
+  grounding words, uses `GLOBAL` or `TILED`, supplies no ROI/geometry, and is
+  absent from `tried_sam3_prompts`.
+- A validly parsed empty unsaturated response is recorded as
+  `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen artifact.
+  It creates no fallback action, triggers no repair call, and follows the
+  existing `NO_VALID_ACTIONS` stop behavior. The second Qwen call remains
+  available for an evidence-driven replan after a valid target experiment.
+  Generic/non-M8 planner behavior and malformed-JSON repair remain unchanged.
 - The production planner is the local Ollama alias `qwen3.5-9b-sam3`, built
   from `qwen3.5:9b-q4_K_M` with an 8192-token context and a 512-token output
   limit. Requests use non-thinking JSON mode, a 45-second transport timeout,
   and no hidden client retries.
 - A target posterior at or above `0.8` contributes `1.0` to the reported count.
   The posterior itself remains unchanged and the raw soft count is retained.
+- M8 rejects empty or whitespace-only output directories and resolves the
+  selected output root to an absolute path. M8.3 logs its absolute run artifact
+  directory before loading models and its `summary.json` path only after
+  finalization, validation, and canonical replay succeed. Pilot completion logs
+  the absolute `pilot_report.json` path. M8.2 is a planner-only smoke test and
+  intentionally produces no run summary.
 
 These rules override older M8 examples below that execute confounder actions.
 The generic schemas and belief model retain confounder families so historical

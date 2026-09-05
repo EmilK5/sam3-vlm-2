@@ -50,7 +50,7 @@ def _target_proposal(prompt: str, priority: float = 0.8) -> ProposedAction:
         prompt=prompt,
         family=ActionFamily.DISCOVERY,
         priority=priority,
-        semantic_prior={"target": 0.8},
+        semantic_prior={"target": 1.0},
         suggested_spatial_mode=SpatialMode.TILED,
     )
 

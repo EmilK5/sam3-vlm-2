@@ -787,6 +787,7 @@ class Runner:
                     "repair_attempted": self.planner_service.last_repair_attempted,
                     "fallback_used": self.planner_service.last_fallback_used,
                     "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
+                    "contract_diagnostic": self.planner_service.last_contract_diagnostic,
                     "rejections": [r.to_dict() for r in self.bank_generator.last_rejections],
                 }
             }

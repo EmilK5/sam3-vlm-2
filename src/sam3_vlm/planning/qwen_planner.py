@@ -152,6 +152,7 @@ class QwenPlannerService:
         self.last_repair_attempted = False
         self.last_fallback_used = False
         self.last_call_runtime_ms = 0.0
+        self.last_contract_diagnostic: Optional[str] = None
 
     def _invoke_backend(self, evidence: QwenEvidencePack, budget: BudgetState, config: V4Config) -> Any:
         start = time.perf_counter()
@@ -182,6 +183,10 @@ class QwenPlannerService:
         self.last_repair_attempted = False
         self.last_fallback_used = False
         self.last_call_runtime_ms = 0.0
+        self.last_contract_diagnostic = None
+        strict_m8 = evidence.uses_canonical_m8_policy or bool(
+            getattr(self.planner_backend, "strict_model_errors", False)
+        )
         budget.qwen_calls += 1
         raw_output = None
         try:
@@ -243,8 +248,19 @@ class QwenPlannerService:
                 ],
             )
 
+        # A parsed empty plan is a contract violation, not malformed JSON.
+        # Preserve it without repair/fallback so the controller can stop visibly.
+        if (
+            strict_m8
+            and not output.proposed_actions
+            and evidence.discovery_diagnostics.get("discovery_saturated") is not True
+        ):
+            self.last_contract_diagnostic = "EMPTY_UNSATURATED_PLAN"
+
         return self._validate_and_normalize_output(
-            output, max_actions=config.planner.max_actions_per_prompt
+            output,
+            max_actions=min(1, config.planner.max_actions_per_prompt)
+            if strict_m8 else config.planner.max_actions_per_prompt,
         )
 
     def _coerce_to_planner_output(self, raw_output: Any) -> PlannerOutput:

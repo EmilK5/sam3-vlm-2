@@ -114,13 +114,13 @@ def test_action_bank_rejects_bad_qwen_actions_and_inherits_tiling_and_search_reg
                 prompt="round green fruit",
                 family=ActionFamily.DISCOVERY,
                 suggested_spatial_mode=SpatialMode.TILED,
-                semantic_prior={"target": 0.9},
+                semantic_prior={"target": 1.0},
             ),
             ProposedAction(
                 semantic_key="fake_method",
                 prompt="spectral green fruit",
                 family=ActionFamily.DISCOVERY,
-                semantic_prior={"target": 0.9},
+                semantic_prior={"target": 1.0},
             ),
             ProposedAction(
                 semantic_key="bad_prior",
@@ -133,7 +133,7 @@ def test_action_bank_rejects_bad_qwen_actions_and_inherits_tiling_and_search_reg
                 prompt="small green fruit",
                 family=ActionFamily.DISCOVERY,
                 suggested_spatial_mode=SpatialMode.ROI_BATCH,
-                semantic_prior={"target": 0.9},
+                semantic_prior={"target": 1.0},
             ),
         ]
     )

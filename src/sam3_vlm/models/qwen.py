@@ -119,6 +119,11 @@ class RealQwenPlanner:
 
     SYSTEM_PROMPT = (
         "You propose target-search experiments for SAM3. You are NOT a detector and must not count objects. "
+        "Qwen never decides whether the pipeline should stop. If discovery is not explicitly saturated, "
+        "proposed_actions must contain exactly one novel target DISCOVERY experiment, even when current "
+        "candidates look convincing. An empty proposed_actions list is permitted only when discovery is "
+        "explicitly saturated. Never propose more than one action. Only the controller may stop after "
+        "evaluating sensor evidence and budget. "
         "Every executable sam3_prompt MUST be only 2 or 3 words: exactly one or two directly visible "
         "visual modifiers followed by one visible object noun. No verbs, clauses, locations, prepositions, "
         "analysis methods, imaging methods, edge detection, spectral/multispectral language, clustering, "
@@ -165,7 +170,7 @@ class RealQwenPlanner:
         confounder_slots = [c for c in belief_classes if c != "target"]
         existing_mapping = evidence_pack.confounder_labels or {}
 
-        text = evidence_pack.to_prompt_text()
+        text = evidence_pack.to_prompt_text(enforce_qwen_contract=True)
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
             "- sam3_prompt: exactly 2 or 3 words: one/two visible modifiers + one object noun.\n"
@@ -194,11 +199,17 @@ class RealQwenPlanner:
                 f"- EXACT PROMPT BLACKLIST: {tried_prompts}. Never propose any "
                 "of these SAM3 prompts again, even with a different spatial mode.\n"
             )
-        if evidence_pack.discovery_diagnostics.get("discovery_saturated", False):
+        if evidence_pack.discovery_diagnostics.get("discovery_saturated") is True:
             text += (
                 "- DISCOVERY IS SATURATED: propose one novel target description "
                 "only if it can reduce remaining target uncertainty; otherwise "
                 "return an empty proposed_actions list.\n"
+            )
+        else:
+            text += (
+                "- DISCOVERY IS NOT SATURATED (false or absent): proposed_actions MUST contain exactly one "
+                "novel target DISCOVERY experiment, even when current candidates look convincing. "
+                "Do not return an empty list.\n"
             )
         text += (
             "\nReturn JSON:\n"
