@@ -102,6 +102,53 @@ def test_planner_repair_pass():
     assert output.proposed_actions[0].semantic_key == "repaired"
 
 
+class FencedJsonBackend:
+    def __init__(self):
+        self.call_count = 0
+
+    def plan_scene(self, evidence, budget, config):
+        self.call_count += 1
+        return """```json
+{
+  "scene_summary": "Initial bootstrap candidates for green citrus target.",
+  "missing_appearance_modes": ["green fruit"],
+  "likely_confounders": [],
+  "proposed_actions": [
+    {
+      "semantic_key": "target",
+      "sam3_prompt": "green fruit",
+      "family": "DISCOVERY",
+      "priority": 0.8,
+      "semantic_prior": {"target": 1.0},
+      "suggested_threshold": 0.5,
+      "suggested_spatial_mode": "GLOBAL",
+      "rationale": "Search for the primary target concept."
+    }
+  ]
+}
+```yaml"""
+
+
+def test_planner_accepts_fenced_json_without_spending_repair_call():
+    backend = FencedJsonBackend()
+    service = QwenPlannerService(planner_backend=backend)
+    pack = QwenEvidencePack(
+        "img1",
+        "green citrus",
+        "target",
+        ContactSheet(crops=[], total_candidates=0),
+    )
+    budget = BudgetState(qwen_calls=0)
+
+    output = service.plan_scene(pack, budget)
+
+    assert backend.call_count == 1
+    assert budget.qwen_calls == 1
+    assert service.last_repair_attempted is False
+    assert output.scene_summary.startswith("Initial bootstrap")
+    assert [action.prompt for action in output.proposed_actions] == ["green fruit"]
+
+
 class TotalFailureBackend:
     def __init__(self):
         self.call_count = 0

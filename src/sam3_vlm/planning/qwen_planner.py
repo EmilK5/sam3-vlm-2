@@ -10,6 +10,26 @@ from sam3_vlm.sensing.action import validate_sam3_prompt_contract
 from sam3_vlm.sensing.evidence import QwenEvidencePack
 
 
+def _strip_single_markdown_fence(value: str) -> str:
+    """Remove one surrounding code fence while leaving JSON untouched.
+
+    Some OpenAI-compatible local models wrap JSON mode output in Markdown and
+    occasionally label the closing fence incorrectly (for example
+    `````yaml``). Only a fence on the first line and a fence on the final line
+    are removed; prose or other trailing content remains invalid.
+    """
+
+    text = value.strip()
+    lines = text.splitlines()
+    if not lines or not lines[0].strip().startswith("```"):
+        return text
+
+    lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
 class BudgetExceededError(RuntimeError):
     """Raised when a Qwen call attempt exceeds its hard call budget."""
 
@@ -111,7 +131,7 @@ class PlannerOutput:
 
     @classmethod
     def from_json(cls, json_str: str) -> "PlannerOutput":
-        return cls.from_dict(json.loads(json_str))
+        return cls.from_dict(json.loads(_strip_single_markdown_fence(json_str)))
 
 
 class PlannerService(Protocol):
