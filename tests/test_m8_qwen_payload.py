@@ -164,13 +164,39 @@ def test_qwen_language_rules_cover_targets_and_descriptive_labels(mock_openai_cl
         assert "1 to 3 words" in text
         assert "noun alone" in text
         assert "simple everyday object names" in text
-        for invalid_example in ("leaf shadow artifact", "unripe citrus bud", "partially shaded fruit"):
-            assert invalid_example in text
+        assert "Preserve the user's target object category" in text
+        assert "different developmental stage" in text
+        assert "Vocabulary is open" in text
+        for example in ("small bud", "leaf shadow artifact", "unripe citrus bud", "partially shaded fruit"):
+            assert example not in text
         assert "exactly 2 or 3 words" not in text
         assert "Allowed basic adjectives" not in text
         assert "Allowed basic object nouns" not in text
         assert "Unknown words are rejected" not in text
     assert "never proposed as separate SAM3 actions" in messages[0]["content"]
+
+
+@pytest.mark.parametrize("target", ["green fruit", "red cars", "ripe pears"])
+def test_qwen_preserves_current_target_and_actual_evidence(mock_openai_client, tmp_path, target):
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (10, 10)).save(image_path)
+    history = "Previous rejected proposal: small bud. Previous confounder: leaf shadow artifact."
+    pack = QwenEvidencePack(
+        "image", target, "target", ContactSheet(), image_path=str(image_path),
+        scene_summary=history,
+        discovery_diagnostics={"tried_sam3_prompts": ["small bud", target]},
+    )
+    planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)
+    planner.plan_scene(pack, BudgetState(), V4Config())
+    messages = mock_openai_client.chat.completions.create.call_args.kwargs["messages"]
+    text = messages[1]["content"][0]["text"]
+    assert f"TARGET TO PRESERVE: {target!r}" in text
+    assert history in text
+    assert f"EXACT PROMPT BLACKLIST: {['small bud', target]}" in text
+    assert "never promote a confounder label into a target action" in text
+    assert "same target objects" in text
+    assert "prefer 'fruit' to 'citrus'" not in text
+    assert "small bud" not in messages[0]["content"]
 
 
 @pytest.mark.parametrize("diagnostics", [{}, {"discovery_saturated": False}])

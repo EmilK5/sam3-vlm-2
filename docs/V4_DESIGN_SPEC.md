@@ -34,6 +34,15 @@ architecture described in the remainder of this document:
   avoid adverbs, stacked nouns, technical jargon, and invented compounds.
   Reasoning belongs in `rationale` and `scene_summary`. Confounders remain
   descriptive context only; this language rule does not enable confounder actions.
+- Every executable prompt and missing-appearance label must preserve the user's
+  target object category. Vary visible appearance; do not substitute related
+  objects, object parts, or different developmental stages. Simple synonyms
+  must refer to the same target objects. Confounder labels must not become
+  target actions or missing target appearance modes.
+- The Qwen instruction blocks include no concrete positive/negative example
+  phrase lists, to avoid encouraging copied examples. Actual scene evidence,
+  semantic history, and the exact tried-prompt blacklist remain fully included.
+  The current user target is restated in the dynamic action contract.
 - Vocabulary is open: simple wording and adjective/noun roles are instructions
   to Qwen, with no fixed dictionary or rejection of unfamiliar object names.
   The executable prompt guard checks 1–3 words, lexical shape, and the existing

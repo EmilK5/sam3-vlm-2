@@ -243,6 +243,10 @@ one noun alone or one/two basic adjectives followed by a noun (1–3 words).
 Simple wording and adjective/noun roles are guided by the Qwen instructions.
 Vocabulary remains open; no dictionary filters object names or descriptive
 labels. Executable prompts retain length, lexical, and method/prose checks.
+Qwen is instructed to preserve the user's target object category in both
+executable prompts and missing-appearance labels. Confounder labels must not
+become target actions. The instruction blocks omit concrete example phrase
+lists; full evidence and tried-prompt history remain available.
 Each Qwen round contributes at most one target experiment, with at most one
 replan and two Qwen calls total.
 
