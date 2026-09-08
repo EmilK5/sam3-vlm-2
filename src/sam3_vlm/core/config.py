@@ -65,6 +65,8 @@ class PlannerConfig:
     execute_confounder_prompts: bool = False
     prompt_version: str = "old"
     enable_rejection_correction: bool = False
+    # Historical recovery studies corrected only completely empty banks.
+    correct_missing_target: bool = False
     target_scope: Optional[str] = None
     max_actions_per_prompt: int = 5
     temperature: float = 0.2
@@ -94,10 +96,23 @@ class SAM3Config:
     box_nms_iou_threshold: float = 0.7
     # Controller-owned threshold for every Qwen-generated sensing action.
     qwen_prompt_threshold: float = 0.5
+    qwen_discovery_threshold: Optional[float] = None
+    qwen_confounder_threshold: Optional[float] = None
+    qwen_discovery_use_exemplars: bool = True
+
+    def threshold_for_family(self, family) -> float:
+        name = getattr(family, "value", family)
+        override = (self.qwen_discovery_threshold if name == "DISCOVERY" else
+                    self.qwen_confounder_threshold if name == "CONFOUNDER" else None)
+        return self.qwen_prompt_threshold if override is None else override
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.qwen_prompt_threshold <= 1.0):
             raise ValueError("qwen_prompt_threshold must be in [0, 1]")
+        for name in ("qwen_discovery_threshold", "qwen_confounder_threshold"):
+            value = getattr(self, name)
+            if value is not None and not (0.0 <= value <= 1.0):
+                raise ValueError(f"{name} must be in [0, 1] or None")
 
 
 @dataclass(frozen=True)

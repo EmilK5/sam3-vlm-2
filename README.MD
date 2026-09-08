@@ -639,8 +639,8 @@ The standard pilot supports five controlled variants:
 - the adaptive target-only pipeline with up to two Qwen prompts;
 - experiment E, which continues toward numerical saturation with caps of 100 Qwen calls and 1000 SAM3 actions.
 
-Every Qwen-generated SAM3 action uses threshold `0.5`. The current M8 pilot also
-executes Qwen confounder labels as separate negative queries on existing candidates.
+Production Qwen discovery uses threshold `0.20` without target exemplars.
+Qwen confounder labels execute separately at `0.5` on existing candidates.
 C/D/E report the pure sum of target posterior probabilities (soft count).
 E bypasses short-run
 utility limits and disables separate tile, iteration, and total-runtime caps.
@@ -653,10 +653,13 @@ for C and D, plus four E combinations of old/new prompts and negatives off/on.
 See the [prompt comparison guide](docs/M8_PROMPT_ABLATION.md) for the eight-variant
 matrix, commands, and automatic compact review ZIPs.
 
-The next step is the [recovery and discovery diagnostic](docs/M8_RECOVERY_DIAGNOSTIC.md):
-three D variants on selected images, plus a SAM3-only threshold/exemplar probe
-with offline association comparisons. Production defaults to the old Qwen prompt,
-negatives and soft counts, with one budgeted correction for rejected empty banks.
+The next step is the [low-threshold discovery comparison](docs/M8_LOW_THRESHOLD_DISCOVERY.md):
+four D variants compare 0.5 with exemplars against 0.25, 0.20 and 0.15 without
+exemplars. Production uses 0.20 positive discovery, old Qwen instructions, negatives
+at 0.5 and soft counts. A missing valid target can receive one budgeted correction
+while accepted negatives remain queued. Compact reviews include probability-change
+diagnostics. The earlier [recovery/discovery study](docs/M8_RECOVERY_DIAGNOSTIC.md)
+remains reproducible with its historical settings.
 
 See the [M8 runbook](docs/M8_CLUSTER_RUNBOOK.md#4-the-pilot-experiment) for
 stopping semantics and the five-variant pilot commands.

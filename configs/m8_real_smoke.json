@@ -38,6 +38,7 @@
   "planner": {
     "prompt_version": "old",
     "enable_rejection_correction": true,
+    "correct_missing_target": true,
     "target_scope": "For this dataset, focus on fruit on trees; exclude fallen fruit.",
     "max_actions_per_prompt": 1,
     "temperature": 0.2,
@@ -58,6 +59,9 @@
   "output_root": "runs/m8_real_smoke",
   "pilot_sample_limit": 10,
   "sam3": {
+    "qwen_discovery_threshold": 0.2,
+    "qwen_confounder_threshold": 0.5,
+    "qwen_discovery_use_exemplars": false,
     "qwen_prompt_threshold": 0.5
   }
 }

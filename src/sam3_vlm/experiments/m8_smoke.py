@@ -560,6 +560,33 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
         ),
     )
     posterior_count_type = "soft_posterior_count"
+    if suite == "discovery-ablation":
+        reference = dataclasses.replace(
+            base,
+            planner=dataclasses.replace(base.planner, prompt_version="old",
+                execute_confounder_prompts=True, enable_rejection_correction=True,
+                correct_missing_target=True),
+            budget=dataclasses.replace(base.budget, max_qwen_calls=2, max_cleanup_calls=0),
+            replanning=dataclasses.replace(base.replanning, max_replans=1, continue_until_saturation=False),
+            association=dataclasses.replace(base.association, enable_iom_dedup=True),
+        )
+        return [PilotVariant(name, dataclasses.replace(reference, sam3=dataclasses.replace(
+            reference.sam3, qwen_prompt_threshold=0.5,
+            qwen_discovery_threshold=threshold, qwen_confounder_threshold=0.5,
+            qwen_discovery_use_exemplars=exemplars,
+        )), True, posterior_count_type) for name, threshold, exemplars in (
+            ("D_Discovery_050_Exemplars", 0.5, True),
+            ("D_Discovery_025_NoExemplars", 0.25, False),
+            ("D_Discovery_020_NoExemplars", 0.20, False),
+            ("D_Discovery_015_NoExemplars", 0.15, False),
+        )]
+    if suite in {"recovery-ablation", "prompt-ablation", "negative-ablation", "all"}:
+        base = dataclasses.replace(base,
+            sam3=dataclasses.replace(base.sam3, qwen_prompt_threshold=0.5,
+                qwen_discovery_threshold=None, qwen_confounder_threshold=None,
+                qwen_discovery_use_exemplars=True),
+            planner=dataclasses.replace(base.planner, correct_missing_target=False),
+        )
     if suite == "recovery-ablation":
         reference = dataclasses.replace(
             base,
@@ -1045,6 +1072,7 @@ def m8_4_and_5_pilot(args):
                         "predicted_count": count,
                         "raw_soft_count": summary.get("discovery_statistics", {}).get("raw_soft_count"),
                         "count_type": variant.count_type,
+                        "confidence_trace": summary.get("discovery_statistics", {}).get("confidence_trace", []),
                         "prompt_outcomes": [
                             {
                                 "prompt": prompt_text,
@@ -1109,7 +1137,7 @@ def m8_4_and_5_pilot(args):
     if suite in ("negative-ablation", "all"):
         report["paired_comparison"] = _negative_prompt_comparison(report["samples"], len(samples))
     from sam3_vlm.experiments.pilot_review import prompt_comparisons, write_compact_review
-    if suite in {"prompt-ablation", "recovery-ablation"}:
+    if suite in {"prompt-ablation", "recovery-ablation", "discovery-ablation"}:
         report["paired_comparisons"] = prompt_comparisons(report)
     report_path = Path(dep.output_root) / "pilot_report.json"
     with open(report_path, "w") as file:
@@ -1137,8 +1165,8 @@ def main() -> int:
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
-        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation"], default="standard",
-        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants",
+        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation", "discovery-ablation"], default="standard",
+        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants; discovery-ablation: four D threshold/exemplar variants",
     )
     parser.add_argument("--pilot-family", choices=["C", "D", "E"],
                         help="Run just one family of the prompt-ablation suite")

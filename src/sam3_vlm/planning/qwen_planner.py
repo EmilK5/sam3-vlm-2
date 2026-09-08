@@ -270,7 +270,8 @@ class QwenPlannerService:
             # Freeze each semantic slot so evidence never changes its meaning.
             tried = {
                 str(p).strip().lower()
-                for p in evidence.discovery_diagnostics.get("tried_sam3_prompts", [])
+                for p in (evidence.discovery_diagnostics.get("tried_sam3_prompts", [])
+                          + evidence.discovery_diagnostics.get("pending_sam3_prompts", []))
             }
             for index in range(config.belief.num_confounders):
                 slot = f"confounder{index + 1}"
@@ -285,7 +286,7 @@ class QwenPlannerService:
                     family=ActionFamily.CONFOUNDER,
                     priority=0.5,
                     semantic_prior={slot: 1.0},
-                    suggested_threshold=config.sam3.qwen_prompt_threshold,
+                    suggested_threshold=config.sam3.threshold_for_family(ActionFamily.CONFOUNDER),
                     suggested_spatial_mode=SpatialMode.TILED,
                     rationale="Controller executes Qwen's confounder label as negative evidence.",
                 ))

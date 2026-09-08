@@ -72,6 +72,8 @@ class Runner:
         self.target_class = "target"
         self._pending_replan_reason: Optional[str] = None
         self._previous_plan_feedback = None
+        self.confidence_trace = []
+        self._previous_target_probabilities = {}
         
         # Sub-components
         self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen, recorder=self.recorder)
@@ -156,6 +158,7 @@ class Runner:
                             self.scene_state, self.config
                         ),
                         "raw_soft_count": self.scene_state.count_estimate.raw_soft_count,
+                        "confidence_trace": self.confidence_trace,
                         "target_count_commit_threshold": self.config.belief.target_count_commit_threshold,
                         "committed_target_nodes": self.scene_state.count_estimate.committed_node_count,
                         "target_count_hard_threshold": self.config.belief.target_count_hard_threshold,
@@ -246,6 +249,16 @@ class Runner:
             target_hard_threshold=self.config.belief.target_count_hard_threshold,
         )
 
+    def _record_confidence_trace(self, action=None, observation=None):
+        """Explain soft-count changes with bounded node examples, without changing beliefs."""
+        from sam3_vlm.logging.confidence import confidence_step
+        row, probabilities = confidence_step(
+            self.scene_state.graph, self._previous_target_probabilities,
+            self.target_class, action, observation,
+        )
+        self.confidence_trace.append(row)
+        self._previous_target_probabilities = probabilities
+
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
         if action.spatial_mode == SpatialMode.TILED:
             if action.tiling:
@@ -298,6 +311,7 @@ class Runner:
                 self.scene_state.action_bank = ActionBank()
                 
             self.evidence_pack = self.bootstrap_result.qwen_evidence_pack
+            self._record_confidence_trace()
             
             if self.recorder:
                 self.recorder.record_bootstrap_completed(len(self.scene_state.graph.nodes))
@@ -427,6 +441,7 @@ class Runner:
 
             # Recompute soft count and variance
             self.scene_state.count_estimate = self._estimate_count()
+            self._record_confidence_trace(action, observation)
             
             post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
@@ -623,6 +638,7 @@ class Runner:
             pre_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
             self.scene_state.count_estimate = self._estimate_count()
+            self._record_confidence_trace(cleanup_action, observation)
             post_entropy = sum(n.class_belief.entropy for n in self.scene_state.graph.active_nodes())
             
             if self.recorder:
@@ -783,7 +799,9 @@ class Runner:
         if (
             self.config.planner.enable_rejection_correction
             and self._uses_canonical_m8_policy()
-            and self.scene_state.last_plan_accepted_actions == 0
+            and (result["accepted_target_count"] == 0
+                 if self.config.planner.correct_missing_target
+                 else self.scene_state.last_plan_accepted_actions == 0)
             and (result["rejections"] or result["contract_diagnostic"])
             and not result["json_repair_attempted"]
             and self.scene_state.budget.qwen_calls < self.config.budget.max_qwen_calls
@@ -791,7 +809,21 @@ class Runner:
         ):
             if self.recorder:
                 self.recorder.record_qwen_plan_started(self.scene_state.qwen_round)
+            # Keep accepted negatives queued and expose their frozen slots to
+            # the correction without claiming that they have already been sensed.
+            import copy
+            accepted_ids = list(self.scene_state.last_plan_action_ids)
+            self.evidence_pack = copy.deepcopy(self.evidence_pack)
+            self.evidence_pack.confounder_labels = dict(self.scene_state.confounder_labels)
+            self.evidence_pack.discovery_diagnostics["pending_sam3_prompts"] = [
+                e.action.prompt for e in self.scene_state.action_bank.unexecuted_entries()
+            ]
             self._execute_plan_attempt(correction_of=result["call_id"])
+            self.scene_state.last_plan_action_ids = list(dict.fromkeys(
+                accepted_ids + self.scene_state.last_plan_action_ids
+            ))
+            self.scene_state.last_plan_accepted_actions = len(self.scene_state.last_plan_action_ids)
+            self._record_controller_state()
 
     def _execute_plan_attempt(self, *, is_replan=False, correction_of=None):
         """Run one Qwen round and add its valid actions to the bank."""
@@ -827,6 +859,10 @@ class Runner:
             ),
         )
         
+        accepted_target_count = sum(
+            e.action.family == ActionFamily.DISCOVERY and e.action.semantic_key == "target"
+            for e in new_entries
+        )
         rejections = [r.to_dict() for r in self.bank_generator.last_rejections]
         diagnostic = self.planner_service.last_contract_diagnostic
         json_repair_attempted = self.planner_service.last_repair_attempted
@@ -859,6 +895,7 @@ class Runner:
                     "prompt_version": self.config.planner.prompt_version,
                     "correction_of": correction_of,
                     "accepted_action_count": len(new_entries),
+                    "accepted_target_action_count": accepted_target_count,
                     "repair_attempted": self.planner_service.last_repair_attempted,
                     "fallback_used": self.planner_service.last_fallback_used,
                     "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
@@ -892,7 +929,7 @@ class Runner:
         
         if self.recorder:
             self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
-        return {"call_id": call_id, "rejections": rejections,
+        return {"call_id": call_id, "accepted_target_count": accepted_target_count, "rejections": rejections,
                 "contract_diagnostic": diagnostic, "json_repair_attempted": json_repair_attempted}
 
     def _request_replan(self):
@@ -1095,6 +1132,11 @@ class Runner:
 
     def _attach_target_pseudoexemplars(self, action):
         """Ground target-oriented M8 actions in controller-selected visual seeds."""
+        if (action.source == ActionSource.QWEN
+                and action.family == ActionFamily.DISCOVERY
+                and not self.config.sam3.qwen_discovery_use_exemplars):
+            return dataclasses.replace(action, positive_exemplar_ids=(), positive_exemplar_boxes=())
+
         if (
             not self.scene_state
             or not self.config.bootstrap.enable_pseudoexemplar_refinement

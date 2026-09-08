@@ -7,6 +7,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 
 PROMPT_CONTRASTS = (
+    ("D_discovery_050_vs_025", "D_Discovery_050_Exemplars", "D_Discovery_025_NoExemplars"),
+    ("D_discovery_050_vs_020", "D_Discovery_050_Exemplars", "D_Discovery_020_NoExemplars"),
+    ("D_discovery_025_vs_020", "D_Discovery_025_NoExemplars", "D_Discovery_020_NoExemplars"),
+    ("D_discovery_020_vs_015", "D_Discovery_020_NoExemplars", "D_Discovery_015_NoExemplars"),
     ("D_rejection_correction", "D_ReferenceOld", "D_OldWithCorrection"),
     ("D_evidence_prompt", "D_OldWithCorrection", "D_V4WithCorrection"),
     ("C_prompt", "C_OldPrompt", "C_NewPrompt"),
@@ -73,16 +77,16 @@ def _select_cases(report, limit=3):
         add(failed[0], "execution or validation failure")
     changes = [
         (a["absolute_error"] - b["absolute_error"], a["sample_id"])
-        for label, left, right in PROMPT_CONTRASTS if "_prompt" in label and not label.startswith("E_negatives")
+        for label, left, right in PROMPT_CONTRASTS if ("_prompt" in label or "_discovery_" in label) and not label.startswith("E_negatives")
         for a, b in _paired_rows(report, left, right)
     ]
     if changes:
         best = max(changes, key=lambda item: (item[0], item[1]))
         worst = min(changes)
         if best[0] > 1e-9:
-            add(best[1], "largest improvement from the new prompt")
+            add(best[1], "largest improvement from the comparison variant")
         if worst[0] < -1e-9:
-            add(worst[1], "largest regression from the new prompt")
+            add(worst[1], "largest regression from the comparison variant")
     for row in sorted(report["samples"], key=lambda r: (-r.get("absolute_error", -1), r["sample_id"])):
         add(row["sample_id"], "large remaining count error")
         if len(selected) >= limit:
@@ -111,6 +115,7 @@ def write_compact_review(report, output_dir):
         artifact_count = 0
         correction_count = 0
         successful_corrections = 0
+        target_corrections = 0
         for row in rows:
             for outcome in row.get("prompt_outcomes", []):
                 stat = prompt_stats[(variant, outcome["family"], outcome["prompt"])]
@@ -133,6 +138,9 @@ def write_compact_review(report, output_dir):
                 correction_count += meta.get("correction_of") is not None
                 successful_corrections += (
                     meta.get("correction_of") is not None and meta.get("accepted_action_count", 0) > 0
+                )
+                target_corrections += (
+                    meta.get("correction_of") is not None and meta.get("accepted_target_action_count", 0) > 0
                 )
                 rejections.update(r.get("reason", "UNKNOWN") for r in meta.get("rejections", []))
                 if meta.get("contract_diagnostic"):
@@ -160,6 +168,7 @@ def write_compact_review(report, output_dir):
                     "stop_reason": row.get("stop_reason"),
                     "failure_message": row.get("failure_message"),
                     "qwen_first_and_last": examples,
+                    "confidence_trace": row.get("confidence_trace", []),
                 })
         diagnostics[variant] = {
             "stop_reasons": dict(Counter(r.get("stop_reason") or "FAILED" for r in rows)),
@@ -167,6 +176,8 @@ def write_compact_review(report, output_dir):
             "qwen_artifacts_read": artifact_count,
             "rejection_correction_calls": correction_count,
             "corrections_with_accepted_actions": successful_corrections,
+            "corrections_with_accepted_target": target_corrections,
+            "confidence_trace_rows_available": sum("confidence_trace" in r for r in rows),
             "prompt_outcomes_rows_available": sum("prompt_outcomes" in r for r in rows),
             "failed_images": [r["sample_id"] for r in rows if not r.get("success")],
         }
@@ -185,6 +196,23 @@ def write_compact_review(report, output_dir):
     numeric_keys = ("sample_id", "variant", "gt_count", "predicted_count", "raw_soft_count",
                     "count_type", "success", "absolute_error", "runtime_ms", "qwen_calls",
                     "sam3_calls", "stop_reason", "failure_message")
+    confidence_totals = []
+    for row in report["samples"]:
+        trace = row.get("confidence_trace", [])
+        if not trace:
+            continue
+        sensing = [step for step in trace if step["stage"] == "sensing"]
+        confidence_totals.append({
+            "sample_id": row["sample_id"], "variant": row["variant"],
+            "bootstrap_target_mass": trace[0]["raw_soft_count"],
+            "final_target_mass": trace[-1]["raw_soft_count"],
+            "final_node_count": trace[-1]["node_count"],
+            "final_nodes_below_half": trace[-1]["nodes_below_half"],
+            "new_nodes_after_bootstrap": sum(s["new_nodes"] for s in sensing),
+            "new_node_target_mass_at_creation": sum(s["new_node_target_mass"] for s in sensing),
+            "existing_node_target_mass_change": sum(s["existing_node_target_mass_change"] for s in sensing),
+            "removed_node_target_mass": sum(s["removed_node_target_mass"] for s in sensing),
+        })
     path = output_dir / "compact_review.zip"
     with ZipFile(path, "w", ZIP_DEFLATED) as bundle:
         # Previews are bounded in number and resolution; full-resolution originals
@@ -214,6 +242,7 @@ def write_compact_review(report, output_dir):
             "review_summary.json": summary,
             "counts.json": [{k: r.get(k) for k in numeric_keys} for r in report["samples"]],
             "selected_cases.json": cases,
+            "confidence_totals.json": confidence_totals,
             "prompt_examples.json": prompt_examples,
             "prompt_yields.json": [dict(variant=v, family=f, prompt=p, **stats)
                                    for (v, f, p), stats in sorted(prompt_stats.items())],

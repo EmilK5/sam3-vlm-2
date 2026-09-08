@@ -375,7 +375,7 @@ class ActionBankGenerator:
                 semantic_key=canonical_key,
                 prompt=proposal.prompt,
                 family=proposal.family,
-                threshold=(config.sam3 if config is not None else SAM3Config()).qwen_prompt_threshold,
+                threshold=(config.sam3 if config is not None else SAM3Config()).threshold_for_family(proposal.family),
                 spatial_mode=proposal.suggested_spatial_mode,
                 source=ActionSource.QWEN,
                 qwen_priority=adjusted_priority,

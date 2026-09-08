@@ -33,9 +33,15 @@ in this document; generic and historical configurations remain replayable.
   evidence fusion increases confounder probability on matching evidence, reducing
   normalized target probability. This is an uncalibrated evidence model, not a
   learned classifier. No coefficients are changed by enabling these queries.
-- Every Qwen-generated action uses `sam3.qwen_prompt_threshold` (0.5 in M8).
-  The controller overrides any different suggested threshold. Bootstrap/context
-  thresholds remain independent. Raw suggestions remain available in artifacts.
+- Qwen target discovery uses `sam3.qwen_discovery_threshold` (0.20 in production)
+  and confounder sensing uses `sam3.qwen_confounder_threshold` (0.5). Null overrides
+  fall back to `sam3.qwen_prompt_threshold` (historical default 0.5). The controller
+  overrides any different suggested threshold; raw suggestions remain in artifacts.
+  Bootstrap/context thresholds remain independent. With production
+  `sam3.qwen_discovery_use_exemplars: false`, Qwen discovery runs without target
+  exemplar IDs/boxes, including any supplied IDs. Bootstrap exemplar refinement
+  and verification retain their existing behavior. Sensor admission does not
+  commit a node as fruit: posterior updates and the soft-count equation are unchanged.
 - Each short prompt/label has one to three words: noun alone or one/two basic
   visual adjectives followed by a noun. Vocabulary is open. The lexical guard
   enforces length, word shape, and existing method/prose restrictions; grammar,
@@ -76,17 +82,34 @@ in this document; generic and historical configurations remain replayable.
   Old and V3 instruction text remain preserved. Production defaults to old after
   the 34-image comparison; generic configs also default to old.
 - `planner.enable_rejection_correction` defaults false generically and true in
-  production M8. A strict M8 plan with zero accepted actions and explicit bank
-  rejections or `EMPTY_UNSATURATED_PLAN` may receive one correction if Qwen and
-  other hard budgets permit. Both attempts are recorded, linked by `correction_of`.
+  production M8. Production also enables `planner.correct_missing_target`: a strict
+  M8 plan with zero accepted target discovery actions and explicit bank rejections
+  or `EMPTY_UNSATURATED_PLAN` may receive one correction if Qwen and other hard
+  budgets permit. Accepted negatives remain queued; correction evidence includes
+  their frozen labels and pending prompts without claiming they were sensed.
+  Both attempts are recorded, linked by `correction_of`, including accepted target
+  counts. With `correct_missing_target: false`, the historical trigger requires
+  zero accepted actions of any family.
   The correction consumes an ordinary Qwen call; C has no spare call, and a D
   correction can consume the call otherwise available for its second scene plan.
   A correction gets no JSON retry, and an initial JSON repair precludes another
   correction of that plan. Failures remain visible; no new fallback is invented.
-  Partial rejections are supplied to the next ordinary replan without an immediate
-  correction. Feedback includes rejected phrases/reasons, not new image evidence.
+  A valid target plus rejected negatives waits for the next ordinary replan.
+  Feedback includes rejected phrases/reasons, not new image evidence.
   The target text, complete scene evidence and images are preserved. JSON repair
   feedback also uses diagnostics instead of modifying the user's target.
+- `discovery-ablation` compares four D arms with the old prompt, negatives at 0.5,
+  corrected missing-target recovery, IoU+IoM association and soft counts: positive
+  discovery at 0.5 with exemplars, and at 0.25/0.20/0.15 without exemplars. The
+  reference holds the updated recovery behavior constant; it is not the historical
+  recovery-disabled baseline. Historical recovery/prompt/negative/all suites pin
+  0.5 with exemplars and the old recovery trigger for reproducibility. Standard
+  A–E use the configured production sensing policy.
+- Observational confidence traces record the bootstrap aggregate and each later
+  sensing action: candidate counts, new-node target mass, existing-node probability
+  changes, removed-node mass, observation relations and at most five largest gains
+  and losses. These diagnostics do not modify beliefs. Compact reviews contain
+  per-image totals and full traces for at most three selected diagnostic images.
 - The planner remains the local Ollama alias `qwen3.5-9b-sam3`, with 65536 context
   tokens, 512 response tokens, non-thinking JSON mode, a 45-second request timeout,
   and no hidden SDK retries. Negative queries need no extra Qwen request: their

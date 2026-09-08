@@ -1,7 +1,9 @@
 # M8: rejection correction and a small SAM3 discovery diagnostic
 
-The current reference is D with the old prompt, negatives and soft counts.
-Production uses that prompt/count policy with rejection correction enabled.
+This is the historical recovery study. Its suite explicitly retains positive
+threshold 0.5, target exemplars and the original empty-bank correction trigger.
+For the current production policy and next runs, use
+[M8_LOW_THRESHOLD_DISCOVERY.md](M8_LOW_THRESHOLD_DISCOVERY.md).
 The comparison below includes an unchanged correction-disabled reference arm.
 Old and V3 prompts remain versioned; V4 is the revised evidence-grounding prompt.
 

@@ -203,6 +203,8 @@ class RealQwenPlanner:
         belief_classes = canonical_belief_classes(config.belief.num_confounders)
         confounder_slots = [c for c in belief_classes if c != "target"]
         existing_mapping = evidence_pack.confounder_labels or {}
+        discovery_threshold = config.sam3.threshold_for_family(ActionFamily.DISCOVERY)
+        confounder_threshold = config.sam3.threshold_for_family(ActionFamily.CONFOUNDER)
 
         system_prompt = self.SYSTEM_PROMPT
         if config.planner.prompt_version in {"v3", "v4"}:
@@ -244,6 +246,12 @@ class RealQwenPlanner:
                 "proposing a novel target query. Do not repeat rejected duplicates or rename frozen "
                 "confounder slots. Keep the original target and the short noun-phrase contract. "
                 "Do not turn these error messages into SAM3 prompts.\n"
+            )
+        if evidence_pack.discovery_diagnostics.get("pending_sam3_prompts"):
+            text += (
+                "\nThe pending_sam3_prompts were accepted and are queued, but have not been sensed. "
+                "Keep their frozen confounder meanings. Propose the missing novel target query; "
+                "do not duplicate pending prompts or treat them as sensor results.\n"
             )
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
@@ -301,7 +309,7 @@ class RealQwenPlanner:
                 "Do not return an empty list.\n"
             )
         text += (
-            f"- SAM3 threshold is fixed by the controller at {config.sam3.qwen_prompt_threshold}. "
+            f"- SAM3 threshold is fixed by the controller at {discovery_threshold}. "
             "Use that value for suggested_threshold; do not raise it for hidden targets.\n"
         )
         text += (
@@ -317,7 +325,7 @@ class RealQwenPlanner:
             '      "family": "DISCOVERY",\n'
             '      "priority": <float 0.0-1.0>,\n'
             '      "semantic_prior": {"target": 1.0},\n'
-            f'      "suggested_threshold": {config.sam3.qwen_prompt_threshold},\n'
+            f'      "suggested_threshold": {discovery_threshold},\n'
             '      "suggested_spatial_mode": "GLOBAL | TILED",\n'
             '      "rationale": "<short reasoning>"\n'
             "    }\n"
@@ -332,7 +340,9 @@ class RealQwenPlanner:
                 "- Every action in proposed_actions must use semantic_key='target'",
             ).replace(
                 "use it only as non-executable scene context.",
-                "the controller runs these as negative SAM3 queries at the same fixed threshold. "
+                ("the controller runs these as negative SAM3 queries at the same fixed threshold. "
+                 if discovery_threshold == confounder_threshold else
+                 f"the controller runs these as negative SAM3 queries at fixed threshold {confounder_threshold}. ") +
                 "Name visible basic non-target objects using 1–3 words. Do not write 'not fruit'. "
                 "Keep frozen slot meanings unchanged; do not rename existing labels.",
             )
