@@ -131,6 +131,20 @@ class RealQwenPlanner:
         "previous searches. Do not invent hidden objects.\n"
     )
 
+    EVIDENCE_GUIDANCE_V4 = (
+        "Separate direct visual observations, recorded sensor outcomes, and hypotheses in your rationale. "
+        "Only claim that a previous query missed an appearance or searched a restricted lighting condition "
+        "when the supplied evidence establishes that. A general target prompt does not imply a search "
+        "limited to bright objects. Low support is not proof of a missed fruit.\n"
+        "Choose the next description from visible evidence and per-query outcomes, not a default assumption "
+        "about shadows. If the cause of a miss is unknown, say so. Do not claim unseen objects exist. "
+        "A repeated zero-gain appearance needs a different visible justification, not merely a synonym.\n"
+        "Before returning JSON, check every short phrase: one to three words, noun last, at most two "
+        "adjectives before it. Each missing appearance must name the target object, not just an adjective. "
+        "Preserve defining target attributes and keep confounders separate. Check the exact prompt "
+        "blacklist and any controller rejection feedback. Vocabulary remains open.\n"
+    )
+
     SYSTEM_PROMPT = (
         "You propose target-search experiments for SAM3. You are NOT a detector and must not count objects. "
         "Qwen never decides whether the pipeline should stop. If discovery is not explicitly saturated, "
@@ -191,8 +205,10 @@ class RealQwenPlanner:
         existing_mapping = evidence_pack.confounder_labels or {}
 
         system_prompt = self.SYSTEM_PROMPT
-        if config.planner.prompt_version == "v3":
+        if config.planner.prompt_version in {"v3", "v4"}:
             system_prompt = self.DISCOVERY_GUIDANCE_V3 + "\n" + system_prompt
+            if config.planner.prompt_version == "v4":
+                system_prompt = self.EVIDENCE_GUIDANCE_V4 + "\n" + system_prompt
             if config.planner.target_scope:
                 system_prompt = config.planner.target_scope + "\n\n" + system_prompt
             if config.replanning.continue_until_saturation:
@@ -220,6 +236,15 @@ class RealQwenPlanner:
             continue_until_saturation=config.replanning.continue_until_saturation,
             execute_confounder_prompts=config.planner.execute_confounder_prompts,
         )
+        if evidence_pack.discovery_diagnostics.get("previous_plan_feedback"):
+            text += (
+                "\n\nCONTROLLER REJECTION FEEDBACK:\n"
+                "Read previous_plan_feedback in Discovery Diagnostics. It contains the actual rejected "
+                "phrases and reasons, not evidence about the image. Correct those errors before "
+                "proposing a novel target query. Do not repeat rejected duplicates or rename frozen "
+                "confounder slots. Keep the original target and the short noun-phrase contract. "
+                "Do not turn these error messages into SAM3 prompts.\n"
+            )
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
             "- sam3_prompt, likely_confounders, missing_appearance_modes: each phrase has 1 to 3 words.\n"

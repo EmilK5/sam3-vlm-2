@@ -71,6 +71,7 @@ class Runner:
         self.id_gen = IDGenerator()
         self.target_class = "target"
         self._pending_replan_reason: Optional[str] = None
+        self._previous_plan_feedback = None
         
         # Sub-components
         self.bootstrap = BootstrapPipeline(sensor, config=config, id_gen=self.id_gen, recorder=self.recorder)
@@ -777,9 +778,36 @@ class Runner:
         return new_nodes_count, not_retrieved_nodes_count
 
     def _execute_plan(self, *, is_replan: bool = False) -> None:
+        """Allow one rejection correction without granting another call budget."""
+        result = self._execute_plan_attempt(is_replan=is_replan)
+        if (
+            self.config.planner.enable_rejection_correction
+            and self._uses_canonical_m8_policy()
+            and self.scene_state.last_plan_accepted_actions == 0
+            and (result["rejections"] or result["contract_diagnostic"])
+            and not result["json_repair_attempted"]
+            and self.scene_state.budget.qwen_calls < self.config.budget.max_qwen_calls
+            and self._check_hard_budgets() is None
+        ):
+            if self.recorder:
+                self.recorder.record_qwen_plan_started(self.scene_state.qwen_round)
+            self._execute_plan_attempt(correction_of=result["call_id"])
+
+    def _execute_plan_attempt(self, *, is_replan=False, correction_of=None):
         """Run one Qwen round and add its valid actions to the bank."""
+        import copy
+        if self.config.planner.enable_rejection_correction and self._previous_plan_feedback:
+            self.evidence_pack = copy.deepcopy(self.evidence_pack)
+            self.evidence_pack.discovery_diagnostics["previous_plan_feedback"] = self._previous_plan_feedback
+        call_config = self.config
+        if correction_of is not None:
+            # A correction has exactly one API attempt; malformed JSON cannot
+            # turn this into an unbounded or third retry of the same plan.
+            call_config = dataclasses.replace(self.config, budget=dataclasses.replace(
+                self.config.budget, max_qwen_calls=self.scene_state.budget.qwen_calls + 1,
+            ))
         call_id = self.id_gen.next_qwen_call_id()
-        planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, self.config)
+        planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, call_config)
 
         strict_m8 = self._uses_canonical_m8_policy()
         valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
@@ -799,6 +827,14 @@ class Runner:
             ),
         )
         
+        rejections = [r.to_dict() for r in self.bank_generator.last_rejections]
+        diagnostic = self.planner_service.last_contract_diagnostic
+        json_repair_attempted = self.planner_service.last_repair_attempted
+        self._previous_plan_feedback = {
+            "qwen_call_id": call_id,
+            "rejections": rejections,
+            "contract_diagnostic": diagnostic,
+        } if rejections or diagnostic else None
         if self.recorder:
             cs_ref = None
             if self.evidence_pack.contact_sheet.contact_sheet_image_path:
@@ -821,6 +857,8 @@ class Runner:
                 "output": planner_output.to_dict(),
                 "metadata": {
                     "prompt_version": self.config.planner.prompt_version,
+                    "correction_of": correction_of,
+                    "accepted_action_count": len(new_entries),
                     "repair_attempted": self.planner_service.last_repair_attempted,
                     "fallback_used": self.planner_service.last_fallback_used,
                     "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
@@ -854,6 +892,8 @@ class Runner:
         
         if self.recorder:
             self.recorder.record_budget_updated(self.scene_state.budget.__dict__)
+        return {"call_id": call_id, "rejections": rejections,
+                "contract_diagnostic": diagnostic, "json_repair_attempted": json_repair_attempted}
 
     def _request_replan(self):
         """Centralized handler preserving frozen M6 behavior outside strict M8."""

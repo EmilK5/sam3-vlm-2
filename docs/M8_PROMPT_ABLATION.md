@@ -1,5 +1,9 @@
 # M8: soft counts and positive-prompt comparison
 
+This guide preserves the completed old/V3 comparison. The next small experiment
+is in the [recovery and discovery diagnostic guide](M8_RECOVERY_DIAGNOSTIC.md).
+This historical suite explicitly disables rejection correction.
+
 Run these commands from the V4 repository on the model machine, after syncing
 the updated V4 code and activating the same environment/model endpoint used for
 the preceding pilot. Use the same completed 34-image manifest.

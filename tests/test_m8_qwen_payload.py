@@ -368,7 +368,8 @@ def test_negative_prompt_instructions_keep_target_schema_and_full_evidence(mock_
 
 @pytest.mark.parametrize('negatives', [False, True])
 @pytest.mark.parametrize('until_saturation', [False, True])
-def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path, negatives, until_saturation):
+@pytest.mark.parametrize('version', ['v3', 'v4'])
+def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path, negatives, until_saturation, version):
     from dataclasses import replace
     original = tmp_path / 'image.png'
     Image.new('RGB', (10, 10)).save(original)
@@ -377,7 +378,7 @@ def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path
                             discovery_diagnostics={'discovery_saturated': True})
     base = V4Config()
     config = replace(base,
-                     planner=replace(base.planner, prompt_version='v3',
+                     planner=replace(base.planner, prompt_version=version,
                                      execute_confounder_prompts=negatives,
                                      target_scope='Only fruit on trees; exclude fallen fruit.'),
                      replanning=replace(base.replanning, continue_until_saturation=until_saturation))
@@ -387,6 +388,7 @@ def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path
     system = request['messages'][0]['content']
     user = request['messages'][1]['content'][0]['text']
     assert RealQwenPlanner.DISCOVERY_GUIDANCE_V3 in system
+    assert (RealQwenPlanner.EVIDENCE_GUIDANCE_V4 in system) == (version == 'v4')
     assert 'Only fruit on trees; exclude fallen fruit.' in system
     assert 'Vocabulary remains open' in system
     assert pack.scene_summary in user
@@ -405,3 +407,21 @@ def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path
     planner.plan_scene(pack, BudgetState(), replace(config, planner=replace(config.planner, prompt_version='old', execute_confounder_prompts=False)))
     assert planner.last_request_text['system'] == RealQwenPlanner.SYSTEM_PROMPT
     assert 'Only fruit on trees' not in planner.last_request_text['user']
+
+
+def test_rejection_feedback_is_explicit_and_preserves_target_and_images(mock_openai_client, tmp_path):
+    original = tmp_path / 'image.png'
+    sheet = tmp_path / 'sheet.png'
+    Image.new('RGB', (10, 10)).save(original)
+    Image.new('RGB', (10, 10)).save(sheet)
+    feedback = {'rejections': [{'sam3_prompt': 'green fruit in shadow', 'reason': 'INVALID_GROUNDING_PROMPT',
+                                'detail': 'Use 1-3 words'}]}
+    pack = QwenEvidencePack('i', 'green fruit', 'target', ContactSheet(contact_sheet_image_path=str(sheet)),
+                            image_path=str(original), discovery_diagnostics={'previous_plan_feedback': feedback})
+    planner = RealQwenPlanner(base_url='http://fake', model='fake', strict_model_errors=True)
+    planner.plan_scene(pack, BudgetState(), V4Config())
+    content = mock_openai_client.chat.completions.create.call_args.kwargs['messages'][1]['content']
+    assert len(content) == 3
+    assert 'CONTROLLER REJECTION FEEDBACK' in content[0]['text']
+    assert 'INVALID_GROUNDING_PROMPT' in content[0]['text']
+    assert "TARGET TO PRESERVE: 'green fruit'." in content[0]['text']

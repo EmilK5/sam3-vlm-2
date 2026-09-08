@@ -207,10 +207,10 @@ class QwenPlannerService:
                 try:
                     import copy
                     repair_evidence = copy.deepcopy(evidence)
-                    repair_evidence.user_prompt += (
-                        "\n\nYour previous output was invalid. "
-                        "Return ONLY JSON matching this schema."
-                    )
+                    repair_evidence.discovery_diagnostics["previous_plan_feedback"] = {
+                        "rejections": [{"reason": "MALFORMED_JSON", "detail":
+                            "Your previous output was invalid. Return ONLY JSON matching the requested schema."}],
+                    }
                     raw_output = self._invoke_backend(repair_evidence, budget, config)
                     output = self._coerce_to_planner_output(raw_output)
                 except Exception:

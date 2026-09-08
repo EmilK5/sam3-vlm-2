@@ -50,7 +50,8 @@ in this document; generic and historical configurations remain replayable.
   requested plan even during a discovery-only plateau. Empty target responses
   retain `EMPTY_UNSATURATED_PLAN` where applicable and create no target fallback;
   any valid Qwen confounder labels may still yield negative queries. If no actions
-  are accepted, the run stops with `NO_VALID_ACTIONS`.
+  are accepted, the run stops with `NO_VALID_ACTIONS` after any enabled bounded
+  correction described below.
 - C permits one Qwen call; D permits two calls and one replan. E permits 100 Qwen
   calls, 1000 SAM3 actions, and 99 replans, with no independent tile, iteration, or
   total-runtime cap. E continues until combined discovery/uncertainty saturation,
@@ -66,10 +67,26 @@ in this document; generic and historical configurations remain replayable.
   `v3` (image-grounded positive discovery guidance). V3 prioritizes visible,
   insufficiently covered target appearances over cosmetic synonyms; it retains
   open vocabulary and all evidence/images. Optional `planner.target_scope` is
-  included only in v3; production specifies tree fruit, excluding fallen fruit.
+  included in v3/v4; the configured scope specifies tree fruit, excluding fallen fruit.
   V3 E system instructions consistently require one proposal on every requested
   plan; the old arm retains its historical saturation wording for comparison.
-  Production defaults to v3; generic configs default to old for compatibility.
+  V4 adds explicit separation of observed evidence, sensor outcomes and hypotheses;
+  no assumption that general target queries search only bright fruit is allowed.
+  It asks for a final noun-last/length/target/blacklist check, without a dictionary.
+  Old and V3 instruction text remain preserved. Production defaults to old after
+  the 34-image comparison; generic configs also default to old.
+- `planner.enable_rejection_correction` defaults false generically and true in
+  production M8. A strict M8 plan with zero accepted actions and explicit bank
+  rejections or `EMPTY_UNSATURATED_PLAN` may receive one correction if Qwen and
+  other hard budgets permit. Both attempts are recorded, linked by `correction_of`.
+  The correction consumes an ordinary Qwen call; C has no spare call, and a D
+  correction can consume the call otherwise available for its second scene plan.
+  A correction gets no JSON retry, and an initial JSON repair precludes another
+  correction of that plan. Failures remain visible; no new fallback is invented.
+  Partial rejections are supplied to the next ordinary replan without an immediate
+  correction. Feedback includes rejected phrases/reasons, not new image evidence.
+  The target text, complete scene evidence and images are preserved. JSON repair
+  feedback also uses diagnostics instead of modifying the user's target.
 - The planner remains the local Ollama alias `qwen3.5-9b-sam3`, with 65536 context
   tokens, 512 response tokens, non-thinking JSON mode, a 45-second request timeout,
   and no hidden SDK retries. Negative queries need no extra Qwen request: their
@@ -94,6 +111,22 @@ E3_NewPrompt_NoNegatives, E4_NewPrompt_WithNegatives. C/D/E retain their respect
 call caps. `--pilot-family C|D|E` optionally restricts this suite. Comparisons
 change only prompt version or negative-query flag, with paired completeness and
 accuracy/cost differences reported. All pilot suites now force soft counting.
+The historical `prompt-ablation`, `negative-ablation` and `all` suites disable
+rejection correction explicitly. `recovery-ablation` runs D_ReferenceOld (old,
+correction off), D_OldWithCorrection (old, correction on), D_V4WithCorrection
+(v4, correction on), with negatives enabled and a two-Qwen-call cap throughout.
+`--sample-ids` selects manifest entries before the sample limit is applied.
+
+`sam3_vlm.experiments.discovery_diagnostic` runs an independent SAM3-only probe
+on one to five selected images and one to four explicit user probe phrases.
+Bootstrap is fixed per image. Each phrase is tested in TILED mode at 0.25/0.5,
+with/without fixed bootstrap exemplars. Arms do not accumulate discoveries.
+IoU-only and IoU+IoM association run offline on separate copies of each detection
+set and the same bootstrap graph. Missing-exemplar arms are explicitly skipped.
+The diagnostic caps total SAM3 calls (bootstrap included; default 100), preserves
+partial results on errors, and exports `discovery_review.zip` with numeric results,
+boxes and reduced image previews. This is candidate discovery, not a precision
+or recall evaluation. The diagnostic's lower threshold does not alter production.
 
 Every completed pilot writes `compact_review.zip`: aggregate and paired metrics,
 small numeric per-image rows, prompt yields including bootstrap, stop/rejection

@@ -64,6 +64,7 @@ class PlannerConfig:
     # M8: convert Qwen confounder labels to separate negative sensing queries.
     execute_confounder_prompts: bool = False
     prompt_version: str = "old"
+    enable_rejection_correction: bool = False
     target_scope: Optional[str] = None
     max_actions_per_prompt: int = 5
     temperature: float = 0.2
@@ -72,8 +73,8 @@ class PlannerConfig:
     reasoning_effort: Optional[str] = "none"
 
     def __post_init__(self) -> None:
-        if self.prompt_version not in {"old", "v3"}:
-            raise ValueError("prompt_version must be old or v3")
+        if self.prompt_version not in {"old", "v3", "v4"}:
+            raise ValueError("prompt_version must be old, v3 or v4")
         if self.max_output_tokens < 1:
             raise ValueError("max_output_tokens must be at least 1")
         if self.request_timeout_seconds <= 0:

@@ -72,7 +72,8 @@ class RepairBackend:
         if self.call_count == 1:
             return "invalid unparseable json [] {"
         # Second call expects the repair instruction
-        assert "Your previous output was invalid" in evidence.user_prompt
+        assert evidence.user_prompt == "citrus"
+        assert "Your previous output was invalid" in evidence.discovery_diagnostics["previous_plan_feedback"]["rejections"][0]["detail"]
         return PlannerOutput(
             scene_summary="Repaired",
             proposed_actions=[

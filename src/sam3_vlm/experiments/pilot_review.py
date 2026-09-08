@@ -7,6 +7,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 
 PROMPT_CONTRASTS = (
+    ("D_rejection_correction", "D_ReferenceOld", "D_OldWithCorrection"),
+    ("D_evidence_prompt", "D_OldWithCorrection", "D_V4WithCorrection"),
     ("C_prompt", "C_OldPrompt", "C_NewPrompt"),
     ("D_prompt", "D_OldPrompt", "D_NewPrompt"),
     ("E_prompt_without_negatives", "E1_OldPrompt_NoNegatives", "E3_NewPrompt_NoNegatives"),
@@ -107,6 +109,8 @@ def write_compact_review(report, output_dir):
         rows = [r for r in report["samples"] if r["variant"] == variant]
         rejections, contracts = Counter(), Counter()
         artifact_count = 0
+        correction_count = 0
+        successful_corrections = 0
         for row in rows:
             for outcome in row.get("prompt_outcomes", []):
                 stat = prompt_stats[(variant, outcome["family"], outcome["prompt"])]
@@ -126,6 +130,10 @@ def write_compact_review(report, output_dir):
                     continue
                 artifact_count += 1
                 meta = artifact.get("metadata", {})
+                correction_count += meta.get("correction_of") is not None
+                successful_corrections += (
+                    meta.get("correction_of") is not None and meta.get("accepted_action_count", 0) > 0
+                )
                 rejections.update(r.get("reason", "UNKNOWN") for r in meta.get("rejections", []))
                 if meta.get("contract_diagnostic"):
                     contracts[str(meta["contract_diagnostic"])] += 1
@@ -157,6 +165,8 @@ def write_compact_review(report, output_dir):
             "stop_reasons": dict(Counter(r.get("stop_reason") or "FAILED" for r in rows)),
             "rejection_reasons": dict(rejections), "contract_diagnostics": dict(contracts),
             "qwen_artifacts_read": artifact_count,
+            "rejection_correction_calls": correction_count,
+            "corrections_with_accepted_actions": successful_corrections,
             "prompt_outcomes_rows_available": sum("prompt_outcomes" in r for r in rows),
             "failed_images": [r["sample_id"] for r in rows if not r.get("success")],
         }

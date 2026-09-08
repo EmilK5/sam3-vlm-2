@@ -89,7 +89,7 @@ def test_m8_output_paths_are_normalized(tmp_path, monkeypatch):
     assert not Path(cfg.output_root).exists()  # Loading config has no write effects.
 
 
-def test_real_m8_config_uses_negative_prompts_v3_and_soft_count(monkeypatch):
+def test_real_m8_config_uses_old_prompt_correction_negatives_and_soft_count(monkeypatch):
     monkeypatch.delenv("QWEN_MODEL", raising=False)
     monkeypatch.delenv("QWEN_BASE_URL", raising=False)
     cfg = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
@@ -97,7 +97,8 @@ def test_real_m8_config_uses_negative_prompts_v3_and_soft_count(monkeypatch):
     assert cfg.v4_config.belief.target_count_commit_threshold is None
     assert cfg.v4_config.belief.target_count_hard_threshold is None
     assert cfg.v4_config.planner.execute_confounder_prompts is True
-    assert cfg.v4_config.planner.prompt_version == "v3"
+    assert cfg.v4_config.planner.prompt_version == "old"
+    assert cfg.v4_config.planner.enable_rejection_correction is True
     assert "exclude fallen fruit" in cfg.v4_config.planner.target_scope
     assert cfg.v4_config.planner.max_actions_per_prompt == 1
     assert cfg.v4_config.planner.max_output_tokens == 512

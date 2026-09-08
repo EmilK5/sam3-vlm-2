@@ -560,6 +560,27 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
         ),
     )
     posterior_count_type = "soft_posterior_count"
+    if suite == "recovery-ablation":
+        reference = dataclasses.replace(
+            base,
+            budget=dataclasses.replace(base.budget, max_qwen_calls=2, max_cleanup_calls=0),
+            replanning=dataclasses.replace(base.replanning, max_replans=1, continue_until_saturation=False),
+        )
+        return [PilotVariant(
+            name, dataclasses.replace(reference, planner=dataclasses.replace(
+                reference.planner, prompt_version=version,
+                execute_confounder_prompts=True, enable_rejection_correction=correction,
+            )), True, posterior_count_type,
+        ) for name, version, correction in (
+            ("D_ReferenceOld", "old", False),
+            ("D_OldWithCorrection", "old", True),
+            ("D_V4WithCorrection", "v4", True),
+        )]
+    # Keep the already-measured historical ablation arms reproducible.
+    if suite in {"prompt-ablation", "negative-ablation", "all"}:
+        base = dataclasses.replace(base, planner=dataclasses.replace(
+            base.planner, enable_rejection_correction=False,
+        ))
     no_qwen_budget = dataclasses.replace(
         base.budget,
         max_qwen_calls=0,
@@ -775,6 +796,12 @@ def _load_pilot_samples(args, limit: int) -> list[dict]:
             }
         )
 
+    selected_ids = getattr(args, "sample_ids", None)
+    if selected_ids:
+        unknown = set(selected_ids) - sample_ids
+        if unknown:
+            raise ValueError(f"Unknown sample IDs: {sorted(unknown)}")
+        normalized = [s for s in normalized if s["sample_id"] in selected_ids]
     return normalized[:limit]
 
 
@@ -1082,7 +1109,7 @@ def m8_4_and_5_pilot(args):
     if suite in ("negative-ablation", "all"):
         report["paired_comparison"] = _negative_prompt_comparison(report["samples"], len(samples))
     from sam3_vlm.experiments.pilot_review import prompt_comparisons, write_compact_review
-    if suite == "prompt-ablation":
+    if suite in {"prompt-ablation", "recovery-ablation"}:
         report["paired_comparisons"] = prompt_comparisons(report)
     report_path = Path(dep.output_root) / "pilot_report.json"
     with open(report_path, "w") as file:
@@ -1110,11 +1137,12 @@ def main() -> int:
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
-        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation"], default="standard",
-        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants",
+        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation"], default="standard",
+        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants",
     )
     parser.add_argument("--pilot-family", choices=["C", "D", "E"],
                         help="Run just one family of the prompt-ablation suite")
+    parser.add_argument("--sample-ids", nargs="+", help="Select these manifest sample IDs before applying --max-samples")
     
     args = parser.parse_args()
     if args.pilot_family and args.pilot_suite != "prompt-ablation":

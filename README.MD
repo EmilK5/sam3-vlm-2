@@ -648,10 +648,15 @@ Use `--pilot-suite negative-ablation` to run only the two E-based variants with
 negative prompts off/on (68 runs for 34 images). The report includes paired
 accuracy and cost differences.
 
-The current 34-image study uses `--pilot-suite prompt-ablation`: old/new prompts
+The completed 34-image study uses `--pilot-suite prompt-ablation`: old/new prompts
 for C and D, plus four E combinations of old/new prompts and negatives off/on.
 See the [prompt comparison guide](docs/M8_PROMPT_ABLATION.md) for the eight-variant
 matrix, commands, and automatic compact review ZIPs.
+
+The next step is the [recovery and discovery diagnostic](docs/M8_RECOVERY_DIAGNOSTIC.md):
+three D variants on selected images, plus a SAM3-only threshold/exemplar probe
+with offline association comparisons. Production defaults to the old Qwen prompt,
+negatives and soft counts, with one budgeted correction for rejected empty banks.
 
 See the [M8 runbook](docs/M8_CLUSTER_RUNBOOK.md#4-the-pilot-experiment) for
 stopping semantics and the five-variant pilot commands.

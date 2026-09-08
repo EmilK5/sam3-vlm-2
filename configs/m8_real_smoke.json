@@ -36,7 +36,8 @@
     "target_count_hard_threshold": null
   },
   "planner": {
-    "prompt_version": "v3",
+    "prompt_version": "old",
+    "enable_rejection_correction": true,
     "target_scope": "For this dataset, focus on fruit on trees; exclude fallen fruit.",
     "max_actions_per_prompt": 1,
     "temperature": 0.2,
