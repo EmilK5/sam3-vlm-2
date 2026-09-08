@@ -135,6 +135,7 @@ class Runner:
                 summary = RunSummary(
                     run_id=self.recorder.manifest.run_id,
                     final_soft_count=final_count,
+                    final_count=final_count,
                     count_variance=self.scene_state.count_estimate.variance,
                     final_stop_reason=self.scene_state.stop_reason.value if self.scene_state.stop_reason else None,
                     node_count=len(self.scene_state.graph.nodes),
@@ -156,6 +157,12 @@ class Runner:
                         "raw_soft_count": self.scene_state.count_estimate.raw_soft_count,
                         "target_count_commit_threshold": self.config.belief.target_count_commit_threshold,
                         "committed_target_nodes": self.scene_state.count_estimate.committed_node_count,
+                        "target_count_hard_threshold": self.config.belief.target_count_hard_threshold,
+                        "count_type": (
+                            "hard_posterior_count"
+                            if self.config.belief.target_count_hard_threshold is not None
+                            else "posterior_count"
+                        ),
                     }
                 )
                 # Serialize graph properly
@@ -235,6 +242,7 @@ class Runner:
             target_commit_threshold=(
                 self.config.belief.target_count_commit_threshold
             ),
+            target_hard_threshold=self.config.belief.target_count_hard_threshold,
         )
 
     def _estimated_tile_count(self, action: 'SensingAction') -> int:
@@ -475,6 +483,12 @@ class Runner:
         elif self.state == RunnerState.ASSESS:
             # Check stopping
             stop_reason = self.stopping_condition.should_stop(self.scene_state, self.config)
+            if (
+                stop_reason == StopReason.DISCOVERY_AND_UNCERTAINTY_SATURATED
+                and self.config.planner.execute_confounder_prompts
+                and self.scene_state.action_bank.unexecuted_entries()
+            ):
+                stop_reason = None  # Complete precision checks before saturation.
             if stop_reason:
                 self.scene_state.set_stop_reason(stop_reason)
                 self.state = RunnerState.CLEANUP
@@ -661,6 +675,18 @@ class Runner:
 
         for node in provisional_new_nodes:
             self.scene_state.graph.nodes.pop(node.node_id, None)
+        if provisional_new_nodes and self.config.planner.execute_confounder_prompts:
+            from sam3_vlm.scene.association_dual import dual_overlap
+            active = self.scene_state.graph.active_nodes()
+            for node in active:
+                overlaps = [
+                    dual_overlap(node.geometry.bbox(), other.geometry.bbox())
+                    for other in active if other.node_id != node.node_id
+                ]
+                node.diagnostics.duplicate_risk = max(
+                    (max(pair) if self.config.association.enable_iom_dedup else pair[0]
+                     for pair in overlaps), default=0.0,
+                )
         return []
 
     def _project_observations(self, action, observation, assoc_result) -> tuple[int, int]:
@@ -810,7 +836,10 @@ class Runner:
             invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
             invalid_total += len(self.bank_generator.last_rejections)
             self.recorder.record_action_bank_refreshed(len(self.scene_state.action_bank.entries), invalid_total)
-        if not self.config.replanning.continue_until_saturation:
+        if not (
+            self.config.replanning.continue_until_saturation
+            or self.config.planner.execute_confounder_prompts
+        ):
             self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
@@ -926,6 +955,18 @@ class Runner:
         """Recompute utility for all unexecuted actions and return the best."""
         from sam3_vlm.core.types import SpatialMode
         
+        if self.config.planner.execute_confounder_prompts:
+            # One target experiment, then its negative queries. All accepted
+            # queries in the round execute subject to hard compute limits.
+            pending = self.scene_state.action_bank.unexecuted_entries()
+            if pending:
+                entry = min(pending, key=lambda e: e.action.family != ActionFamily.DISCOVERY)
+                entry.total_utility = self.utility_evaluator.evaluate_utility(
+                    entry, state=self.scene_state, config=self.config
+                ).total_utility
+                return entry
+            return None
+
         best_entry = None
         best_score = -9999.0
         
@@ -980,7 +1021,13 @@ class Runner:
         slots = [c for c in self.scene_state.belief_classes if c != "target"]
         for slot, label in zip(slots, planner_output.likely_confounders):
             if slot not in self.scene_state.confounder_labels and label:
-                self.scene_state.confounder_labels[slot] = str(label)
+                if self.config.planner.execute_confounder_prompts:
+                    from sam3_vlm.sensing.action import validate_sam3_prompt_contract
+                    try:
+                        validate_sam3_prompt_contract(str(label))
+                    except ValueError:
+                        continue
+                self.scene_state.confounder_labels[slot] = str(label).strip()
         if hasattr(self, "evidence_pack"):
             self.evidence_pack.belief_classes = list(self.scene_state.belief_classes)
             self.evidence_pack.confounder_labels = dict(self.scene_state.confounder_labels)

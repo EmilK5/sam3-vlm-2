@@ -61,6 +61,8 @@ class BootstrapConfig:
 class PlannerConfig:
     """Qwen scene planner configuration (V4 Design Spec §6)."""
 
+    # M8: convert Qwen confounder labels to separate negative sensing queries.
+    execute_confounder_prompts: bool = False
     max_actions_per_prompt: int = 5
     temperature: float = 0.2
     max_output_tokens: int = 512
@@ -134,8 +136,15 @@ class BeliefConfig:
     # this threshold contributes 1.0 to the count without mutating the node's
     # posterior.  ``None`` preserves a purely soft posterior sum.
     target_count_commit_threshold: Optional[float] = None
+    # If configured, count one iff target posterior is strictly above this value.
+    target_count_hard_threshold: Optional[float] = None
 
     def __post_init__(self) -> None:
+        hard = self.target_count_hard_threshold
+        if hard is not None and not (0.0 <= hard <= 1.0):
+            raise ValueError("target_count_hard_threshold must be in [0, 1] or None")
+        if hard is not None and self.target_count_commit_threshold is not None:
+            raise ValueError("Hard counting and soft count commitment are mutually exclusive")
         threshold = self.target_count_commit_threshold
         if threshold is not None and not (0.0 < threshold <= 1.0):
             raise ValueError(

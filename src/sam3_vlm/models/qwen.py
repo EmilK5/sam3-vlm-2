@@ -176,9 +176,21 @@ class RealQwenPlanner:
         confounder_slots = [c for c in belief_classes if c != "target"]
         existing_mapping = evidence_pack.confounder_labels or {}
 
+        system_prompt = self.SYSTEM_PROMPT
+        if config.planner.execute_confounder_prompts:
+            system_prompt = system_prompt.replace(
+                "Every executable action must search for the user's target:",
+                "Every action in proposed_actions must search for the user's target:",
+            ).replace(
+                "Confounders may be described in likely_confounders or rationale, but never proposed as separate SAM3 actions.",
+                "The controller executes likely_confounders as separate negative SAM3 queries. "
+                "Choose visible basic non-target objects, not negations of the target. "
+                "Do not put confounder queries in proposed_actions; use likely_confounders.",
+            )
         text = evidence_pack.to_prompt_text(
             enforce_qwen_contract=True,
             continue_until_saturation=config.replanning.continue_until_saturation,
+            execute_confounder_prompts=config.planner.execute_confounder_prompts,
         )
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
@@ -261,7 +273,17 @@ class RealQwenPlanner:
             "Output JSON only."
         )
 
-        text_bytes = len((self.SYSTEM_PROMPT + text).encode("utf-8"))
+        if config.planner.execute_confounder_prompts:
+            text = text.replace(
+                "- Every action must use semantic_key='target'",
+                "- Every action in proposed_actions must use semantic_key='target'",
+            ).replace(
+                "use it only as non-executable scene context.",
+                "the controller runs these as negative SAM3 queries at the same fixed threshold. "
+                "Name visible basic non-target objects using 1–3 words. Do not write 'not fruit'. "
+                "Keep frozen slot meanings unchanged; do not rename existing labels.",
+            )
+        text_bytes = len((system_prompt + text).encode("utf-8"))
         content = [{"type": "text", "text": text}]
 
         def get_mime_type(path: str) -> str:
@@ -300,7 +322,7 @@ class RealQwenPlanner:
         logger.info("Qwen payload: text_bytes=%d, images=%d", text_bytes, len(content) - 1)
 
         messages = [
-            {"role": "system", "content": self.SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
         ]
         try:

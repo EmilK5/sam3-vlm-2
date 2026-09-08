@@ -154,6 +154,114 @@ python -m sam3_vlm.experiments.m8_smoke \
 
 ## 4. The Pilot Experiment
 
+### Negative prompts on/off comparison
+
+Run only two E-based variants, with all configuration fields identical except
+`planner.execute_confounder_prompts`:
+
+- `E_NoNegativePrompts`: no separate confounder SAM3 queries.
+- `E_WithNegativePrompts`: executes Qwen confounder labels as negative queries.
+
+Both use posterior **> 0.5** hard counting, the same bootstrap and pseudoexemplars,
+SAM3 threshold 0.5 for Qwen queries, and caps of 100 Qwen calls / 1000 SAM3 actions.
+Both retain the full evidence context and frozen class vocabulary. This compares
+the complete adaptive policies: enabling negatives changes evidence, planning
+instructions, and potentially later target proposals/stopping. It does not force
+identical model outputs or identical executed target sequences between runs.
+
+```bash
+python -m sam3_vlm.experiments.m8_smoke \
+  --stage pilot --require-cuda \
+  --pilot-suite negative-ablation \
+  --manifest pilot_manifest.json --max-samples 34 \
+  --output_dir runs/m8_negative_ablation
+```
+
+This produces **68 runs**, not the usual 170 A–E runs. Use `--max-samples 5` and a
+separate output directory for a ten-run preliminary check. Omitting `--pilot-suite`
+retains the standard A–E comparison. The visualization script reads the selected
+variant names from report metadata and supports both suites.
+
+The report includes `paired_comparison`, restricted to images that passed in
+both variants. `mean_absolute_error_reduction` is MAE without negatives minus
+MAE with negatives, so a positive value favors negatives. It also records better,
+worse, and tied images, extra SAM3 calls/runtime, and whether all requested pairs
+are complete. Individual aggregates, raw soft counts, and artifacts remain.
+
+### Negative-evidence formula
+
+The raw SAM3 score is never rewritten. A negative query updates the candidate's
+class posterior. For queried confounder c, sensor score s, and correlation weight
+w = 0.8^k (k counts other usable observations in the same semantic group), use:
+
+| Observation relation | Multiplier L_c |
+|---|---|
+| Strong match | 1 + 3.0 s w |
+| Weak match | 1 + 0.8 s w |
+| Searched but not retrieved | max(0.1, 1 - 0.15 w) |
+| Outside searched region / ambiguous association | 1 |
+
+Other classes have multiplier 1. Normalize all classes together:
+`p_new(j) = p_old(j) * L_j / sum(p_old(k) * L_k)`.
+For the target specifically: `p_new(target) = p_old(target) / (1 + p_old(c)*(L_c-1))`.
+Thus a confounder match lowers the target posterior. Confounder non-retrieval
+slightly raises it; no observable evidence leaves it unchanged. These are hand-set,
+uncalibrated proxy multipliers, not learned probabilities. Strong positive target
+matches use coefficient 1.5, compared with 3.0 for strong confounder matches.
+
+Example: target 0.70, queried confounder 0.20, other confounder 0.10; a first strong
+negative match with score 0.80 gives L_c=3.4 and target posterior 0.70/1.48=0.4730.
+That node changes from accepted to rejected under the strict >0.5 count rule.
+
+### Current precision/counting revision
+
+The current pilot enables `planner.execute_confounder_prompts`. Qwen still emits
+one target action; its `likely_confounders` labels additionally become up to two
+negative SAM3 queries at threshold 0.5. The controller freezes label-to-slot
+meaning, skips previously tried labels, and runs target then negative queries
+before replanning. Invalid phrases retain explicit rejection records. Negative
+queries search the locked region without target exemplar boxes and cannot create
+new countable nodes. They consume SAM3 calls and tiles within the existing caps.
+
+C/D/E now count each active candidate as one only when its **target posterior is
+strictly greater than 0.5**. This is thresholding of the existing evidence model,
+not a trained linear classifier or thresholding of the latest SAM3 score. No
+belief coefficients have been fitted or changed. `belief.target_count_hard_threshold`
+is 0.5, and the old fractional commitment threshold is disabled. The true soft
+posterior sum remains in `raw_soft_count`; uncertainty remains based on unrounded
+posteriors. `summary.final_count` is the hard result; `final_soft_count` is a
+legacy alias. The pilot reports `hard_posterior_count` for C/D/E and still uses
+`hard_candidate_count` for A/B.
+
+Use a fresh output directory, and compare raw soft and hard counts rather than
+silently combining this revision's aggregates with older results.
+
+After local tests pass, run a small pilot in the configured GPU environment:
+
+```bash
+python -m sam3_vlm.experiments.m8_smoke \
+  --stage pilot --require-cuda \
+  --manifest pilot_manifest.json --max-samples 5 \
+  --output_dir runs/m8_negative_hard05_smoke
+```
+
+Check each C/D/E run's Qwen artifact for derived `CONFOUNDER` actions and rejection
+reasons, SAM3 events for actual execution, and the summary for hard/soft count and
+validation/replay results. Then run the 34-image comparison:
+
+```bash
+python -m sam3_vlm.experiments.m8_smoke \
+  --stage pilot --require-cuda \
+  --manifest pilot_manifest.json --max-samples 34 \
+  --output_dir runs/m8_negative_hard05_full
+```
+
+Package `pilot_report.json`, `pilot/`, and the manifest used. This jointly changes
+negative evidence and final reporting; the raw soft count supplies a same-run
+comparison of counting rules, but attributing gains to negative sensing requires
+a separate run with that setting disabled.
+
+
 Once the smoke test passes cleanly, run the pilot separately. The pilot strictly requires a JSON manifest with a ground-truth count for every image.
 
 The comparison uses five variants:
@@ -168,7 +276,7 @@ The comparison uses five variants:
 
 With five images, this produces 25 runs. The two SAM3-only variants report the
 hard number of registered candidate nodes. The Qwen variants report the
-posterior count using the configured `0.8` commitment rule.
+hard posterior count using the configured strict `> 0.5` rule.
 
 All Qwen-generated SAM3 actions now execute at threshold **0.5**, including
 C, D, and E. The controller overrides any different Qwen suggestion. Bootstrap
@@ -188,11 +296,11 @@ remain; repair requests count toward the 100-call cap.
 
 `sam3_calls` counts sensor actions (including bootstrap), while `sam3_tiles`
 counts tiles separately. E can therefore process more than 1000 individual
-tiles. With one action per planning round, 100 Qwen calls normally produce
-at most 100 additional SAM3 actions; 1000 is a safety cap, not a target workload.
+tiles. Each planning round can execute one target action plus new negative
+labels; all these actions consume the same 1000-call safety budget.
 Full evidence and original images remain supplied to Qwen, without compaction.
 Long histories can exceed the server's 16384-token context and fail visibly.
-Confounders remain descriptive context, not separately executed evidence.
+Qwen confounder labels are executed as separate negative-evidence queries.
 
 Example Manifest (`pilot_manifest.json`):
 ```json
@@ -254,15 +362,14 @@ PY
   - `final_graph.json` (Detected semantics)
   - `summary.json` (E2E metrics)
 
-The M8 config uses `belief.target_count_commit_threshold: 0.8`. The final
-reported count therefore commits target posteriors at or above `0.8` to a
-per-node contribution of `1.0`, without changing the stored posterior. The
-unmodified posterior sum is available as
-`discovery_statistics.raw_soft_count`, alongside the threshold and number of
-committed nodes.
+The M8 config uses `belief.target_count_hard_threshold: 0.5`. An active node
+contributes one only when its target posterior is strictly above 0.5; all others
+contribute zero. Stored posteriors and variance are unchanged. The posterior sum
+is available as `discovery_statistics.raw_soft_count`, alongside the hard threshold
+and accepted-node count. `summary.final_count` is the reported count.
 
-M8 executes only novel target prompts. Qwen may describe likely confounders as
-context, but the controller does not issue separate confounder SAM3 queries.
+M8 executes novel target prompts and Qwen's confounder labels as separate negative
+SAM3 queries. Confounder detections update existing candidates only.
 Qwen target prompts, confounder labels, and missing-appearance labels must be
 one noun alone or one/two basic adjectives followed by a noun (1–3 words).
 Simple wording and adjective/noun roles are guided by the Qwen instructions.
@@ -281,8 +388,8 @@ every requested plan must contain one novel action, even during a discovery-only
 plateau. Convincing
 current candidates are not permission to abstain. An empty unsaturated plan
 persists `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen
-artifact and ends under `NO_VALID_ACTIONS`, without an invented action or an
-extra repair call. Inspect that field alongside `output.proposed_actions`,
+artifact; if no target or negative query is accepted, execution ends under
+`NO_VALID_ACTIONS`, without an invented target action or an extra repair call. Inspect that field alongside `output.proposed_actions`,
 `metadata.rejections`, `repair_attempted`, `fallback_used`, and
 `qwen_runtime_ms`.
 

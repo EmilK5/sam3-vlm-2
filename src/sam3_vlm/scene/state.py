@@ -130,7 +130,13 @@ class CountEstimator:
         graph: SceneGraph,
         target_class: str,
         target_commit_threshold: Optional[float] = None,
+        target_hard_threshold: Optional[float] = None,
     ) -> CountEstimate:
+        if target_hard_threshold is not None:
+            if not (0.0 <= target_hard_threshold <= 1.0):
+                raise ValueError("target_hard_threshold must be in [0, 1] or None")
+            if target_commit_threshold is not None:
+                raise ValueError("Hard counting and soft count commitment are mutually exclusive")
         if target_commit_threshold is not None and not (
             0.0 < target_commit_threshold <= 1.0
         ):
@@ -143,7 +149,11 @@ class CountEstimator:
         for node in graph.active_nodes():
             p = node.class_belief.probabilities.get(target_class, 0.0)
             raw_soft_count += p
-            if target_commit_threshold is not None and p >= target_commit_threshold:
+            if target_hard_threshold is not None:
+                accepted = p > target_hard_threshold
+                mean_count += float(accepted)
+                committed_node_count += int(accepted)
+            elif target_commit_threshold is not None and p >= target_commit_threshold:
                 mean_count += 1.0
                 committed_node_count += 1
             else:

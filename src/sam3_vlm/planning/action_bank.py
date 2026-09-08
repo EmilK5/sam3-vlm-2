@@ -230,17 +230,25 @@ class ActionBankGenerator:
                     )
                     continue
 
-                # Confounders may inform Qwen's description of the target, but
-                # M8 executes only novel target discovery prompts.
-                if (
-                    canonical_key != "target"
-                    or proposal.family.value != "DISCOVERY"
-                    or proposal.semantic_prior != {"target": 1.0}
-                ):
+                # Only enabled canonical confounder slots may supply negative
+                # evidence; their priors must not boost the target class.
+                target_action = (
+                    canonical_key == "target"
+                    and proposal.family.value == "DISCOVERY"
+                    and proposal.semantic_prior == {"target": 1.0}
+                )
+                confounder_action = (
+                    config is not None
+                    and config.planner.execute_confounder_prompts
+                    and canonical_key in allowed_classes - {"target"}
+                    and proposal.family.value == "CONFOUNDER"
+                    and proposal.semantic_prior == {canonical_key: 1.0}
+                )
+                if not (target_action or confounder_action):
                     self._reject(
                         proposal,
                         ActionRejectionReason.NON_TARGET_ACTION,
-                        "M8 requires DISCOVERY actions for semantic_key 'target' with semantic_prior {'target': 1.0}.",
+                        "M8 requires target DISCOVERY or an enabled confounder-slot CONFOUNDER action, with a unit prior on its own class.",
                     )
                     continue
 

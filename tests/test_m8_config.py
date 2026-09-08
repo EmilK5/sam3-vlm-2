@@ -89,12 +89,14 @@ def test_m8_output_paths_are_normalized(tmp_path, monkeypatch):
     assert not Path(cfg.output_root).exists()  # Loading config has no write effects.
 
 
-def test_real_m8_config_uses_bounded_target_only_experiment(monkeypatch):
+def test_real_m8_config_uses_negative_prompts_and_hard_count(monkeypatch):
     monkeypatch.delenv("QWEN_MODEL", raising=False)
     monkeypatch.delenv("QWEN_BASE_URL", raising=False)
     cfg = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
     assert cfg.qwen_model == "qwen3.5-9b-sam3"
-    assert cfg.v4_config.belief.target_count_commit_threshold == pytest.approx(0.8)
+    assert cfg.v4_config.belief.target_count_commit_threshold is None
+    assert cfg.v4_config.belief.target_count_hard_threshold == 0.5
+    assert cfg.v4_config.planner.execute_confounder_prompts is True
     assert cfg.v4_config.planner.max_actions_per_prompt == 1
     assert cfg.v4_config.planner.max_output_tokens == 512
     assert cfg.v4_config.planner.request_timeout_seconds == pytest.approx(45.0)

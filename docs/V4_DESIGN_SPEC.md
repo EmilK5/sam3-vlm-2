@@ -8,91 +8,86 @@ V4 is a clean architectural rewrite of the current V3 research code. V3 remains 
 
 ### Current M8 execution policy
 
-The current M8 experiment deliberately uses a narrower policy than the generic
-architecture described in the remainder of this document:
+M8 uses the following policy. These rules supersede older target-only M8 examples
+in this document; generic and historical configurations remain replayable.
 
-- Qwen may identify confounders in its scene analysis, but every executable
-  Qwen action must be a novel `target` / `DISCOVERY` prompt.
-- Confounders are context for phrasing better target prompts; they are not sent
-  to SAM3 as separate experiments.
-- The information-value proxy is evaluated only for target actions.
-- Each planning round admits at most one action. The production configuration
-  permits one replan, for at most two Qwen calls after bootstrap (variant D).
-- Pilot variant `E_Qwen_UntilSaturation` instead permits 100 Qwen calls and
-  1000 SAM3 actions, including bootstrap. It permits 99 replans, disables the
-  independent tile, iteration, and total-runtime limits, and bypasses measured
-  and predicted low-utility termination. Numerical discovery AND uncertainty
-  saturation still stops execution. Per-request model timeouts remain active.
-  SAM3 calls count sensor actions; tiles are separately recorded and can exceed
-  the action count. One target action per Qwen round remains the contract.
-- Every Qwen-generated action uses controller-owned
-  `sam3.qwen_prompt_threshold` (default and M8 configuration: `0.5`), regardless
-  of `suggested_threshold`. Qwen is instructed to emit the configured value;
-  artifacts retain its original suggestion and the actual executed threshold.
-  Bootstrap/context thresholds and the posterior commitment threshold stay
-  independent.
-- The numerical controller owns stopping; Qwen never decides whether the
-  pipeline should stop. In strict/canonical M8, unless the evidence pack's
-  `discovery_diagnostics.discovery_saturated` is explicitly `true`, Qwen must
-  propose exactly one novel target `DISCOVERY` experiment, even when current
-  candidates look convincing. Only explicitly saturated discovery permits an
-  empty `proposed_actions` list in C/D. In E, every requested plan must propose
-  one novel target action even during a discovery-only plateau: the controller
-  evaluates combined saturation after each executed action.
-- That proposal uses `semantic_key: target`, `family: DISCOVERY`, and exactly
-  `semantic_prior: {target: 1.0}`; its SAM3 prompt has one to three words: an
-  object noun alone or one/two basic visual adjectives followed by a noun.
-  It uses `GLOBAL` or `TILED`, supplies no ROI/geometry, and is
-  absent from `tried_sam3_prompts`.
-- The same short noun-phrase rule applies to `likely_confounders` and
-  `missing_appearance_modes`. Use simple everyday object names and descriptors;
-  avoid adverbs, stacked nouns, technical jargon, and invented compounds.
-  Reasoning belongs in `rationale` and `scene_summary`. Confounders remain
-  descriptive context only; this language rule does not enable confounder actions.
-- Every executable prompt and missing-appearance label must preserve the user's
-  target object category. Vary visible appearance; do not substitute related
-  objects, object parts, or different developmental stages. Simple synonyms
-  must refer to the same target objects. Confounder labels must not become
-  target actions or missing target appearance modes.
-- The Qwen instruction blocks include no concrete positive/negative example
-  phrase lists, to avoid encouraging copied examples. Actual scene evidence,
-  semantic history, and the exact tried-prompt blacklist remain fully included.
-  The current user target is restated in the dynamic action contract.
-- Vocabulary is open: simple wording and adjective/noun roles are instructions
-  to Qwen, with no fixed dictionary or rejection of unfamiliar object names.
-  The executable prompt guard checks 1–3 words, lexical shape, and the existing
-  method/prose restrictions. Descriptive labels receive no dictionary filtering.
-- A validly parsed empty unsaturated response (or any empty E response) is recorded as
-  `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen artifact.
-  It creates no fallback action, triggers no repair call, and follows the
-  existing `NO_VALID_ACTIONS` stop behavior. The second Qwen call remains
-  available for an evidence-driven replan after a valid target experiment.
-  Generic/non-M8 planner behavior and malformed-JSON repair remain unchanged.
-- The production planner is the local Ollama alias `qwen3.5-9b-sam3`, built
-  from `qwen3.5:9b-q4_K_M` with a 16384-token context and a 512-token output
-  limit. Requests use non-thinking JSON mode, a 45-second transport timeout,
-  and no hidden client retries.
-- Qwen receives the full formatted evidence pack and both supplied images at
-  their original resolution. The client does not compact the evidence, resize
-  images, or impose an approximate text-byte limit to fit the context window.
-- A target posterior at or above `0.8` contributes `1.0` to the reported count.
-  The posterior itself remains unchanged and the raw soft count is retained.
-- M8 rejects empty or whitespace-only output directories and resolves the
-  selected output root to an absolute path. M8.3 logs its absolute run artifact
-  directory before loading models and its `summary.json` path only after
-  finalization, validation, and canonical replay succeed. Pilot completion logs
-  the absolute `pilot_report.json` path. M8.2 is a planner-only smoke test and
-  intentionally produces no run summary.
+- Qwen returns at most one novel target `DISCOVERY` action in `proposed_actions`,
+  with `semantic_key: target` and exactly `semantic_prior: {target: 1.0}`.
+- With `planner.execute_confounder_prompts: true` (the production M8 setting),
+  the controller also converts Qwen's `likely_confounders` labels into separate
+  `CONFOUNDER` actions with unit priors on frozen `confounder1..N` slots. The
+  production ontology has two slots: at most one target plus two negative queries
+  in a planning round. These are Qwen-supplied concepts, not invented fallback
+  actions or a fixed dictionary. Labels already tried are not queried again.
+- Confounder labels are basic visible non-target objects, not textual negations
+  such as “not fruit.” Their semantic slot meanings cannot change on replanning.
+  Invalid labels are rejected with diagnostics and are not frozen into slots.
+- Accepted actions execute target first, then confounder queries, before another
+  Qwen plan or a numerical saturation stop. Hard SAM3/tile/runtime/iteration caps
+  can still stop mid-round. A utility estimate cannot silently skip an accepted
+  precision query. Configurations without negative queries retain the previous
+  utility and replanning policy.
+- Confounder actions search the locked ROI in tiled mode at SAM3 threshold 0.5,
+  without target pseudoexemplar boxes. They update existing candidates only;
+  unmatched confounder detections cannot create countable nodes. Existing proxy
+  evidence fusion increases confounder probability on matching evidence, reducing
+  normalized target probability. This is an uncalibrated evidence model, not a
+  learned classifier. No coefficients are changed by enabling these queries.
+- Every Qwen-generated action uses `sam3.qwen_prompt_threshold` (0.5 in M8).
+  The controller overrides any different suggested threshold. Bootstrap/context
+  thresholds remain independent. Raw suggestions remain available in artifacts.
+- Each short prompt/label has one to three words: noun alone or one/two basic
+  visual adjectives followed by a noun. Vocabulary is open. The lexical guard
+  enforces length, word shape, and existing method/prose restrictions; grammar,
+  visible relevance, and target preservation are Qwen instructions, not dictionary
+  lookups. Target descriptions preserve the requested object and qualifiers.
+  Reasoning belongs in `rationale` or `scene_summary`. No fixed example list is
+  supplied. Target and confounder concepts must not be mixed.
+- Qwen owns no ROI geometry. Target proposals choose GLOBAL/TILED; the controller
+  owns the search domain. The exact tried-prompt blacklist remains in evidence.
+- The controller owns stopping. Unless discovery is explicitly saturated, Qwen
+  must propose one novel target action. E requires a target proposal on every
+  requested plan even during a discovery-only plateau. Empty target responses
+  retain `EMPTY_UNSATURATED_PLAN` where applicable and create no target fallback;
+  any valid Qwen confounder labels may still yield negative queries. If no actions
+  are accepted, the run stops with `NO_VALID_ACTIONS`.
+- C permits one Qwen call; D permits two calls and one replan. E permits 100 Qwen
+  calls, 1000 SAM3 actions, and 99 replans, with no independent tile, iteration, or
+  total-runtime cap. E continues until combined discovery/uncertainty saturation,
+  exhausted/invalid actions, or a compute cap. Negative queries count against
+  SAM3 call/tile budgets. They do not advance the target discovery-plateau window.
+- M8 reports a hard target count: `sum(1 if P(target) > 0.5 else 0)` across active
+  nodes. Exactly 0.5 is rejected. Configure this through
+  `belief.target_count_hard_threshold: 0.5`; the older
+  `target_count_commit_threshold` is null. The two counting rules are mutually
+  exclusive. Stored posterior probabilities and variance are unchanged.
+- `summary.final_count` identifies the reported hard count; `final_soft_count`
+  remains a legacy alias for compatibility. The actual posterior sum remains in
+  `discovery_statistics.raw_soft_count` and pilot sample `raw_soft_count`.
+  C/D/E use `count_type: hard_posterior_count`; A/B remain hard candidate counts.
+  Historical configs without a hard threshold retain their original counting rule.
+- The planner remains the local Ollama alias `qwen3.5-9b-sam3`, with 16384 context
+  tokens, 512 response tokens, non-thinking JSON mode, a 45-second request timeout,
+  and no hidden SDK retries. Negative queries need no extra Qwen request: their
+  labels already occur in the response. Full evidence and original supplied image
+  bytes remain included, without context compaction or client image resizing.
+- M8 requires a nonempty output directory, resolves it to an absolute path, and
+  logs artifact locations. M8.2 remains planner-only and creates no summary.
 
-Bootstrap association can change overlap diagnostics on an existing node even
-when that node receives no detection. Any such change must emit a `NODE_UPDATED`
-snapshot with the responsible SAM3 action/call provenance. This is a diagnostic
-update only: it must not create an observation or alter the node's belief. Replay
-must retain these updates, including when planning immediately rejects an action.
+The optional `--pilot-suite negative-ablation` runs exactly two E-based variants,
+`E_NoNegativePrompts` and `E_WithNegativePrompts`. Both use strict posterior >0.5
+counting and E's compute caps; configuration differs only in
+`planner.execute_confounder_prompts`. Standard A–E remains the default. Persist
+the suite and both resolved configs. Report paired accuracy/cost differences only
+for images valid in both variants, including pair completeness. This is an adaptive
+policy comparison, not a guarantee of identical Qwen responses/target trajectories.
 
-These rules override older M8 examples below that execute confounder actions.
-The generic schemas and belief model retain confounder families so historical
-artifacts and non-M8 experiments remain replayable.
+Bootstrap association can change overlap diagnostics on an existing unmatched
+node. Such changes must emit `NODE_UPDATED` snapshots with SAM3 action/call
+provenance, without inventing observations or changing beliefs. Negative-action
+association must also remove any provisional unmatched nodes and recompute overlap
+diagnostics on surviving candidates. Replay preserves the counting rule and all
+recorded diagnostic changes.
 
 The primary change is the unit of control:
 

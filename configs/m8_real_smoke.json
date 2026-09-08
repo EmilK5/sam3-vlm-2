@@ -32,14 +32,16 @@
   },
   "belief": {
     "num_confounders": 2,
-    "target_count_commit_threshold": 0.8
+    "target_count_commit_threshold": null,
+    "target_count_hard_threshold": 0.5
   },
   "planner": {
     "max_actions_per_prompt": 1,
     "temperature": 0.2,
     "max_output_tokens": 512,
     "request_timeout_seconds": 45.0,
-    "reasoning_effort": "none"
+    "reasoning_effort": "none",
+    "execute_confounder_prompts": true
   },
   "cleanup": {
     "cleanup_min_utility": 0.05

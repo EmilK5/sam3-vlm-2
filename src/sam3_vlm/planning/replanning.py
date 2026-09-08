@@ -22,6 +22,13 @@ class ReplanningPolicy:
 
     def should_replan(self, state: SceneState, config: V4Config) -> Tuple[bool, Optional[str]]:
 
+        if (
+            config.planner.execute_confounder_prompts
+            and state.action_bank
+            and state.action_bank.unexecuted_entries()
+        ):
+            return False, None
+
         # Cooldown check
         if state.actions_since_replan < config.replanning.min_actions_between_replans:
             if state.action_bank and list(state.action_bank.unexecuted_entries()):

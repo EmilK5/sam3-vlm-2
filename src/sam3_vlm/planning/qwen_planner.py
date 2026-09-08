@@ -260,11 +260,36 @@ class QwenPlannerService:
         ):
             self.last_contract_diagnostic = "EMPTY_UNSATURATED_PLAN"
 
-        return self._validate_and_normalize_output(
+        normalized = self._validate_and_normalize_output(
             output,
             max_actions=min(1, config.planner.max_actions_per_prompt)
             if strict_m8 else config.planner.max_actions_per_prompt,
         )
+        if strict_m8 and config.planner.execute_confounder_prompts:
+            # These phrases come from Qwen, not a fixed dictionary or a fallback.
+            # Freeze each semantic slot so evidence never changes its meaning.
+            tried = {
+                str(p).strip().lower()
+                for p in evidence.discovery_diagnostics.get("tried_sam3_prompts", [])
+            }
+            for index in range(config.belief.num_confounders):
+                slot = f"confounder{index + 1}"
+                label = evidence.confounder_labels.get(slot)
+                if not label and index < len(normalized.likely_confounders):
+                    label = normalized.likely_confounders[index]
+                if not label or str(label).strip().lower() in tried:
+                    continue
+                normalized.proposed_actions.append(ProposedAction(
+                    semantic_key=slot,
+                    prompt=str(label).strip(),
+                    family=ActionFamily.CONFOUNDER,
+                    priority=0.5,
+                    semantic_prior={slot: 1.0},
+                    suggested_threshold=config.sam3.qwen_prompt_threshold,
+                    suggested_spatial_mode=SpatialMode.TILED,
+                    rationale="Controller executes Qwen's confounder label as negative evidence.",
+                ))
+        return normalized
 
     def _coerce_to_planner_output(self, raw_output: Any) -> PlannerOutput:
         if isinstance(raw_output, PlannerOutput):
