@@ -812,10 +812,15 @@ class Runner:
                 "qwen_round": self.scene_state.qwen_round,
                 "input": {
                     "evidence_pack": self.evidence_pack.to_dict(),
-                    "contact_sheet_ref": cs_ref
+                    "contact_sheet_ref": cs_ref,
+                    "request_text": getattr(
+                        getattr(self.planner_service, "planner_backend", None),
+                        "last_request_text", None,
+                    ),
                 },
                 "output": planner_output.to_dict(),
                 "metadata": {
+                    "prompt_version": self.config.planner.prompt_version,
                     "repair_attempted": self.planner_service.last_repair_attempted,
                     "fallback_used": self.planner_service.last_fallback_used,
                     "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,

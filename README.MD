@@ -631,7 +631,7 @@ Tests must not be weakened solely to make failing code pass.
 
 # Planned research ablations
 
-The current five-image pilot starts with five controlled variants:
+The standard pilot supports five controlled variants:
 
 - one global SAM3 target pass with no Qwen;
 - the complete SAM3 bootstrap with no Qwen;
@@ -641,19 +641,24 @@ The current five-image pilot starts with five controlled variants:
 
 Every Qwen-generated SAM3 action uses threshold `0.5`. The current M8 pilot also
 executes Qwen confounder labels as separate negative queries on existing candidates.
-C/D/E count one fruit per node with target posterior strictly above `0.5`, while
-retaining raw soft counts and posterior uncertainty for comparison. E bypasses short-run
+C/D/E report the pure sum of target posterior probabilities (soft count).
+E bypasses short-run
 utility limits and disables separate tile, iteration, and total-runtime caps.
 Use `--pilot-suite negative-ablation` to run only the two E-based variants with
 negative prompts off/on (68 runs for 34 images). The report includes paired
 accuracy and cost differences.
+
+The current 34-image study uses `--pilot-suite prompt-ablation`: old/new prompts
+for C and D, plus four E combinations of old/new prompts and negatives off/on.
+See the [prompt comparison guide](docs/M8_PROMPT_ABLATION.md) for the eight-variant
+matrix, commands, and automatic compact review ZIPs.
 
 See the [M8 runbook](docs/M8_CLUSTER_RUNBOOK.md#4-the-pilot-experiment) for
 stopping semantics and the five-variant pilot commands.
 
 This first comparison isolates the value of spatial/refined SAM3 bootstrap,
 one semantic planning call, one adaptive replan, and extended exploration.
-Confounders remain descriptive context.
+Confounders are executed only in variants that enable negative queries.
 
 Important comparisons include:
 

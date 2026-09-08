@@ -552,11 +552,14 @@ class PilotVariant:
 
 
 def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVariant]:
-    posterior_count_type = (
-        "hard_posterior_count"
-        if base.belief.target_count_hard_threshold is not None
-        else "posterior_count"
+    # The next pilot compares prompt policies using the pure posterior sum.
+    base = dataclasses.replace(
+        base, belief=dataclasses.replace(
+            base.belief, target_count_hard_threshold=None,
+            target_count_commit_threshold=None,
+        ),
     )
+    posterior_count_type = "soft_posterior_count"
     no_qwen_budget = dataclasses.replace(
         base.budget,
         max_qwen_calls=0,
@@ -635,6 +638,34 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
 
     if suite == "standard":
         return variants
+    if suite == "prompt-ablation":
+        two_qwen_rounds = dataclasses.replace(
+            base,
+            budget=dataclasses.replace(base.budget, max_qwen_calls=2, max_cleanup_calls=0),
+            replanning=dataclasses.replace(base.replanning, max_replans=1),
+        )
+        return [
+            PilotVariant(
+                name,
+                dataclasses.replace(
+                    cfg, planner=dataclasses.replace(
+                        cfg.planner, prompt_version=version,
+                        execute_confounder_prompts=negatives,
+                    ),
+                ),
+                uses_qwen=True, count_type=posterior_count_type,
+            )
+            for name, cfg, version, negatives in (
+                ("C_OldPrompt", one_qwen_round, "old", True),
+                ("C_NewPrompt", one_qwen_round, "v3", True),
+                ("D_OldPrompt", two_qwen_rounds, "old", True),
+                ("D_NewPrompt", two_qwen_rounds, "v3", True),
+                ("E1_OldPrompt_NoNegatives", until_saturation, "old", False),
+                ("E2_OldPrompt_WithNegatives", until_saturation, "old", True),
+                ("E3_NewPrompt_NoNegatives", until_saturation, "v3", False),
+                ("E4_NewPrompt_WithNegatives", until_saturation, "v3", True),
+            )
+        ]
     if suite not in ("negative-ablation", "all"):
         raise ValueError(f"Unknown pilot suite: {suite}")
     paired_base = dataclasses.replace(
@@ -642,7 +673,7 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
         belief=dataclasses.replace(
             until_saturation.belief,
             target_count_commit_threshold=None,
-            target_count_hard_threshold=0.5,
+            target_count_hard_threshold=None,
         ),
     )
     paired_variants = [
@@ -655,7 +686,7 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
                 ),
             ),
             uses_qwen=True,
-            count_type="hard_posterior_count",
+            count_type=posterior_count_type,
         )
         for name, enabled in (
             ("E_NoNegativePrompts", False),
@@ -837,6 +868,11 @@ def m8_4_and_5_pilot(args):
     dep = load_m8_config(args)
     suite = getattr(args, "pilot_suite", "standard")
     variants = _pilot_variants(dep.v4_config, suite=suite)
+    family = getattr(args, "pilot_family", None)
+    if family:
+        if suite != "prompt-ablation":
+            raise ValueError("--pilot-family requires --pilot-suite prompt-ablation")
+        variants = [v for v in variants if v.name.startswith(family)]
     try:
         samples = _load_pilot_samples(args, dep.pilot_sample_limit)
     except Exception as exc:
@@ -862,8 +898,10 @@ def m8_4_and_5_pilot(args):
         "metadata": {
             "experiment": "M8_Pilot",
             "pilot_suite": suite,
+            "pilot_family": family,
             "target": args.target,
             "sample_count": len(samples),
+            "sample_targets": {sample["sample_id"]: sample["target"] for sample in samples},
             "resolved_config": dataclasses.asdict(dep.v4_config),
             "variants": [variant.name for variant in variants],
             "variant_configs": {
@@ -980,6 +1018,16 @@ def m8_4_and_5_pilot(args):
                         "predicted_count": count,
                         "raw_soft_count": summary.get("discovery_statistics", {}).get("raw_soft_count"),
                         "count_type": variant.count_type,
+                        "prompt_outcomes": [
+                            {
+                                "prompt": prompt_text,
+                                "family": record.families_by_execution[index],
+                                "new_nodes": record.new_nodes_by_execution[index],
+                                "variance_change": record.variance_change_by_execution[index],
+                            }
+                            for record in state.semantic_memory.records.values()
+                            for index, prompt_text in enumerate(record.prompts_by_execution)
+                        ],
                         "gt_count": gt_count,
                         "absolute_error": absolute_error,
                         "signed_error": count - gt_count,
@@ -1033,9 +1081,14 @@ def m8_4_and_5_pilot(args):
 
     if suite in ("negative-ablation", "all"):
         report["paired_comparison"] = _negative_prompt_comparison(report["samples"], len(samples))
+    from sam3_vlm.experiments.pilot_review import prompt_comparisons, write_compact_review
+    if suite == "prompt-ablation":
+        report["paired_comparisons"] = prompt_comparisons(report)
     report_path = Path(dep.output_root) / "pilot_report.json"
     with open(report_path, "w") as file:
         json.dump(report, file, indent=2)
+    bundle_path = write_compact_review(report, Path(dep.output_root))
+    logger.info("Compact review bundle: %s", bundle_path)
     logger.info(f"Pilot completed. Success: {pilot_success}. Report at {report_path}")
     return pilot_success
 
@@ -1057,11 +1110,15 @@ def main() -> int:
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
-        "--pilot-suite", choices=["standard", "negative-ablation", "all"], default="standard",
-        help="standard: A–E; negative-ablation: E off/on; all: A–D plus E off/on (six variants)",
+        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation"], default="standard",
+        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants",
     )
+    parser.add_argument("--pilot-family", choices=["C", "D", "E"],
+                        help="Run just one family of the prompt-ablation suite")
     
     args = parser.parse_args()
+    if args.pilot_family and args.pilot_suite != "prompt-ablation":
+        parser.error("--pilot-family requires --pilot-suite prompt-ablation")
     try:
         load_m8_config(args)
     except ValueError as exc:

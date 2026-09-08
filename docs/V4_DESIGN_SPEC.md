@@ -56,17 +56,21 @@ in this document; generic and historical configurations remain replayable.
   total-runtime cap. E continues until combined discovery/uncertainty saturation,
   exhausted/invalid actions, or a compute cap. Negative queries count against
   SAM3 call/tile budgets. They do not advance the target discovery-plateau window.
-- M8 reports a hard target count: `sum(1 if P(target) > 0.5 else 0)` across active
-  nodes. Exactly 0.5 is rejected. Configure this through
-  `belief.target_count_hard_threshold: 0.5`; the older
-  `target_count_commit_threshold` is null. The two counting rules are mutually
-  exclusive. Stored posterior probabilities and variance are unchanged.
-- `summary.final_count` identifies the reported hard count; `final_soft_count`
-  remains a legacy alias for compatibility. The actual posterior sum remains in
-  `discovery_statistics.raw_soft_count` and pilot sample `raw_soft_count`.
-  C/D/E use `count_type: hard_posterior_count`; A/B remain hard candidate counts.
-  Historical configs without a hard threshold retain their original counting rule.
-- The planner remains the local Ollama alias `qwen3.5-9b-sam3`, with 16384 context
+- M8 reports the pure soft target count: `sum(P(target))` across active nodes.
+  Both `belief.target_count_hard_threshold` and `target_count_commit_threshold`
+  are null. Historical hard-count configurations remain replayable.
+- `summary.final_count`, `final_soft_count`, and
+  `discovery_statistics.raw_soft_count` agree for these soft-count runs.
+  C/D/E use `count_type: soft_posterior_count`; A/B remain hard candidate counts.
+- `planner.prompt_version` selects `old` (historical instructions unchanged) or
+  `v3` (image-grounded positive discovery guidance). V3 prioritizes visible,
+  insufficiently covered target appearances over cosmetic synonyms; it retains
+  open vocabulary and all evidence/images. Optional `planner.target_scope` is
+  included only in v3; production specifies tree fruit, excluding fallen fruit.
+  V3 E system instructions consistently require one proposal on every requested
+  plan; the old arm retains its historical saturation wording for comparison.
+  Production defaults to v3; generic configs default to old for compatibility.
+- The planner remains the local Ollama alias `qwen3.5-9b-sam3`, with 65536 context
   tokens, 512 response tokens, non-thinking JSON mode, a 45-second request timeout,
   and no hidden SDK retries. Negative queries need no extra Qwen request: their
   labels already occur in the response. Full evidence and original supplied image
@@ -75,13 +79,30 @@ in this document; generic and historical configurations remain replayable.
   logs artifact locations. M8.2 remains planner-only and creates no summary.
 
 The optional `--pilot-suite negative-ablation` runs exactly two E-based variants,
-`E_NoNegativePrompts` and `E_WithNegativePrompts`. Both use strict posterior >0.5
+`E_NoNegativePrompts` and `E_WithNegativePrompts`. Both use pure soft posterior-sum
 counting and E's compute caps; configuration differs only in
 `planner.execute_confounder_prompts`. The `--pilot-suite all` option runs A–D plus those two E variants (six total),
 with the same paired E report. Standard A–E remains the default. Persist
 the suite and both resolved configs. Report paired accuracy/cost differences only
 for images valid in both variants, including pair completeness. This is an adaptive
 policy comparison, not a guarantee of identical Qwen responses/target trajectories.
+
+The `--pilot-suite prompt-ablation` suite runs eight soft-count variants:
+C_OldPrompt/C_NewPrompt and D_OldPrompt/D_NewPrompt (negatives enabled in both
+arms), E1_OldPrompt_NoNegatives, E2_OldPrompt_WithNegatives,
+E3_NewPrompt_NoNegatives, E4_NewPrompt_WithNegatives. C/D/E retain their respective
+call caps. `--pilot-family C|D|E` optionally restricts this suite. Comparisons
+change only prompt version or negative-query flag, with paired completeness and
+accuracy/cost differences reported. All pilot suites now force soft counting.
+
+Every completed pilot writes `compact_review.zip`: aggregate and paired metrics,
+small numeric per-image rows, prompt yields including bootstrap, stop/rejection
+histograms, actual text request examples, and first/last Qwen outputs for at most
+three selected image cases. At most three reduced image previews are included.
+Full evidence, masks, event streams and scene graphs remain in local run artifacts.
+Missing review artifacts are surfaced as export warnings. Each recorded real Qwen
+plan includes its actual system/user request text (the last attempt if repaired);
+image bytes stay in the existing image artifacts rather than duplicated base64.
 
 Bootstrap association can change overlap diagnostics on an existing unmatched
 node. Such changes must emit `NODE_UPDATED` snapshots with SAM3 action/call

@@ -2,6 +2,11 @@
 
 This is the definitive, from-scratch guide for executing real-model validation of the V4 controller on the GPU cluster.
 
+For the current soft-count C/D/E old/new prompt study, use the
+[prompt comparison guide](M8_PROMPT_ABLATION.md). Its experiment matrix and
+counting policy supersede older pilot examples below; this runbook still covers
+environment and model setup.
+
 ## 1. Initial Setup
 
 ### 1.1 Clone the Repository

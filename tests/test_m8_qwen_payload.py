@@ -364,3 +364,44 @@ def test_negative_prompt_instructions_keep_target_schema_and_full_evidence(mock_
     assert 'Vocabulary is open' in text
     assert '0.5' in text
     assert len(kwargs['messages'][1]['content']) == 2
+
+
+@pytest.mark.parametrize('negatives', [False, True])
+@pytest.mark.parametrize('until_saturation', [False, True])
+def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path, negatives, until_saturation):
+    from dataclasses import replace
+    original = tmp_path / 'image.png'
+    Image.new('RGB', (10, 10)).save(original)
+    pack = QwenEvidencePack('i', 'green fruit', 'target', ContactSheet(),
+                            image_path=str(original), scene_summary='complete history ' * 1000,
+                            discovery_diagnostics={'discovery_saturated': True})
+    base = V4Config()
+    config = replace(base,
+                     planner=replace(base.planner, prompt_version='v3',
+                                     execute_confounder_prompts=negatives,
+                                     target_scope='Only fruit on trees; exclude fallen fruit.'),
+                     replanning=replace(base.replanning, continue_until_saturation=until_saturation))
+    planner = RealQwenPlanner(base_url='http://fake', model='fake', strict_model_errors=True)
+    planner.plan_scene(pack, BudgetState(), config)
+    request = mock_openai_client.chat.completions.create.call_args.kwargs
+    system = request['messages'][0]['content']
+    user = request['messages'][1]['content'][0]['text']
+    assert RealQwenPlanner.DISCOVERY_GUIDANCE_V3 in system
+    assert 'Only fruit on trees; exclude fallen fruit.' in system
+    assert 'Vocabulary remains open' in system
+    assert pack.scene_summary in user
+    assert request['max_tokens'] == 512
+    assert request['messages'][1]['content'][1]['image_url']['url'].split(',')[1] == base64.b64encode(original.read_bytes()).decode()
+    assert planner.last_request_text == {'system': system, 'user': user}
+    assert ('controller executes likely_confounders' in system) == negatives
+    if until_saturation:
+        assert 'An empty proposed_actions list is permitted' not in system
+        assert 'Whenever the controller requests a plan' in system
+        assert 'Do not return an empty' in system
+    else:
+        assert 'An empty proposed_actions list is permitted' in system
+    # Historical prompt arm remains byte-for-byte the original system, including
+    # the historical E stopping wording, and does not inherit dataset scope.
+    planner.plan_scene(pack, BudgetState(), replace(config, planner=replace(config.planner, prompt_version='old', execute_confounder_prompts=False)))
+    assert planner.last_request_text['system'] == RealQwenPlanner.SYSTEM_PROMPT
+    assert 'Only fruit on trees' not in planner.last_request_text['user']

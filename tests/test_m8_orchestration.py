@@ -267,10 +267,10 @@ def test_negative_ablation_configs_differ_only_in_negative_prompt_switch():
     without['planner']['execute_confounder_prompts'] = True
     assert without == with_negative
     for v in variants:
-        assert v.uses_qwen and v.count_type == 'hard_posterior_count'
+        assert v.uses_qwen and v.count_type == 'soft_posterior_count'
         assert v.config.budget.max_qwen_calls == 100
         assert v.config.budget.max_sam3_calls == 1000
-        assert v.config.belief.target_count_hard_threshold == .5
+        assert v.config.belief.target_count_hard_threshold is None
         assert v.config.belief.target_count_commit_threshold is None
 
 
@@ -294,7 +294,7 @@ def test_selected_pilot_suite_runs_expected_variants(mock_models, tmp_path, suit
     assert report['metadata']['variants'] == expected_names
     assert report['metadata']['pilot_suite'] == suite
     assert all(s['validator_status'] == s['replay_status'] == 'PASS' for s in report['samples'] if s['variant'][0] in 'CDE')
-    assert all(s['count_type'] == 'hard_posterior_count' for s in report['samples'] if s['variant'][0] in 'CDE')
+    assert all(s['count_type'] == 'soft_posterior_count' for s in report['samples'] if s['variant'][0] in 'CDE')
     assert report['paired_comparison']['n_paired'] == 1
     assert report['paired_comparison']['complete']
 

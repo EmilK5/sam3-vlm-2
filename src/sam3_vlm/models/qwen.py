@@ -117,6 +117,20 @@ class MockQwenPlanner:
 class RealQwenPlanner:
     """Real Qwen scene planner using an OpenAI-compatible endpoint."""
 
+    DISCOVERY_GUIDANCE_V3 = (
+        "Your objective is to propose a SAM3 prompt that can recover target objects missed by earlier searches.\n"
+        "Inspect the original image before reviewing the candidate crops. The crops show only sampled "
+        "candidates; they do not establish complete coverage of the image.\n"
+        "Compare visible target appearances with the previous prompts and their reported outcomes. "
+        "Choose an appearance that is visibly present and insufficiently covered by earlier searches.\n"
+        "Prefer a meaningful change in visual appearance over a cosmetic synonym or an arbitrary "
+        "adjective added only to make the phrase new.\n"
+        "Preserve the target category and its defining attributes. Use a simple noun alone, or one or "
+        "two basic adjectives followed by a noun. Vocabulary remains open.\n"
+        "In rationale, explain the visible evidence motivating this prompt and how it differs from "
+        "previous searches. Do not invent hidden objects.\n"
+    )
+
     SYSTEM_PROMPT = (
         "You propose target-search experiments for SAM3. You are NOT a detector and must not count objects. "
         "Qwen never decides whether the pipeline should stop. If discovery is not explicitly saturated, "
@@ -177,6 +191,20 @@ class RealQwenPlanner:
         existing_mapping = evidence_pack.confounder_labels or {}
 
         system_prompt = self.SYSTEM_PROMPT
+        if config.planner.prompt_version == "v3":
+            system_prompt = self.DISCOVERY_GUIDANCE_V3 + "\n" + system_prompt
+            if config.planner.target_scope:
+                system_prompt = config.planner.target_scope + "\n\n" + system_prompt
+            if config.replanning.continue_until_saturation:
+                # Preserve the historical arm verbatim; fix E's conflicting
+                # system/user stopping instructions only in the new prompt arm.
+                system_prompt = system_prompt.replace(
+                    "If discovery is not explicitly saturated, ",
+                    "Whenever the controller requests a plan, ",
+                ).replace(
+                    "An empty proposed_actions list is permitted only when discovery is explicitly saturated.",
+                    "Do not return an empty proposed_actions list, including during a discovery-only plateau.",
+                )
         if config.planner.execute_confounder_prompts:
             system_prompt = system_prompt.replace(
                 "Every executable action must search for the user's target:",
@@ -325,6 +353,9 @@ class RealQwenPlanner:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": content},
         ]
+        # Text-only audit of the actual request; retain image references in the
+        # evidence artifact rather than duplicating base64 payloads.
+        self.last_request_text = {"system": system_prompt, "user": text}
         try:
             extra_body = {}
             if config.planner.reasoning_effort is not None:

@@ -33,9 +33,11 @@
   "belief": {
     "num_confounders": 2,
     "target_count_commit_threshold": null,
-    "target_count_hard_threshold": 0.5
+    "target_count_hard_threshold": null
   },
   "planner": {
+    "prompt_version": "v3",
+    "target_scope": "For this dataset, focus on fruit on trees; exclude fallen fruit.",
     "max_actions_per_prompt": 1,
     "temperature": 0.2,
     "max_output_tokens": 512,

@@ -264,7 +264,7 @@ def main() -> int:
                 line_width=max(1, args.line_width),
                 show_node_ids=not args.no_node_ids,
                 show_probabilities=not args.no_probabilities,
-                show_posterior=row.get("count_type") in ("posterior_count", "hard_posterior_count"),
+                show_posterior=row.get("count_type") in ("posterior_count", "hard_posterior_count", "soft_posterior_count"),
             )
             out_path = output_dir / f"{sample_id}__{variant}.jpg"
             rendered.save(out_path, quality=95)
