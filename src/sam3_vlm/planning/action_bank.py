@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import re
 from typing import Any, List, Optional, Sequence, Set
+from sam3_vlm.core.config import SAM3Config
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import ActionSource, SpatialMode
 from sam3_vlm.planning.qwen_planner import PlannerOutput, ProposedAction
@@ -366,7 +367,7 @@ class ActionBankGenerator:
                 semantic_key=canonical_key,
                 prompt=proposal.prompt,
                 family=proposal.family,
-                threshold=proposal.suggested_threshold if proposal.suggested_threshold is not None else 0.25,
+                threshold=(config.sam3 if config is not None else SAM3Config()).qwen_prompt_threshold,
                 spatial_mode=proposal.suggested_spatial_mode,
                 source=ActionSource.QWEN,
                 qwen_priority=adjusted_priority,

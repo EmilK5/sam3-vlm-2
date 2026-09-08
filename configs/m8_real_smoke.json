@@ -51,5 +51,8 @@
   },
   "seed": 42,
   "output_root": "runs/m8_real_smoke",
-  "pilot_sample_limit": 10
+  "pilot_sample_limit": 10,
+  "sam3": {
+    "qwen_prompt_threshold": 0.5
+  }
 }

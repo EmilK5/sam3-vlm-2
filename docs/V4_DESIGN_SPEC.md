@@ -17,13 +17,28 @@ architecture described in the remainder of this document:
   to SAM3 as separate experiments.
 - The information-value proxy is evaluated only for target actions.
 - Each planning round admits at most one action. The production configuration
-  permits one replan, for at most two Qwen calls after bootstrap.
+  permits one replan, for at most two Qwen calls after bootstrap (variant D).
+- Pilot variant `E_Qwen_UntilSaturation` instead permits 100 Qwen calls and
+  1000 SAM3 actions, including bootstrap. It permits 99 replans, disables the
+  independent tile, iteration, and total-runtime limits, and bypasses measured
+  and predicted low-utility termination. Numerical discovery AND uncertainty
+  saturation still stops execution. Per-request model timeouts remain active.
+  SAM3 calls count sensor actions; tiles are separately recorded and can exceed
+  the action count. One target action per Qwen round remains the contract.
+- Every Qwen-generated action uses controller-owned
+  `sam3.qwen_prompt_threshold` (default and M8 configuration: `0.5`), regardless
+  of `suggested_threshold`. Qwen is instructed to emit the configured value;
+  artifacts retain its original suggestion and the actual executed threshold.
+  Bootstrap/context thresholds and the posterior commitment threshold stay
+  independent.
 - The numerical controller owns stopping; Qwen never decides whether the
   pipeline should stop. In strict/canonical M8, unless the evidence pack's
   `discovery_diagnostics.discovery_saturated` is explicitly `true`, Qwen must
   propose exactly one novel target `DISCOVERY` experiment, even when current
   candidates look convincing. Only explicitly saturated discovery permits an
-  empty `proposed_actions` list.
+  empty `proposed_actions` list in C/D. In E, every requested plan must propose
+  one novel target action even during a discovery-only plateau: the controller
+  evaluates combined saturation after each executed action.
 - That proposal uses `semantic_key: target`, `family: DISCOVERY`, and exactly
   `semantic_prior: {target: 1.0}`; its SAM3 prompt has one to three words: an
   object noun alone or one/two basic visual adjectives followed by a noun.
@@ -47,7 +62,7 @@ architecture described in the remainder of this document:
   to Qwen, with no fixed dictionary or rejection of unfamiliar object names.
   The executable prompt guard checks 1–3 words, lexical shape, and the existing
   method/prose restrictions. Descriptive labels receive no dictionary filtering.
-- A validly parsed empty unsaturated response is recorded as
+- A validly parsed empty unsaturated response (or any empty E response) is recorded as
   `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen artifact.
   It creates no fallback action, triggers no repair call, and follows the
   existing `NO_VALID_ACTIONS` stop behavior. The second Qwen call remains

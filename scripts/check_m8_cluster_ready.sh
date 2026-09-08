@@ -27,6 +27,7 @@ class DummyArgs:
 try:
     c = load_m8_config(DummyArgs(), config_path="configs/m8_real_smoke.json")
     v4 = c.v4_config
+    assert v4.sam3.qwen_prompt_threshold == 0.5, "Qwen SAM3 actions must use threshold 0.5"
     assert v4.budget.max_cleanup_calls == 0, "Cleanup must be disabled for M8"
     assert v4.budget.max_qwen_calls == 2, "M8 must allow at most two Qwen calls"
     assert v4.planner.max_actions_per_prompt == 1, "M8 must admit one target action per round"

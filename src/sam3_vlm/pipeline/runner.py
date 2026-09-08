@@ -252,14 +252,20 @@ class Runner:
         if budget.sam3_calls >= cfg_budget.max_sam3_calls:
             return StopReason.SAM3_BUDGET
             
-        if budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles:
+        if (
+            cfg_budget.max_sam3_tiles is not None
+            and budget.sam3_tiles + predicted_tiles > cfg_budget.max_sam3_tiles
+        ):
             return StopReason.TILE_BUDGET
             
         elapsed_wall_ms = self._elapsed_wall_ms()
         if cfg_budget.max_runtime_seconds and (elapsed_wall_ms / 1000.0) >= cfg_budget.max_runtime_seconds:
             return StopReason.RUNTIME_BUDGET
             
-        if self.scene_state.iteration >= self.config.stopping.max_iterations:
+        if (
+            self.config.stopping.max_iterations is not None
+            and self.scene_state.iteration >= self.config.stopping.max_iterations
+        ):
             return StopReason.MAX_ITERATIONS
             
         return None
@@ -804,7 +810,8 @@ class Runner:
             invalid_total = sum(1 for e in self.scene_state.action_bank.entries if e.invalid_reason is not None)
             invalid_total += len(self.bank_generator.last_rejections)
             self.recorder.record_action_bank_refreshed(len(self.scene_state.action_bank.entries), invalid_total)
-        self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
+        if not self.config.replanning.continue_until_saturation:
+            self.scene_state.action_bank.purge_stale_actions(self.config.stopping.utility_min_threshold)
         self.scene_state.qwen_round += 1
         self.scene_state.actions_since_replan = 0
         if is_replan:
@@ -822,6 +829,7 @@ class Runner:
 
         if (
             strict_m8
+            and not self.config.replanning.continue_until_saturation
             and self.scene_state.actions_since_replan > 0
             and not self._last_plan_had_marginal_value()
         ):
@@ -934,7 +942,10 @@ class Runner:
                 best_score = utility.total_utility
                 best_entry = entry
                 
-        if best_score < self.config.stopping.utility_min_threshold:
+        if (
+            not self.config.replanning.continue_until_saturation
+            and best_score < self.config.stopping.utility_min_threshold
+        ):
             return None
             
         return best_entry

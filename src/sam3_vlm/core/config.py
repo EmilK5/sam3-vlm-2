@@ -20,7 +20,7 @@ class BudgetConfig:
 
     max_qwen_calls: int = 4
     max_sam3_calls: int = 15
-    max_sam3_tiles: int = 30
+    max_sam3_tiles: Optional[int] = 30  # None disables the separate tile cap.
     max_cleanup_calls: int = 5
     max_runtime_seconds: Optional[float] = 300.0
 
@@ -31,7 +31,7 @@ class StoppingConfig:
 
     discovery_saturation_threshold: float = 0.05
     utility_min_threshold: float = 0.02
-    max_iterations: int = 20
+    max_iterations: Optional[int] = 20  # None relies on sensing/Qwen call caps.
     count_variance_threshold: float = 0.5
 
 
@@ -85,6 +85,12 @@ class SAM3Config:
 
     default_threshold: float = 0.25
     box_nms_iou_threshold: float = 0.7
+    # Controller-owned threshold for every Qwen-generated sensing action.
+    qwen_prompt_threshold: float = 0.5
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.qwen_prompt_threshold <= 1.0):
+            raise ValueError("qwen_prompt_threshold must be in [0, 1]")
 
 
 @dataclass(frozen=True)
@@ -142,6 +148,8 @@ class ReplanningConfig:
     """Qwen replanning trigger configuration (V4 Design Spec §12)."""
 
     max_replans: int = 2
+    # Experiment E: execute novel proposals despite low marginal utility.
+    continue_until_saturation: bool = False
     discovery_plateau_steps: int = 2
     unresolved_entropy_threshold: float = 1.0
     count_variance_threshold: float = 0.5

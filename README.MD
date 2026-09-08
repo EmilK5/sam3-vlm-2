@@ -631,16 +631,22 @@ Tests must not be weakened solely to make failing code pass.
 
 # Planned research ablations
 
-The current five-image pilot starts with four controlled variants:
+The current five-image pilot starts with five controlled variants:
 
 - one global SAM3 target pass with no Qwen;
 - the complete SAM3 bootstrap with no Qwen;
 - the complete bootstrap plus one Qwen target prompt;
-- the current adaptive target-only pipeline with up to two Qwen prompts.
+- the adaptive target-only pipeline with up to two Qwen prompts;
+- experiment E, which continues toward numerical saturation with caps of 100 Qwen calls and 1000 SAM3 actions.
+
+Every Qwen-generated SAM3 action uses threshold `0.5`. E bypasses short-run
+utility limits and disables separate tile, iteration, and total-runtime caps.
+See the [M8 runbook](docs/M8_CLUSTER_RUNBOOK.md#4-the-pilot-experiment) for
+stopping semantics and the five-variant pilot commands.
 
 This first comparison isolates the value of spatial/refined SAM3 bootstrap,
-one semantic planning call, and one adaptive replan without reintroducing
-confounder experiments.
+one semantic planning call, one adaptive replan, and extended exploration.
+Confounders remain descriptive context.
 
 Important comparisons include:
 

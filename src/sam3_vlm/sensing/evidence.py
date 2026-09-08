@@ -178,7 +178,13 @@ class QwenEvidencePack:
         expected = ["target"] + [f"confounder{i}" for i in range(1, len(classes))]
         return bool(classes) and self.target_class == "target" and classes == expected
 
-    def to_prompt_text(self, *, enforce_qwen_contract: bool = False, compact: bool = False) -> str:
+    def to_prompt_text(
+        self,
+        *,
+        enforce_qwen_contract: bool = False,
+        compact: bool = False,
+        continue_until_saturation: bool = False,
+    ) -> str:
         """Format evidence pack into a compact token-efficient text prompt for Qwen (V4 Design Spec §6.1)."""
         lines = [
             "=== IMPORTANT QWEN INSTRUCTIONS ===",
@@ -190,6 +196,10 @@ class QwenEvidencePack:
             "Every executable action must be a novel scene-level prompt for the target.",
             "On replanning, never repeat an exact SAM3 prompt listed in tried_sam3_prompts or semantic history.",
             (
+                "Qwen never decides whether the pipeline should stop. Continue proposing exactly one novel "
+                "target DISCOVERY experiment while the controller requests a plan, including during a "
+                "discovery-only plateau. Do not return an empty proposed_actions list."
+                if continue_until_saturation else
                 "Qwen never decides whether the pipeline should stop. Unless discovery_saturated is explicitly true, "
                 "proposed_actions must contain exactly one novel target DISCOVERY experiment, even when current "
                 "candidates look convincing. An empty proposed_actions list is permitted only when discovery is "

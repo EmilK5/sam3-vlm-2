@@ -176,7 +176,10 @@ class RealQwenPlanner:
         confounder_slots = [c for c in belief_classes if c != "target"]
         existing_mapping = evidence_pack.confounder_labels or {}
 
-        text = evidence_pack.to_prompt_text(enforce_qwen_contract=True)
+        text = evidence_pack.to_prompt_text(
+            enforce_qwen_contract=True,
+            continue_until_saturation=config.replanning.continue_until_saturation,
+        )
         text += (
             "\n\nEXECUTABLE ACTION CONTRACT:\n"
             "- sam3_prompt, likely_confounders, missing_appearance_modes: each phrase has 1 to 3 words.\n"
@@ -213,7 +216,14 @@ class RealQwenPlanner:
                 f"- EXACT PROMPT BLACKLIST: {tried_prompts}. Never propose any "
                 "of these SAM3 prompts again, even with a different spatial mode.\n"
             )
-        if evidence_pack.discovery_diagnostics.get("discovery_saturated") is True:
+        if config.replanning.continue_until_saturation:
+            text += (
+                "- CONTINUE UNTIL CONTROLLER SATURATION: proposed_actions MUST contain exactly one "
+                "novel target DISCOVERY experiment. A discovery-only plateau does not end this experiment; "
+                "the controller checks both discovery and uncertainty after each action. "
+                "Do not return an empty list.\n"
+            )
+        elif evidence_pack.discovery_diagnostics.get("discovery_saturated") is True:
             text += (
                 "- DISCOVERY IS SATURATED: propose one novel target description "
                 "only if it can reduce remaining target uncertainty; otherwise "
@@ -225,6 +235,10 @@ class RealQwenPlanner:
                 "novel target DISCOVERY experiment, even when current candidates look convincing. "
                 "Do not return an empty list.\n"
             )
+        text += (
+            f"- SAM3 threshold is fixed by the controller at {config.sam3.qwen_prompt_threshold}. "
+            "Use that value for suggested_threshold; do not raise it for hidden targets.\n"
+        )
         text += (
             "\nReturn JSON:\n"
             "{\n"
@@ -238,7 +252,7 @@ class RealQwenPlanner:
             '      "family": "DISCOVERY",\n'
             '      "priority": <float 0.0-1.0>,\n'
             '      "semantic_prior": {"target": 1.0},\n'
-            '      "suggested_threshold": <float 0.0-1.0>,\n'
+            f'      "suggested_threshold": {config.sam3.qwen_prompt_threshold},\n'
             '      "suggested_spatial_mode": "GLOBAL | TILED",\n'
             '      "rationale": "<short reasoning>"\n'
             "    }\n"

@@ -86,7 +86,7 @@ Replace `127.0.0.1` with the Ollama host only when the model server runs on a
 different machine. The Python client additionally requests non-thinking JSON,
 limits each response to 512 tokens, applies a 45-second request timeout, and
 disables hidden SDK retries. The experiment-level Qwen budget still controls
-whether the pipeline makes one or two planner calls.
+whether the pipeline makes one or two planner calls in C/D, or up to 100 in E.
 
 After the first request, inspect the live allocation:
 
@@ -156,7 +156,7 @@ python -m sam3_vlm.experiments.m8_smoke \
 
 Once the smoke test passes cleanly, run the pilot separately. The pilot strictly requires a JSON manifest with a ground-truth count for every image.
 
-The first comparison uses four variants:
+The comparison uses five variants:
 
 | Variant | SAM3 setup | Qwen |
 |---|---|---|
@@ -164,10 +164,35 @@ The first comparison uses four variants:
 | `B_SAM3_Bootstrap` | Context lock, target refinement, and target tiling | None |
 | `C_Qwen_OneRound` | Full SAM3 bootstrap plus one target prompt | One call, no replan |
 | `D_Qwen_TwoRound` | Full SAM3 bootstrap plus adaptive target prompts | Up to two calls and one replan |
+| `E_Qwen_UntilSaturation` | Full SAM3 bootstrap plus extended target discovery | Up to 100 calls / 99 replans, 1000 SAM3 actions |
 
-With five images, this produces 20 runs. The two SAM3-only variants report the
+With five images, this produces 25 runs. The two SAM3-only variants report the
 hard number of registered candidate nodes. The Qwen variants report the
 posterior count using the configured `0.8` commitment rule.
+
+All Qwen-generated SAM3 actions now execute at threshold **0.5**, including
+C, D, and E. The controller overrides any different Qwen suggestion. Bootstrap
+and context-lock thresholds are unchanged. Re-run C/D with this version to
+compare against E at the same threshold.
+
+E bypasses the earlier utility cutoff and has no separate iteration, tile, or
+total-runtime limit. It stops when the existing numerical discovery **and**
+uncertainty saturation test passes, or a hard call cap is reached. Specifically,
+the last two target experiments must have a summed new-node count at most 0.05,
+aggregate node entropy at most 1.0, and count variance at most 0.5. A discovery
+plateau alone does not imply saturation while uncertainty remains high.
+Invalid/empty/repeated proposals and model errors still terminate visibly;
+reaching fewer than 100 calls does not by itself prove saturation. Check the
+reported `stop_reason`. The 45-second request timeout and explicit repair policy
+remain; repair requests count toward the 100-call cap.
+
+`sam3_calls` counts sensor actions (including bootstrap), while `sam3_tiles`
+counts tiles separately. E can therefore process more than 1000 individual
+tiles. With one action per planning round, 100 Qwen calls normally produce
+at most 100 additional SAM3 actions; 1000 is a safety cap, not a target workload.
+Full evidence and original images remain supplied to Qwen, without compaction.
+Long histories can exceed the server's 16384-token context and fail visibly.
+Confounders remain descriptive context, not separately executed evidence.
 
 Example Manifest (`pilot_manifest.json`):
 ```json
@@ -248,10 +273,12 @@ executable prompts and missing-appearance labels. Confounder labels must not
 become target actions. The instruction blocks omit concrete example phrase
 lists; full evidence and tried-prompt history remain available.
 Each Qwen round contributes at most one target experiment, with at most one
-replan and two Qwen calls total.
+replan and two Qwen calls total in C/D; E uses the extended limits above.
 
 Qwen must propose exactly one novel target `DISCOVERY` experiment unless the
-controller's evidence explicitly reports saturated discovery. Convincing
+controller's evidence explicitly reports saturated discovery (C/D). In E,
+every requested plan must contain one novel action, even during a discovery-only
+plateau. Convincing
 current candidates are not permission to abstain. An empty unsaturated plan
 persists `metadata.contract_diagnostic: EMPTY_UNSATURATED_PLAN` in the Qwen
 artifact and ends under `NO_VALID_ACTIONS`, without an invented action or an
@@ -308,7 +335,7 @@ Return the new summary and each Qwen artifact's proposed actions, rejections,
 contract diagnostic, repair/fallback flags, and runtime. Do not start the
 five-image A/B/C/D pilot until this same-image M8.3 run actually executes a
 valid Qwen-derived target action and passes validator/canonical replay. Then
-continue with all four variants in section 4.
+continue with all five variants in section 4.
 
 ### Diagnosing Pilot Failures
 Open `pilot_report.json`. Look in `.samples` for any sample where `"success": false`.

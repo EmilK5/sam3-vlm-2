@@ -577,6 +577,24 @@ def _pilot_variants(base: V4Config) -> list[PilotVariant]:
         ),
         replanning=dataclasses.replace(base.replanning, max_replans=0),
     )
+    until_saturation = dataclasses.replace(
+        base,
+        budget=dataclasses.replace(
+            base.budget,
+            max_qwen_calls=100,
+            max_sam3_calls=1000,
+            max_sam3_tiles=None,
+            max_cleanup_calls=0,
+            max_runtime_seconds=None,
+        ),
+        stopping=dataclasses.replace(base.stopping, max_iterations=None),
+        replanning=dataclasses.replace(
+            base.replanning,
+            max_replans=99,
+            min_actions_between_replans=1,
+            continue_until_saturation=True,
+        ),
+    )
     return [
         PilotVariant(
             "A_SAM3_Global",
@@ -599,6 +617,12 @@ def _pilot_variants(base: V4Config) -> list[PilotVariant]:
         PilotVariant(
             "D_Qwen_TwoRound",
             base,
+            uses_qwen=True,
+            count_type="posterior_count",
+        ),
+        PilotVariant(
+            "E_Qwen_UntilSaturation",
+            until_saturation,
             uses_qwen=True,
             count_type="posterior_count",
         ),

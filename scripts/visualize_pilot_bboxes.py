@@ -27,6 +27,7 @@ VARIANT_ORDER = [
     "B_SAM3_Bootstrap",
     "C_Qwen_OneRound",
     "D_Qwen_TwoRound",
+    "E_Qwen_UntilSaturation",
 ]
 
 

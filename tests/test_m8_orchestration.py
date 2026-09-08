@@ -137,7 +137,7 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path, caplog):
     assert "samples" in report
     
     samples = report["samples"]
-    assert len(samples) == 8  # 4 variants * 2 images (limit enforced)
+    assert len(samples) == 10  # 5 variants * 2 images (limit enforced)
     
     one_shot = [r for r in samples if r["variant"] == "A_SAM3_Global"]
     assert len(one_shot) == 2
@@ -163,6 +163,7 @@ def test_m8_4_and_5_pilot_with_mocks(mock_models, tmp_path, caplog):
         "B_SAM3_Bootstrap",
         "C_Qwen_OneRound",
         "D_Qwen_TwoRound",
+        "E_Qwen_UntilSaturation",
     ]
 
 

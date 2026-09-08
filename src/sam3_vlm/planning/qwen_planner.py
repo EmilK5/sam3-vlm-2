@@ -253,7 +253,10 @@ class QwenPlannerService:
         if (
             strict_m8
             and not output.proposed_actions
-            and evidence.discovery_diagnostics.get("discovery_saturated") is not True
+            and (
+                config.replanning.continue_until_saturation
+                or evidence.discovery_diagnostics.get("discovery_saturated") is not True
+            )
         ):
             self.last_contract_diagnostic = "EMPTY_UNSATURATED_PLAN"
 

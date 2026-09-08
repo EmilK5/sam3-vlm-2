@@ -318,3 +318,26 @@ def test_qwen_payload_unsupported_mime(mock_openai_client, tmp_path):
     
     with pytest.raises(ValueError, match="Unsupported image extension for Qwen: .bmp"):
         planner.plan_scene(evidence, BudgetState(), V4Config())
+
+
+def test_e_prompt_requires_exploration_during_discovery_plateau(mock_openai_client, tmp_path):
+    from sam3_vlm.experiments.m8_smoke import _pilot_variants
+
+    config = _pilot_variants(V4Config())[-1].config
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (10, 10)).save(image_path)
+    planner = RealQwenPlanner(base_url="http://fake", model="fake-model", strict_model_errors=True)
+    pack = QwenEvidencePack(
+        "img", "green fruit", "target", ContactSheet(), image_path=str(image_path),
+        belief_classes=["target"],
+        discovery_diagnostics={"discovery_saturated": True},
+    )
+    planner.plan_scene(pack, BudgetState(), config)
+    kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+    text = kwargs["messages"][1]["content"][0]["text"]
+    assert "CONTINUE UNTIL CONTROLLER SATURATION" in text
+    assert "An empty proposed_actions list is permitted" not in text
+    assert "otherwise return an empty" not in text
+    assert "SAM3 threshold is fixed by the controller at 0.5" in text
+    assert '"suggested_threshold": 0.5' in text
+    assert kwargs["max_tokens"] == 512

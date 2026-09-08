@@ -308,7 +308,7 @@ class RunValidator:
                 b = replayed_state.budget
                 if b.sam3_calls > cfg.max_sam3_calls:
                     errors.append(f"Hard limit exceeded: sam3_calls {b.sam3_calls} > {cfg.max_sam3_calls}")
-                if b.sam3_tiles > cfg.max_sam3_tiles:
+                if cfg.max_sam3_tiles is not None and b.sam3_tiles > cfg.max_sam3_tiles:
                     errors.append(f"Hard limit exceeded: sam3_tiles {b.sam3_tiles} > {cfg.max_sam3_tiles}")
                 if b.qwen_calls > cfg.max_qwen_calls:
                     errors.append(f"Hard limit exceeded: qwen_calls {b.qwen_calls} > {cfg.max_qwen_calls}")

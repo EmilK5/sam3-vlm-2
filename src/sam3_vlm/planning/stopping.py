@@ -31,7 +31,7 @@ class IterationStoppingCondition:
     """Stops when the maximum number of iterations is reached."""
     
     def should_stop(self, state: "SceneState", config: "V4Config") -> Optional[StopReason]:
-        if state.iteration >= config.stopping.max_iterations:
+        if config.stopping.max_iterations is not None and state.iteration >= config.stopping.max_iterations:
             return StopReason.MAX_ITERATIONS
         return None
 
