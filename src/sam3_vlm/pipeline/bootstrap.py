@@ -145,6 +145,12 @@ class BootstrapPipeline:
                 self.recorder.record_node_created(new_node.node_id, new_node.to_dict(), prov)
 
     def _associate_discovery(self, state: SceneState, action: SensingAction, observation):
+        # Association can change overlap diagnostics on existing nodes that
+        # receive no detection. They still need an event for exact replay.
+        previous_diagnostics = (
+            {node.node_id: node.to_dict()["diagnostics"] for node in state.graph.active_nodes()}
+            if self.recorder else {}
+        )
         result = self.association_policy.associate(
             graph=state.graph,
             detections=observation.detections,
@@ -160,6 +166,25 @@ class BootstrapPipeline:
                 action.action_id, len(result.matched_observations), len(result.new_nodes)
             )
         self._update_beliefs(state, action, observation, result)
+        if self.recorder:
+            matched_ids = {node_id for node_id, _ in result.matched_observations}
+            for node_id, diagnostics in previous_diagnostics.items():
+                node = state.graph.get_node(node_id)
+                if (
+                    node is not None
+                    and node_id not in matched_ids
+                    and node.to_dict()["diagnostics"] != diagnostics
+                ):
+                    self.recorder.record_node_updated(
+                        node_id,
+                        node.to_dict(),
+                        {
+                            "action_id": action.action_id,
+                            "sam3_call_id": observation.call_id,
+                            "semantic_key": action.semantic_key,
+                            "reason": "ASSOCIATION_DIAGNOSTICS_CHANGED",
+                        },
+                    )
         state.discovery_state.record_search(observation.searched_regions, state.search_region)
         state.discovery_state.record_discovery_gain(
             len(result.new_nodes),

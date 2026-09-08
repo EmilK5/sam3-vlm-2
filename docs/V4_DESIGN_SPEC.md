@@ -84,6 +84,12 @@ architecture described in the remainder of this document:
   the absolute `pilot_report.json` path. M8.2 is a planner-only smoke test and
   intentionally produces no run summary.
 
+Bootstrap association can change overlap diagnostics on an existing node even
+when that node receives no detection. Any such change must emit a `NODE_UPDATED`
+snapshot with the responsible SAM3 action/call provenance. This is a diagnostic
+update only: it must not create an observation or alter the node's belief. Replay
+must retain these updates, including when planning immediately rejects an action.
+
 These rules override older M8 examples below that execute confounder actions.
 The generic schemas and belief model retain confounder families so historical
 artifacts and non-M8 experiments remain replayable.

@@ -1,0 +1,716 @@
+[
+  {
+    "sample_id": "image_1",
+    "gt_count": 21,
+    "qwen_calls": 2,
+    "executed_qwen_actions": 1,
+    "new_nodes": 0,
+    "final_nodes": 23,
+    "bootstrap_posterior_count": 15.753676798293768,
+    "final_count": 16.929894650894695,
+    "discovery_plateau": false,
+    "count_variance": 4.104278753802699,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit in shade",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_2",
+    "gt_count": 32,
+    "qwen_calls": 8,
+    "executed_qwen_actions": 7,
+    "new_nodes": 0,
+    "final_nodes": 48,
+    "bootstrap_posterior_count": 34.864840946179555,
+    "final_count": 38.09596332070137,
+    "discovery_plateau": true,
+    "count_variance": 5.031974577657869,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_3",
+    "gt_count": 24,
+    "qwen_calls": 6,
+    "executed_qwen_actions": 5,
+    "new_nodes": 0,
+    "final_nodes": 26,
+    "bootstrap_posterior_count": 17.730197564223708,
+    "final_count": 19.850981621791608,
+    "discovery_plateau": true,
+    "count_variance": 3.262820951241808,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_4",
+    "gt_count": 51,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 70,
+    "bootstrap_posterior_count": 42.70222482353556,
+    "final_count": 42.70222482353557,
+    "discovery_plateau": false,
+    "count_variance": 15.42692214401653,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "small round green fruit",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_5",
+    "gt_count": 18,
+    "qwen_calls": 5,
+    "executed_qwen_actions": 4,
+    "new_nodes": 0,
+    "final_nodes": 13,
+    "bootstrap_posterior_count": 7.823321154746339,
+    "final_count": 9.395524299332356,
+    "discovery_plateau": true,
+    "count_variance": 1.898874731868312,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit hidden in leaves",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_6",
+    "gt_count": 25,
+    "qwen_calls": 11,
+    "executed_qwen_actions": 10,
+    "new_nodes": 0,
+    "final_nodes": 35,
+    "bootstrap_posterior_count": 23.33376793945741,
+    "final_count": 25.124721990894276,
+    "discovery_plateau": true,
+    "count_variance": 4.037459286838668,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_7",
+    "gt_count": 36,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 45,
+    "bootstrap_posterior_count": 27.86407780334581,
+    "final_count": 27.86407780334581,
+    "discovery_plateau": false,
+    "count_variance": 9.875217183883967,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit under leaves",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_8",
+    "gt_count": 28,
+    "qwen_calls": 2,
+    "executed_qwen_actions": 1,
+    "new_nodes": 0,
+    "final_nodes": 44,
+    "bootstrap_posterior_count": 28.402158641120742,
+    "final_count": 30.49088830400525,
+    "discovery_plateau": false,
+    "count_variance": 8.450433125302219,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_9",
+    "gt_count": 35,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 42,
+    "bootstrap_posterior_count": 24.772963794915732,
+    "final_count": 24.77296379491573,
+    "discovery_plateau": false,
+    "count_variance": 9.545891067107096,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit in shadow",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_10",
+    "gt_count": 37,
+    "qwen_calls": 6,
+    "executed_qwen_actions": 5,
+    "new_nodes": 0,
+    "final_nodes": 46,
+    "bootstrap_posterior_count": 29.92323443865519,
+    "final_count": 31.09222031383969,
+    "discovery_plateau": true,
+    "count_variance": 7.322885863118588,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit in shadow",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_11",
+    "gt_count": 27,
+    "qwen_calls": 11,
+    "executed_qwen_actions": 10,
+    "new_nodes": 1,
+    "final_nodes": 25,
+    "bootstrap_posterior_count": 11.058341858876494,
+    "final_count": 14.732717922819408,
+    "discovery_plateau": false,
+    "count_variance": 3.57951773930853,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "yellow fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_12",
+    "gt_count": 33,
+    "qwen_calls": 11,
+    "executed_qwen_actions": 10,
+    "new_nodes": 0,
+    "final_nodes": 47,
+    "bootstrap_posterior_count": 23.22550886622672,
+    "final_count": 26.079112200891206,
+    "discovery_plateau": true,
+    "count_variance": 7.884439512174107,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_13",
+    "gt_count": 39,
+    "qwen_calls": 6,
+    "executed_qwen_actions": 5,
+    "new_nodes": 0,
+    "final_nodes": 40,
+    "bootstrap_posterior_count": 23.899981702503215,
+    "final_count": 23.98735140596183,
+    "discovery_plateau": true,
+    "count_variance": 6.87896305143551,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "pale green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_14",
+    "gt_count": 29,
+    "qwen_calls": 12,
+    "executed_qwen_actions": 11,
+    "new_nodes": 0,
+    "final_nodes": 44,
+    "bootstrap_posterior_count": 27.440263637355866,
+    "final_count": 30.650119545823213,
+    "discovery_plateau": true,
+    "count_variance": 5.917152172697226,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_15",
+    "gt_count": 9,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 15,
+    "bootstrap_posterior_count": 9.591186330836951,
+    "final_count": 9.591186330836951,
+    "discovery_plateau": false,
+    "count_variance": 3.2592251855166543,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "small round green fruit",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_16",
+    "gt_count": 38,
+    "qwen_calls": 8,
+    "executed_qwen_actions": 7,
+    "new_nodes": 0,
+    "final_nodes": 53,
+    "bootstrap_posterior_count": 32.22298417271591,
+    "final_count": 36.66033799637323,
+    "discovery_plateau": true,
+    "count_variance": 7.864120110915634,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_17",
+    "gt_count": 34,
+    "qwen_calls": 8,
+    "executed_qwen_actions": 7,
+    "new_nodes": 0,
+    "final_nodes": 27,
+    "bootstrap_posterior_count": 12.447738709458763,
+    "final_count": 14.601221394639863,
+    "discovery_plateau": true,
+    "count_variance": 4.794388009788378,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "pale green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_18",
+    "gt_count": 11,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 17,
+    "bootstrap_posterior_count": 11.642366804164713,
+    "final_count": 11.642366804164713,
+    "discovery_plateau": false,
+    "count_variance": 3.4834393424587415,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit in shadow",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_19",
+    "gt_count": 26,
+    "qwen_calls": 5,
+    "executed_qwen_actions": 4,
+    "new_nodes": 0,
+    "final_nodes": 30,
+    "bootstrap_posterior_count": 19.555016299990807,
+    "final_count": 21.08605647426079,
+    "discovery_plateau": true,
+    "count_variance": 4.472057112730596,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "small green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_20",
+    "gt_count": 25,
+    "qwen_calls": 9,
+    "executed_qwen_actions": 8,
+    "new_nodes": 0,
+    "final_nodes": 29,
+    "bootstrap_posterior_count": 17.411207038686054,
+    "final_count": 18.46181256944739,
+    "discovery_plateau": true,
+    "count_variance": 4.32844424948568,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "bright green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_21",
+    "gt_count": 33,
+    "qwen_calls": 7,
+    "executed_qwen_actions": 6,
+    "new_nodes": 0,
+    "final_nodes": 33,
+    "bootstrap_posterior_count": 21.2611136180534,
+    "final_count": 22.577456918169847,
+    "discovery_plateau": true,
+    "count_variance": 5.214824954863496,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "bright green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_22",
+    "gt_count": 38,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 62,
+    "bootstrap_posterior_count": 39.22690035061543,
+    "final_count": 39.22690035061543,
+    "discovery_plateau": false,
+    "count_variance": 13.38346706827336,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit in shadow",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_23",
+    "gt_count": 35,
+    "qwen_calls": 4,
+    "executed_qwen_actions": 3,
+    "new_nodes": 0,
+    "final_nodes": 35,
+    "bootstrap_posterior_count": 24.958218859715853,
+    "final_count": 27.009176118280685,
+    "discovery_plateau": true,
+    "count_variance": 4.9226177855846105,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "shaded green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_24",
+    "gt_count": 12,
+    "qwen_calls": 5,
+    "executed_qwen_actions": 4,
+    "new_nodes": 0,
+    "final_nodes": 16,
+    "bootstrap_posterior_count": 9.222629207624118,
+    "final_count": 9.25072578812485,
+    "discovery_plateau": true,
+    "count_variance": 2.774293334130638,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_25",
+    "gt_count": 49,
+    "qwen_calls": 12,
+    "executed_qwen_actions": 11,
+    "new_nodes": 0,
+    "final_nodes": 52,
+    "bootstrap_posterior_count": 30.381628045166543,
+    "final_count": 29.91347810971627,
+    "discovery_plateau": true,
+    "count_variance": 8.543225895209556,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "small green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_26",
+    "gt_count": 18,
+    "qwen_calls": 13,
+    "executed_qwen_actions": 12,
+    "new_nodes": 0,
+    "final_nodes": 13,
+    "bootstrap_posterior_count": 9.062635323901901,
+    "final_count": 9.347692442527219,
+    "discovery_plateau": true,
+    "count_variance": 1.3862778195843797,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_27",
+    "gt_count": 40,
+    "qwen_calls": 12,
+    "executed_qwen_actions": 11,
+    "new_nodes": 0,
+    "final_nodes": 51,
+    "bootstrap_posterior_count": 31.163144556942832,
+    "final_count": 29.516522720583318,
+    "discovery_plateau": true,
+    "count_variance": 9.31587393336645,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "hollowed green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "GLOBAL"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_28",
+    "gt_count": 30,
+    "qwen_calls": 5,
+    "executed_qwen_actions": 4,
+    "new_nodes": 0,
+    "final_nodes": 31,
+    "bootstrap_posterior_count": 20.34361794463259,
+    "final_count": 22.182055685646176,
+    "discovery_plateau": true,
+    "count_variance": 4.638788242991778,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_29",
+    "gt_count": 15,
+    "qwen_calls": 6,
+    "executed_qwen_actions": 5,
+    "new_nodes": 0,
+    "final_nodes": 7,
+    "bootstrap_posterior_count": 3.192047348315101,
+    "final_count": 4.2819511777075965,
+    "discovery_plateau": true,
+    "count_variance": 1.0284723001536016,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_30",
+    "gt_count": 17,
+    "qwen_calls": 5,
+    "executed_qwen_actions": 4,
+    "new_nodes": 0,
+    "final_nodes": 6,
+    "bootstrap_posterior_count": 3.1914226891445785,
+    "final_count": 3.634799095781028,
+    "discovery_plateau": true,
+    "count_variance": 1.094953269705063,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark green fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_31",
+    "gt_count": 25,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 20,
+    "bootstrap_posterior_count": 12.075829945402646,
+    "final_count": 12.075829945402647,
+    "discovery_plateau": false,
+    "count_variance": 4.409778570296119,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit under leaves",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_32",
+    "gt_count": 23,
+    "qwen_calls": 1,
+    "executed_qwen_actions": 0,
+    "new_nodes": 0,
+    "final_nodes": 38,
+    "bootstrap_posterior_count": 20.416551022993918,
+    "final_count": 20.416551022993918,
+    "discovery_plateau": false,
+    "count_variance": 8.90580721530314,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "dark shadowed green fruit",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_33",
+    "gt_count": 19,
+    "qwen_calls": 3,
+    "executed_qwen_actions": 2,
+    "new_nodes": 0,
+    "final_nodes": 20,
+    "bootstrap_posterior_count": 8.997744925627877,
+    "final_count": 7.952034123142509,
+    "discovery_plateau": true,
+    "count_variance": 4.740896950914798,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "green fruit in shade",
+        "reason": "INVALID_GROUNDING_PROMPT",
+        "detail": "SAM3 prompt must be a noun alone or one or two visual adjectives plus a noun (1-3 words).",
+        "suggested_spatial_mode": "TILED"
+      }
+    ]
+  },
+  {
+    "sample_id": "image_34",
+    "gt_count": 29,
+    "qwen_calls": 8,
+    "executed_qwen_actions": 7,
+    "new_nodes": 0,
+    "final_nodes": 36,
+    "bootstrap_posterior_count": 16.64219897159874,
+    "final_count": 16.54437406778446,
+    "discovery_plateau": true,
+    "count_variance": 6.966089164559257,
+    "terminal_rejections": [
+      {
+        "semantic_key": "target",
+        "sam3_prompt": "ripe yellow fruit",
+        "reason": "DUPLICATE_SEMANTIC_KEY",
+        "detail": "exact SAM3 prompt already exists",
+        "suggested_spatial_mode": "GLOBAL"
+      }
+    ]
+  }
+]

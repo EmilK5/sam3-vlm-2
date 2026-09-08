@@ -1,0 +1,8 @@
+[
+  {
+    "sample_id": "image_24",
+    "image_path": "/home/ekielar/sam3-vlm-2/assets/images/rotated_02-07-2025-14-48-44_93.695.png",
+    "target": "green fruit",
+    "gt_count": 12
+  }
+]
