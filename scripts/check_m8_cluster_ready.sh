@@ -35,7 +35,9 @@ try:
     assert v4.planner.request_timeout_seconds == 45.0, "M8 must bound each Qwen request"
     assert v4.planner.reasoning_effort == "none", "M8 must disable Qwen thinking"
     assert v4.replanning.max_replans == 1, "M8 must allow at most one replan"
-    assert v4.belief.target_count_commit_threshold == 0.8, "M8 count commitment must use 0.8"
+    assert v4.planner.execute_confounder_prompts, "M8 must execute Qwen confounder labels"
+    assert v4.belief.target_count_commit_threshold is None, "Disable fractional count commitment"
+    assert v4.belief.target_count_hard_threshold == 0.5, "M8 hard counts must use posterior > 0.5"
     print("M8 Config parsed successfully, constraints verified.")
 except Exception as e:
     print(f"Config parsing failed: {e}", file=sys.stderr)

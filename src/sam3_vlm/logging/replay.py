@@ -356,6 +356,7 @@ class ReplayEngine:
             target_commit_threshold=belief_config.get(
                 "target_count_commit_threshold"
             ),
+            target_hard_threshold=belief_config.get("target_count_hard_threshold"),
         )
 
         return state

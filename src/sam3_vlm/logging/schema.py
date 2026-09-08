@@ -67,7 +67,8 @@ class RunSummary:
     """Final run summary metrics."""
     run_id: str
     schema_version: str = SUMMARY_SCHEMA_VERSION
-    final_soft_count: float = 0.0
+    final_soft_count: float = 0.0  # Legacy alias for the reported count.
+    final_count: Optional[float] = None
     count_variance: float = 0.0
     final_stop_reason: Optional[str] = None
     node_count: int = 0

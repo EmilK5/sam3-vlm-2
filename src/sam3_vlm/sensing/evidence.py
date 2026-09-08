@@ -184,6 +184,7 @@ class QwenEvidencePack:
         enforce_qwen_contract: bool = False,
         compact: bool = False,
         continue_until_saturation: bool = False,
+        execute_confounder_prompts: bool = False,
     ) -> str:
         """Format evidence pack into a compact token-efficient text prompt for Qwen (V4 Design Spec §6.1)."""
         lines = [
@@ -221,6 +222,16 @@ class QwenEvidencePack:
             f"Total Candidates Found: {self.contact_sheet.total_candidates}",
             f"Sampled Contact Sheet Crops ({len(self.contact_sheet.crops)} crops):",
         ]
+        if execute_confounder_prompts:
+            lines = [line.replace(
+                "Use possible confounders only to formulate a more specific target description.",
+                "Name visible non-target objects in likely_confounders; the controller executes these "
+                "labels as separate SAM3 negative-evidence queries on existing candidates.",
+            ).replace(
+                "Every executable action must be a novel scene-level prompt for the target.",
+                "Every action in proposed_actions must be a novel target prompt. "
+                "likely_confounders supplies the separate negative queries.",
+            ) for line in lines]
         if compact:
             # Paths and repeated provenance belong in the lossless artifact,
             # not the model context. Keep every sampled panel in visual order.

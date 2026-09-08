@@ -245,7 +245,7 @@ def main() -> int:
         original = Image.open(image_path).convert("RGB")
         comparison_parts: List[Tuple[str, Image.Image]] = []
 
-        for variant in VARIANT_ORDER:
+        for variant in report.get("metadata", {}).get("variants", VARIANT_ORDER):
             row = variants.get(variant)
             if row is None:
                 continue
@@ -264,7 +264,7 @@ def main() -> int:
                 line_width=max(1, args.line_width),
                 show_node_ids=not args.no_node_ids,
                 show_probabilities=not args.no_probabilities,
-                show_posterior=row.get("count_type") == "posterior_count",
+                show_posterior=row.get("count_type") in ("posterior_count", "hard_posterior_count"),
             )
             out_path = output_dir / f"{sample_id}__{variant}.jpg"
             rendered.save(out_path, quality=95)

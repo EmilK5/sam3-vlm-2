@@ -50,12 +50,17 @@ class DefaultUtilityEvaluator:
         cfg = config.action_selection
         strict_m8 = state.uses_canonical_m8_policy
 
-        # Context is never a global-loop experiment. Strict M8 additionally
-        # permits only target discovery prompts; those prompts serve both
-        # discovery and uncertainty reduction.
+        # Context is never a global-loop experiment. Canonical M8 permits
+        # target discovery and, when enabled, confounder precision queries.
         if entry.action.family == ActionFamily.CONTEXT:
             return UtilityBreakdown(total_utility=-1.0)
-        if strict_m8 and (
+        allowed_negative = (
+            config.planner.execute_confounder_prompts
+            and entry.action.family == ActionFamily.CONFOUNDER
+            and entry.action.semantic_key in state.belief_classes
+            and entry.action.semantic_key != "target"
+        )
+        if strict_m8 and not allowed_negative and (
             entry.action.family != ActionFamily.DISCOVERY
             or entry.action.semantic_key != "target"
         ):
@@ -94,8 +99,8 @@ class DefaultUtilityEvaluator:
             else:
                 discovery_value = max(0.0, base_discovery - history_penalty)
             
-        # 2. Uncertainty-reduction proxy. M8 computes it only for a target
-        # prompt. Generic runs retain verification/confounder behavior.
+        # 2. Uncertainty-reduction proxy for allowed target/negative actions.
+        # Generic runs retain verification/confounder behavior.
         discrimination_value = 0.0
         if strict_m8 and active_nodes:
             max_entropy = math.log2(max(2, len(state.belief_classes)))

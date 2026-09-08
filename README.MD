@@ -639,8 +639,15 @@ The current five-image pilot starts with five controlled variants:
 - the adaptive target-only pipeline with up to two Qwen prompts;
 - experiment E, which continues toward numerical saturation with caps of 100 Qwen calls and 1000 SAM3 actions.
 
-Every Qwen-generated SAM3 action uses threshold `0.5`. E bypasses short-run
+Every Qwen-generated SAM3 action uses threshold `0.5`. The current M8 pilot also
+executes Qwen confounder labels as separate negative queries on existing candidates.
+C/D/E count one fruit per node with target posterior strictly above `0.5`, while
+retaining raw soft counts and posterior uncertainty for comparison. E bypasses short-run
 utility limits and disables separate tile, iteration, and total-runtime caps.
+Use `--pilot-suite negative-ablation` to run only the two E-based variants with
+negative prompts off/on (68 runs for 34 images). The report includes paired
+accuracy and cost differences.
+
 See the [M8 runbook](docs/M8_CLUSTER_RUNBOOK.md#4-the-pilot-experiment) for
 stopping semantics and the five-variant pilot commands.
 

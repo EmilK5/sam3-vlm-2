@@ -253,3 +253,75 @@ def test_cli_rejects_empty_output_even_for_dry_run(output_dir, capsys):
             main()
     assert exc.value.code == 2
     assert "output directory" in capsys.readouterr().err
+
+
+def test_negative_ablation_configs_differ_only_in_negative_prompt_switch():
+    from dataclasses import asdict
+    from sam3_vlm.core.config import V4Config
+
+    variants = _pilot_variants(V4Config(), suite='negative-ablation')
+    assert [v.name for v in variants] == ['E_NoNegativePrompts', 'E_WithNegativePrompts']
+    without, with_negative = [asdict(v.config) for v in variants]
+    assert without['planner']['execute_confounder_prompts'] is False
+    assert with_negative['planner']['execute_confounder_prompts'] is True
+    without['planner']['execute_confounder_prompts'] = True
+    assert without == with_negative
+    for v in variants:
+        assert v.uses_qwen and v.count_type == 'hard_posterior_count'
+        assert v.config.budget.max_qwen_calls == 100
+        assert v.config.budget.max_sam3_calls == 1000
+        assert v.config.belief.target_count_hard_threshold == .5
+        assert v.config.belief.target_count_commit_threshold is None
+
+
+def test_negative_ablation_runs_exactly_two_variants(mock_models, tmp_path):
+    image = tmp_path / 'image.jpg'
+    Image.new('RGB', (64, 64)).save(image)
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps([{
+        'sample_id': 'img', 'image_path': str(image), 'target': 'green fruit', 'gt_count': 5,
+    }]))
+    args = DummyArgs(manifest=str(manifest), output_dir=str(tmp_path / 'runs'),
+                     pilot_suite='negative-ablation', max_samples=1)
+    assert m8_4_and_5_pilot(args)
+    report = json.loads((tmp_path / 'runs/pilot_report.json').read_text())
+    assert len(report['samples']) == 2
+    assert report['metadata']['variants'] == ['E_NoNegativePrompts', 'E_WithNegativePrompts']
+    assert report['metadata']['pilot_suite'] == 'negative-ablation'
+    assert all(s['validator_status'] == s['replay_status'] == 'PASS' for s in report['samples'])
+    assert all(s['count_type'] == 'hard_posterior_count' for s in report['samples'])
+    assert report['paired_comparison']['n_paired'] == 1
+    assert report['paired_comparison']['complete']
+
+    # Both new report variants must remain visible in the existing overlay tool.
+    import subprocess
+    import sys
+    from pathlib import Path
+    script = Path(__file__).resolve().parents[1] / 'scripts/visualize_pilot_bboxes.py'
+    subprocess.run([
+        sys.executable, str(script), '--pilot-report', str(tmp_path / 'runs/pilot_report.json'),
+        '--manifest', str(manifest), '--output-dir', str(tmp_path / 'overlays'),
+    ], check=True, capture_output=True, text=True)
+    assert (tmp_path / 'overlays/img__E_NoNegativePrompts.jpg').exists()
+    assert (tmp_path / 'overlays/img__E_WithNegativePrompts.jpg').exists()
+
+
+def test_negative_comparison_excludes_unpaired_failed_images():
+    from sam3_vlm.experiments.m8_smoke import _negative_prompt_comparison
+
+    def row(variant, sample, error, success=True):
+        return dict(variant=variant, sample_id=sample, absolute_error=error,
+                    success=success, runtime_ms=100, sam3_calls=3)
+    rows = [
+        row('E_NoNegativePrompts', 'i1', 5), row('E_WithNegativePrompts', 'i1', 2),
+        row('E_NoNegativePrompts', 'i2', 1), row('E_WithNegativePrompts', 'i2', 3),
+        row('E_NoNegativePrompts', 'i3', 0), row('E_WithNegativePrompts', 'i3', 0, False),
+    ]
+    result = _negative_prompt_comparison(rows, expected=3)
+    assert result['n_paired'] == 2 and result['complete'] is False
+    assert result['without_negative_MAE'] == 3
+    assert result['with_negative_MAE'] == 2.5
+    assert result['mean_absolute_error_reduction'] == .5
+    assert result['negative_prompts_better_images'] == 1
+    assert result['negative_prompts_worse_images'] == 1
+    assert _negative_prompt_comparison([], 3)['with_negative_MAE'] is None

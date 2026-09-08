@@ -341,3 +341,26 @@ def test_e_prompt_requires_exploration_during_discovery_plateau(mock_openai_clie
     assert "SAM3 threshold is fixed by the controller at 0.5" in text
     assert '"suggested_threshold": 0.5' in text
     assert kwargs["max_tokens"] == 512
+
+
+def test_negative_prompt_instructions_keep_target_schema_and_full_evidence(mock_openai_client, tmp_path):
+    from dataclasses import replace
+
+    img = tmp_path / 'image.png'
+    Image.new('RGB', (10, 10)).save(img)
+    planner = RealQwenPlanner(base_url='http://fake', model='fake-model', strict_model_errors=True)
+    config = V4Config(planner=replace(PlannerConfig(), execute_confounder_prompts=True))
+    pack = QwenEvidencePack('img', 'green fruit', 'target', ContactSheet(), image_path=str(img),
+                            scene_summary='complete scene evidence', belief_classes=['target', 'confounder1'])
+    planner.plan_scene(pack, BudgetState(), config)
+    kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
+    system = kwargs['messages'][0]['content']
+    text = kwargs['messages'][1]['content'][0]['text']
+    assert 'executes likely_confounders as separate negative SAM3 queries' in system
+    assert 'never proposed as separate SAM3 actions' not in system
+    assert 'non-executable scene context' not in text
+    assert 'separate SAM3 negative-evidence queries' in text
+    assert 'complete scene evidence' in text
+    assert 'Vocabulary is open' in text
+    assert '0.5' in text
+    assert len(kwargs['messages'][1]['content']) == 2

@@ -551,7 +551,12 @@ class PilotVariant:
     count_type: str
 
 
-def _pilot_variants(base: V4Config) -> list[PilotVariant]:
+def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVariant]:
+    posterior_count_type = (
+        "hard_posterior_count"
+        if base.belief.target_count_hard_threshold is not None
+        else "posterior_count"
+    )
     no_qwen_budget = dataclasses.replace(
         base.budget,
         max_qwen_calls=0,
@@ -595,7 +600,7 @@ def _pilot_variants(base: V4Config) -> list[PilotVariant]:
             continue_until_saturation=True,
         ),
     )
-    return [
+    variants = [
         PilotVariant(
             "A_SAM3_Global",
             global_only,
@@ -612,21 +617,82 @@ def _pilot_variants(base: V4Config) -> list[PilotVariant]:
             "C_Qwen_OneRound",
             one_qwen_round,
             uses_qwen=True,
-            count_type="posterior_count",
+            count_type=posterior_count_type,
         ),
         PilotVariant(
             "D_Qwen_TwoRound",
             base,
             uses_qwen=True,
-            count_type="posterior_count",
+            count_type=posterior_count_type,
         ),
         PilotVariant(
             "E_Qwen_UntilSaturation",
             until_saturation,
             uses_qwen=True,
-            count_type="posterior_count",
+            count_type=posterior_count_type,
         ),
     ]
+
+    if suite == "standard":
+        return variants
+    if suite != "negative-ablation":
+        raise ValueError(f"Unknown pilot suite: {suite}")
+    paired_base = dataclasses.replace(
+        until_saturation,
+        belief=dataclasses.replace(
+            until_saturation.belief,
+            target_count_commit_threshold=None,
+            target_count_hard_threshold=0.5,
+        ),
+    )
+    return [
+        PilotVariant(
+            name,
+            dataclasses.replace(
+                paired_base,
+                planner=dataclasses.replace(
+                    paired_base.planner, execute_confounder_prompts=enabled,
+                ),
+            ),
+            uses_qwen=True,
+            count_type="hard_posterior_count",
+        )
+        for name, enabled in (
+            ("E_NoNegativePrompts", False),
+            ("E_WithNegativePrompts", True),
+        )
+    ]
+
+
+def _negative_prompt_comparison(rows: list[dict], expected: int) -> dict:
+    """Compare only images with valid results in both ablation arms."""
+    without = {
+        row["sample_id"]: row for row in rows
+        if row["variant"] == "E_NoNegativePrompts" and row.get("success")
+    }
+    with_negative = {
+        row["sample_id"]: row for row in rows
+        if row["variant"] == "E_WithNegativePrompts" and row.get("success")
+    }
+    pairs = [(without[key], with_negative[key]) for key in sorted(without.keys() & with_negative.keys())]
+    reductions = [a["absolute_error"] - b["absolute_error"] for a, b in pairs]
+
+    def mean(values):
+        return sum(values) / len(values) if values else None
+
+    return {
+        "n_paired": len(pairs),
+        "n_expected": expected,
+        "complete": len(pairs) == expected,
+        "without_negative_MAE": mean([a["absolute_error"] for a, _ in pairs]),
+        "with_negative_MAE": mean([b["absolute_error"] for _, b in pairs]),
+        "mean_absolute_error_reduction": mean(reductions),
+        "negative_prompts_better_images": sum(d > 0 for d in reductions),
+        "negative_prompts_worse_images": sum(d < 0 for d in reductions),
+        "tied_images": sum(d == 0 for d in reductions),
+        "mean_extra_sam3_calls": mean([b["sam3_calls"] - a["sam3_calls"] for a, b in pairs]),
+        "mean_extra_runtime_ms": mean([b["runtime_ms"] - a["runtime_ms"] for a, b in pairs]),
+    }
 
 
 def _load_pilot_samples(args, limit: int) -> list[dict]:
@@ -766,9 +832,10 @@ def _run_sam3_baseline(
 
 
 def m8_4_and_5_pilot(args):
-    logger.info("=== M8.4 & M8.5 Five-Image Variant Comparison ===")
+    logger.info("=== M8.4 & M8.5 Pilot Variant Comparison ===")
     dep = load_m8_config(args)
-    variants = _pilot_variants(dep.v4_config)
+    suite = getattr(args, "pilot_suite", "standard")
+    variants = _pilot_variants(dep.v4_config, suite=suite)
     try:
         samples = _load_pilot_samples(args, dep.pilot_sample_limit)
     except Exception as exc:
@@ -793,6 +860,7 @@ def m8_4_and_5_pilot(args):
     report = {
         "metadata": {
             "experiment": "M8_Pilot",
+            "pilot_suite": suite,
             "target": args.target,
             "sample_count": len(samples),
             "resolved_config": dataclasses.asdict(dep.v4_config),
@@ -909,6 +977,7 @@ def m8_4_and_5_pilot(args):
                         "variant": variant.name,
                         "sample_id": image_id,
                         "predicted_count": count,
+                        "raw_soft_count": summary.get("discovery_statistics", {}).get("raw_soft_count"),
                         "count_type": variant.count_type,
                         "gt_count": gt_count,
                         "absolute_error": absolute_error,
@@ -961,6 +1030,8 @@ def m8_4_and_5_pilot(args):
         logger.info(f"Aggregate for {variant.name}: {aggregate}")
         report["aggregates"][variant.name] = aggregate
 
+    if suite == "negative-ablation":
+        report["paired_comparison"] = _negative_prompt_comparison(report["samples"], len(samples))
     report_path = Path(dep.output_root) / "pilot_report.json"
     with open(report_path, "w") as file:
         json.dump(report, file, indent=2)
@@ -984,6 +1055,10 @@ def main() -> int:
     parser.add_argument("--qwen-model", type=str, default=None)
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
+    parser.add_argument(
+        "--pilot-suite", choices=["standard", "negative-ablation"], default="standard",
+        help="standard: A–E; negative-ablation: two E-based runs with negative prompts off/on",
+    )
     
     args = parser.parse_args()
     try:
