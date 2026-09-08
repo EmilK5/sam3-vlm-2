@@ -1,0 +1,32 @@
+[
+  {
+    "sample_id": "image_001",
+    "image_path": "/home/ekielar/sam3-vlm-2/assets/5-images/02-07-2025-13-37-09_22.522.png",
+    "target": "green fruit",
+    "gt_count": 21
+  },
+  {
+    "sample_id": "image_002",
+    "image_path": "/home/ekielar/sam3-vlm-2/assets/5-images/02-07-2025-13-37-09_34.250.png",
+    "target": "green fruit",
+    "gt_count": 32
+  },
+  {
+    "sample_id": "image_003",
+    "image_path": "/home/ekielar/sam3-vlm-2/assets/5-images/02-07-2025-13-39-30_71.935.png",
+    "target": "green fruit",
+    "gt_count": 24
+  },
+  {
+    "sample_id": "image_004",
+    "image_path": "/home/ekielar/sam3-vlm-2/assets/5-images/02-07-2025-13-39-30_85.383.png",
+    "target": "green fruit",
+    "gt_count": 51
+  },
+  {
+    "sample_id": "image_005",
+    "image_path": "/home/ekielar/sam3-vlm-2/assets/5-images/02-07-2025-13-41-52_9.688.png",
+    "target": "green fruit",
+    "gt_count": 18
+  }
+]

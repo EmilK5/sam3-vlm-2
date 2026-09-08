@@ -127,8 +127,8 @@ The smoke test requires a real, representative image. It never fabricates fallba
 
 Run the smoke sequence directly in the active shell:
 ```bash
-export M8_IMAGE="/path/to/representative_image.jpg"
-export M8_TARGET="green citrus"
+export M8_IMAGE="/home/ekielar/sam3-vlm-2/assets/m8_test_img.jpg"
+export M8_TARGET="green fruit"
 export M8_OUTPUT_ROOT="runs/cluster_m8_smoke"
 
 python -m sam3_vlm.experiments.m8_smoke \
@@ -208,8 +208,8 @@ Example Manifest (`pilot_manifest.json`):
 
 Run the pilot directly:
 ```bash
-export M8_MANIFEST="/path/to/pilot_manifest.json"
-export M8_OUTPUT_ROOT="runs/cluster_m8_pilot"
+export M8_MANIFEST="/home/ekielar/sam3-vlm-2/pilot_manifest.json"
+export M8_OUTPUT_ROOT="runs/cluster_m8_pilot-test-full"
 
 python -m sam3_vlm.experiments.m8_smoke \
     --stage pilot \
