@@ -154,6 +154,22 @@ python -m sam3_vlm.experiments.m8_smoke \
 
 ## 4. The Pilot Experiment
 
+### Complete comparison: A–D and both E variants
+
+Use `--pilot-suite all` for A, B, C, D, E without negatives, and E with negatives:
+
+```bash
+python -m sam3_vlm.experiments.m8_smoke \
+  --stage pilot --require-cuda \
+  --pilot-suite all \
+  --manifest pilot_manifest.json --max-samples 34 \
+  --output_dir runs/m8_all_six_variants
+```
+
+This produces 204 runs for 34 images, one report with six aggregates, and a paired
+comparison of the two E variants. C/D retain their current negative-prompt setting.
+The two E variants replace the single standard E entry, avoiding a duplicate run.
+
 ### Negative prompts on/off comparison
 
 Run only two E-based variants, with all configuration fields identical except

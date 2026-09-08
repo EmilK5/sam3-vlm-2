@@ -635,7 +635,7 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
 
     if suite == "standard":
         return variants
-    if suite != "negative-ablation":
+    if suite not in ("negative-ablation", "all"):
         raise ValueError(f"Unknown pilot suite: {suite}")
     paired_base = dataclasses.replace(
         until_saturation,
@@ -645,7 +645,7 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
             target_count_hard_threshold=0.5,
         ),
     )
-    return [
+    paired_variants = [
         PilotVariant(
             name,
             dataclasses.replace(
@@ -662,6 +662,7 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
             ("E_WithNegativePrompts", True),
         )
     ]
+    return variants[:4] + paired_variants if suite == "all" else paired_variants
 
 
 def _negative_prompt_comparison(rows: list[dict], expected: int) -> dict:
@@ -1030,7 +1031,7 @@ def m8_4_and_5_pilot(args):
         logger.info(f"Aggregate for {variant.name}: {aggregate}")
         report["aggregates"][variant.name] = aggregate
 
-    if suite == "negative-ablation":
+    if suite in ("negative-ablation", "all"):
         report["paired_comparison"] = _negative_prompt_comparison(report["samples"], len(samples))
     report_path = Path(dep.output_root) / "pilot_report.json"
     with open(report_path, "w") as file:
@@ -1056,8 +1057,8 @@ def main() -> int:
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
-        "--pilot-suite", choices=["standard", "negative-ablation"], default="standard",
-        help="standard: A–E; negative-ablation: two E-based runs with negative prompts off/on",
+        "--pilot-suite", choices=["standard", "negative-ablation", "all"], default="standard",
+        help="standard: A–E; negative-ablation: E off/on; all: A–D plus E off/on (six variants)",
     )
     
     args = parser.parse_args()

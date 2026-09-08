@@ -77,7 +77,8 @@ in this document; generic and historical configurations remain replayable.
 The optional `--pilot-suite negative-ablation` runs exactly two E-based variants,
 `E_NoNegativePrompts` and `E_WithNegativePrompts`. Both use strict posterior >0.5
 counting and E's compute caps; configuration differs only in
-`planner.execute_confounder_prompts`. Standard A–E remains the default. Persist
+`planner.execute_confounder_prompts`. The `--pilot-suite all` option runs A–D plus those two E variants (six total),
+with the same paired E report. Standard A–E remains the default. Persist
 the suite and both resolved configs. Report paired accuracy/cost differences only
 for images valid in both variants, including pair completeness. This is an adaptive
 policy comparison, not a guarantee of identical Qwen responses/target trajectories.

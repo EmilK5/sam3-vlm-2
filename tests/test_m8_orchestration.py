@@ -274,7 +274,12 @@ def test_negative_ablation_configs_differ_only_in_negative_prompt_switch():
         assert v.config.belief.target_count_commit_threshold is None
 
 
-def test_negative_ablation_runs_exactly_two_variants(mock_models, tmp_path):
+@pytest.mark.parametrize('suite,expected_names', [
+    ('negative-ablation', ['E_NoNegativePrompts', 'E_WithNegativePrompts']),
+    ('all', ['A_SAM3_Global', 'B_SAM3_Bootstrap', 'C_Qwen_OneRound',
+             'D_Qwen_TwoRound', 'E_NoNegativePrompts', 'E_WithNegativePrompts']),
+])
+def test_selected_pilot_suite_runs_expected_variants(mock_models, tmp_path, suite, expected_names):
     image = tmp_path / 'image.jpg'
     Image.new('RGB', (64, 64)).save(image)
     manifest = tmp_path / 'manifest.json'
@@ -282,14 +287,14 @@ def test_negative_ablation_runs_exactly_two_variants(mock_models, tmp_path):
         'sample_id': 'img', 'image_path': str(image), 'target': 'green fruit', 'gt_count': 5,
     }]))
     args = DummyArgs(manifest=str(manifest), output_dir=str(tmp_path / 'runs'),
-                     pilot_suite='negative-ablation', max_samples=1)
+                     pilot_suite=suite, max_samples=1)
     assert m8_4_and_5_pilot(args)
     report = json.loads((tmp_path / 'runs/pilot_report.json').read_text())
-    assert len(report['samples']) == 2
-    assert report['metadata']['variants'] == ['E_NoNegativePrompts', 'E_WithNegativePrompts']
-    assert report['metadata']['pilot_suite'] == 'negative-ablation'
-    assert all(s['validator_status'] == s['replay_status'] == 'PASS' for s in report['samples'])
-    assert all(s['count_type'] == 'hard_posterior_count' for s in report['samples'])
+    assert len(report['samples']) == len(expected_names)
+    assert report['metadata']['variants'] == expected_names
+    assert report['metadata']['pilot_suite'] == suite
+    assert all(s['validator_status'] == s['replay_status'] == 'PASS' for s in report['samples'] if s['variant'][0] in 'CDE')
+    assert all(s['count_type'] == 'hard_posterior_count' for s in report['samples'] if s['variant'][0] in 'CDE')
     assert report['paired_comparison']['n_paired'] == 1
     assert report['paired_comparison']['complete']
 
