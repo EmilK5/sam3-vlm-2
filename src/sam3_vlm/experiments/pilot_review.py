@@ -101,9 +101,12 @@ def final_evaluation_summary(report):
         return f"{value:.3f}" if value is not None else "unavailable"
 
     n = report["metadata"]["sample_count"]
-    lines = ["# Final negative-evidence comparison", "",
-        f"Images per variant: {n}. Two D variants, at most two Qwen calls per image.", "",
-        "Both use positive threshold 0.20 without target exemplars, negative threshold 0.50, "
+    variants = report["metadata"]["variants"]
+    single = len(variants) == 1
+    title = "# Final selected-configuration run" if single else "# Final negative-evidence comparison"
+    lines = [title, "",
+        f"Images per variant: {n}. D variants: {len(variants)}; at most two Qwen calls per image.", "",
+        "Settings: positive threshold 0.20 without target exemplars, negative threshold 0.50, "
         "soft counts, IoU+IoM, and the same corrected scope/prompt instructions.", "",
         "Current: a missed confounder can raise target probability. "
         "Neutral: a missed confounder has likelihood 1; matched confounder evidence still lowers target probability.", "",
@@ -118,14 +121,18 @@ def final_evaluation_summary(report):
                      f"{number(a.get('mean_signed_error'))} | "
                      f"{number(runtime / 1000 if runtime is not None else None)} |")
     pair = report.get("paired_comparisons", {}).get("D_negative_miss_policy", {})
-    lines += ["", f"Paired successful images: {pair.get('n_paired', 0)} / {n}. "
-              f"Complete comparison: {pair.get('complete', False)}.",
-              "MAE reduction with neutral misses (positive favors neutral): "
-              f"{number(pair.get('mean_absolute_error_reduction'))}.",
-              f"Neutral better / worse / tied: {pair.get('right_better_images', 0)} / "
-              f"{pair.get('right_worse_images', 0)} / {pair.get('tied_images', 0)}.", "",
+    if single:
+        lines += ["", "Single-variant run; no within-run paired comparison."]
+    else:
+        lines += ["", f"Paired successful images: {pair.get('n_paired', 0)} / {n}. "
+                  f"Complete comparison: {pair.get('complete', False)}.",
+                  "MAE reduction with neutral misses (positive favors neutral): "
+                  f"{number(pair.get('mean_absolute_error_reduction'))}.",
+                  f"Neutral better / worse / tied: {pair.get('right_better_images', 0)} / "
+                  f"{pair.get('right_worse_images', 0)} / {pair.get('tied_images', 0)}."]
+    lines += ["",
               "Counts are sums of uncalibrated target probabilities. New candidates are not confirmed fruit. "
-              "Qwen proposals may differ between runs; this compares the complete adaptive policies.",
+              "Qwen proposals may differ between runs; results reflect the complete adaptive policy.",
               "This is a development-set evaluation, including the earlier diagnostic images; "
               "it is not an independent held-out accuracy estimate.",
               "The old core prompt now receives tree-only scope and reinforced target/grammar instructions; "
@@ -156,6 +163,8 @@ def write_compact_review(report, output_dir):
         successful_corrections = 0
         target_corrections = 0
         for row in rows:
+            if row["sample_id"] in selected and row.get("image_path"):
+                image_paths.setdefault(row["sample_id"], (row["image_path"], Path(row["artifact_directory"])))
             for outcome in row.get("prompt_outcomes", []):
                 stat = prompt_stats[(variant, outcome["family"], outcome["prompt"])]
                 stat["executions"] += 1
@@ -290,6 +299,10 @@ def write_compact_review(report, output_dir):
             notes = final_evaluation_summary(report)
             (output_dir / "mentor_summary.md").write_text(notes)
             bundle.writestr("mentor_summary.md", notes)
+        if report["metadata"].get("pilot_suite") == "final-ae":
+            from sam3_vlm.experiments.final_outputs import TABLE_FILES
+            for name in TABLE_FILES:
+                bundle.write(output_dir / name, name)
         for name, data in members.items():
             bundle.writestr(name, json.dumps(data, indent=2))
     return path

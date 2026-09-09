@@ -653,7 +653,19 @@ for C and D, plus four E combinations of old/new prompts and negatives off/on.
 See the [prompt comparison guide](docs/M8_PROMPT_ABLATION.md) for the eight-variant
 matrix, commands, and automatic compact review ZIPs.
 
-The final step is the [two-arm negative-evidence evaluation](docs/M8_FINAL_EVALUATION.md):
+The final requested experiment is the [A–E study with rectangle-only images and results tables](docs/M8_FINAL_AE_RUN.md).
+Run `--pilot-suite final-ae` for all five variants (170 runs on 34 images).
+A/B use target threshold 0.20. C/D/E carry the selected D policy, with Qwen call
+caps of 1/2/100. Box-only PNGs, aggregate/per-image CSV tables and a Markdown
+summary are exported automatically.
+
+The selected final configuration is `D_CurrentNegativeEvidence`: see
+[the final selection and one-variant command](docs/M8_FINAL_SELECTION.md).
+It achieved MAE 6.46 versus 7.68 for neutral misses on the 34-image development set.
+Use `--pilot-suite final-ablation --pilot-variant D_CurrentNegativeEvidence`
+for the final repeat (34 runs).
+
+The completed [two-arm negative-evidence evaluation](docs/M8_FINAL_EVALUATION.md):
 D at positive threshold 0.20, comparing the current update with neutral evidence
 when a confounder is not retrieved. Run six diagnostic cases, then 68 runs over
 all 34 images. Both arms use the fixed tree-only scope and reinforced open-vocabulary

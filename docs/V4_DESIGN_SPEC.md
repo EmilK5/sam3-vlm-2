@@ -127,7 +127,34 @@ in this document; generic and historical configurations remain replayable.
   the full 34-image development evaluation has 68 runs, with both variants
   retained rather than selecting one on the diagnostic subset. Compact ZIPs also
   include `mentor_summary.md`, generated from actual complete/incomplete paired
-  results. Production retains the current evidence default pending evaluation.
+  results. The completed 34-image study selects `D_CurrentNegativeEvidence` (MAE 6.4555
+  versus 7.6798). `--pilot-variant D_CurrentNegativeEvidence` filters this existing
+  suite to one unchanged configuration for the final 34-image repeat. Unknown
+  variant names fail before loading models; the selected name is recorded in
+  metadata. Single-variant mentor summaries do not report paired comparisons.
+- `final-ae` implements the final requested A–E study. It starts from the selected
+  current-negative D configuration. A (global only) and B (full bootstrap) use
+  target threshold 0.20 and hard candidate counts. C/D/E preserve D's bootstrap
+  at 0.25, Qwen positives at 0.20 without exemplars, negatives at 0.50 with the
+  current miss policy, and pure soft counts. Qwen caps are C=1, D=2 and E=100.
+  C permits no replan, D permits one, E permits 99 and continues toward saturation
+  with the previously specified 1000-SAM3 cap and no separate tile/runtime/iteration
+  cap. All other sensing, belief and prompt settings match the selected D policy.
+- The `final-ae` suite automatically exports lossless original-resolution PNGs
+  containing only fixed-color rectangle outlines for every final active candidate.
+  No score, ID, label, header, mask or probability-dependent style is drawn. No
+  posterior cutoff is applied for visualization. Out-of-frame boxes are reported
+  separately; intersecting boxes are clipped to image bounds. Rendering does not
+  mutate the image, graph or count, and its time is outside the inference metric.
+  All current-run PNGs are bundled into `bbox_images.zip`; older directory contents
+  are not included. Failed runs remain explicit in the tables and compact report.
+- Final exports include per-image/variant CSV measurements, aggregate CSV metrics,
+  a wide GT-and-prediction CSV table, a Markdown results table, and a box manifest.
+  CSV numbers retain full precision, unavailable measurements remain blank, and
+  units appear in column names. Aggregate metrics use successful runs; GT totals
+  for all/successful images and common-success-set MAE expose partial comparisons.
+  These tables are included in the compact review ZIP; the full-resolution image
+  ZIP stays separate. Portable standard-library CSV export needs no new GPU package.
 - Observational confidence traces record the bootstrap aggregate and each later
   sensing action: candidate counts, new-node target mass, existing-node probability
   changes, removed-node mass, observation relations and at most five largest gains

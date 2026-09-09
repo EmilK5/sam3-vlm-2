@@ -149,3 +149,62 @@ def test_presentation_notes_do_not_hide_incomplete_pairs():
     assert 'Paired successful images: 0 / 34' in text
     assert 'Complete comparison: False' in text
     assert 'unavailable' in text
+
+
+def test_single_variant_selection_preserves_winning_configuration():
+    from sam3_vlm.experiments.m8_smoke import _selected_pilot_variants
+    base = production()
+    all_variants = _pilot_variants(base, 'final-ablation')
+    selected = _selected_pilot_variants(base, 'final-ablation', variant='D_CurrentNegativeEvidence')
+    assert selected == [all_variants[0]]
+    assert _selected_pilot_variants(base, 'final-ablation') == all_variants
+    assert selected[0].config.belief.neutral_confounder_misses is False
+
+
+def test_invalid_variant_fails_before_loading_models(tmp_path, monkeypatch):
+    import sys
+    from sam3_vlm.experiments.m8_smoke import main
+    def unexpected_models(*args):
+        pytest.fail('Models should not load for an invalid variant')
+    monkeypatch.setattr('sam3_vlm.experiments.m8_smoke._get_models', unexpected_models)
+    monkeypatch.setattr(sys, 'argv', ['m8_smoke', '--stage', 'pilot', '--allow-cpu',
+        '--pilot-suite', 'final-ablation', '--pilot-variant', 'typo', '--output_dir', str(tmp_path)])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 2
+
+
+def test_single_variant_full_export_does_not_claim_paired_comparison(tmp_path, monkeypatch):
+    image = tmp_path / 'image.jpg'
+    Image.new('RGB', (64, 64)).save(image)
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps([{'sample_id': 'img', 'image_path': str(image),
+                                    'target': 'green fruit', 'gt_count': 2}]))
+    monkeypatch.setattr('sam3_vlm.experiments.m8_smoke._get_models',
+        lambda args: (MockSAM3Adapter(), SequencePlanner([proposal('dark green fruit', ['leaf'])])))
+    args = DummyArgs(manifest=str(manifest), max_samples=1, pilot_suite='final-ablation',
+                     pilot_variant='D_CurrentNegativeEvidence', output_dir=str(tmp_path / 'runs'))
+    assert m8_4_and_5_pilot(args)
+    report = json.loads((tmp_path / 'runs/pilot_report.json').read_text())
+    assert len(report['samples']) == 1
+    assert report['metadata']['variants'] == ['D_CurrentNegativeEvidence']
+    assert report['metadata']['pilot_variant'] == 'D_CurrentNegativeEvidence'
+    assert report['samples'][0]['success']
+    assert report['paired_comparisons'] == {}
+    with ZipFile(tmp_path / 'runs/compact_review.zip') as z:
+        summary = json.loads(z.read('review_summary.json'))
+        assert summary['paired_comparisons'] == {}
+        notes = z.read('mentor_summary.md').decode()
+        assert 'Single-variant run; no within-run paired comparison.' in notes
+        assert 'Paired successful images:' not in notes
+        assert 'Neutral better / worse' not in notes
+        assert len(json.loads(z.read('counts.json'))) == 1
+        assert len(json.loads(z.read('confidence_totals.json'))) == 1
+
+
+def test_family_and_single_variant_filter_are_consistent():
+    from sam3_vlm.experiments.m8_smoke import _selected_pilot_variants
+    with pytest.raises(ValueError, match='Unknown --pilot-variant'):
+        _selected_pilot_variants(V4Config(), 'prompt-ablation', family='C', variant='D_OldPrompt')
+    selected = _selected_pilot_variants(V4Config(), 'prompt-ablation', family='C', variant='C_OldPrompt')
+    assert len(selected) == 1 and selected[0].name == 'C_OldPrompt'

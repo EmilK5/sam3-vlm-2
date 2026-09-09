@@ -1,5 +1,8 @@
 # Final M8 comparison and 34-image evaluation
 
+This comparison is complete. The selected configuration and one-variant run command
+are in [M8_FINAL_SELECTION.md](M8_FINAL_SELECTION.md).
+
 Run one final two-arm comparison, then evaluate both arms on all 34 images.
 No further threshold search or selection on the three diagnostic images is needed.
 Both variants are D: two Qwen calls, at most one replan, positive threshold 0.20

@@ -560,6 +560,14 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
         ),
     )
     posterior_count_type = "soft_posterior_count"
+    if suite == "final-ae":
+        # Carry the selected D policy into all Qwen arms. Only the A/B
+        # baseline target passes receive the explicitly requested lower cutoff.
+        selected = _pilot_variants(base, "final-ablation")[0].config
+        variants = _pilot_variants(selected, "standard")
+        return [dataclasses.replace(v, config=dataclasses.replace(
+            v.config, sam3=dataclasses.replace(v.config.sam3, default_threshold=0.20),
+        )) if not v.uses_qwen else v for v in variants]
     if suite == "final-ablation":
         reference = dataclasses.replace(
             base,
@@ -935,16 +943,29 @@ def _run_sam3_baseline(
         raise
 
 
-def m8_4_and_5_pilot(args):
-    logger.info("=== M8.4 & M8.5 Pilot Variant Comparison ===")
-    dep = load_m8_config(args)
-    suite = getattr(args, "pilot_suite", "standard")
-    variants = _pilot_variants(dep.v4_config, suite=suite)
-    family = getattr(args, "pilot_family", None)
+def _selected_pilot_variants(base, suite="standard", family=None, variant=None):
+    """Filter existing configurations without changing their sensing policy."""
+    variants = _pilot_variants(base, suite=suite)
     if family:
         if suite != "prompt-ablation":
             raise ValueError("--pilot-family requires --pilot-suite prompt-ablation")
         variants = [v for v in variants if v.name.startswith(family)]
+    if variant:
+        selected = [v for v in variants if v.name == variant]
+        if not selected:
+            available = ", ".join(v.name for v in variants)
+            raise ValueError(f"Unknown --pilot-variant {variant!r} for the selected suite/family. Available: {available}")
+        variants = selected
+    return variants
+
+
+def m8_4_and_5_pilot(args):
+    logger.info("=== M8.4 & M8.5 Pilot Variant Comparison ===")
+    dep = load_m8_config(args)
+    suite = getattr(args, "pilot_suite", "standard")
+    family = getattr(args, "pilot_family", None)
+    selected_variant = getattr(args, "pilot_variant", None)
+    variants = _selected_pilot_variants(dep.v4_config, suite, family, selected_variant)
     try:
         samples = _load_pilot_samples(args, dep.pilot_sample_limit)
     except Exception as exc:
@@ -971,7 +992,10 @@ def m8_4_and_5_pilot(args):
             "experiment": "M8_Pilot",
             "pilot_suite": suite,
             "pilot_family": family,
+            "pilot_variant": selected_variant,
             "target": args.target,
+            "model_settings": {"sam3_model": dep.sam3_model, "qwen_model": dep.qwen_model,
+                               "compile_sam3": dep.compile_sam3, "seed": dep.seed},
             "sample_count": len(samples),
             "sample_targets": {sample["sample_id"]: sample["target"] for sample in samples},
             "resolved_config": dataclasses.asdict(dep.v4_config),
@@ -1051,6 +1075,12 @@ def m8_4_and_5_pilot(args):
                 with open(paths.summary_json, "r") as file:
                     summary = json.load(file)
 
+                bbox_export = {}
+                if suite == "final-ae":
+                    from sam3_vlm.experiments.final_outputs import render_candidate_boxes, overlay_path
+                    bbox_file = overlay_path(Path(dep.output_root), variant.name, image_id)
+                    bbox_export = render_candidate_boxes(image, state.graph, bbox_file)
+
                 sam3_calls = int(summary.get("sam3_calls", 0))
                 sam3_tiles = int(summary.get("sam3_tiles", 0))
                 qwen_calls = int(summary.get("qwen_calls", 0))
@@ -1087,6 +1117,10 @@ def m8_4_and_5_pilot(args):
                     {
                         "variant": variant.name,
                         "sample_id": image_id,
+                        "target": prompt,
+                        "image_path": sample["image_path"],
+                        "candidate_count": len(state.graph.active_nodes()),
+                        **bbox_export,
                         "predicted_count": count,
                         "raw_soft_count": summary.get("discovery_statistics", {}).get("raw_soft_count"),
                         "count_type": variant.count_type,
@@ -1131,6 +1165,8 @@ def m8_4_and_5_pilot(args):
                     {
                         "variant": variant.name,
                         "sample_id": image_id,
+                        "target": prompt,
+                        "image_path": sample["image_path"],
                         "success": False,
                         "run_id": run_id,
                         "artifact_directory": str(paths.base_dir),
@@ -1157,6 +1193,9 @@ def m8_4_and_5_pilot(args):
     from sam3_vlm.experiments.pilot_review import prompt_comparisons, write_compact_review
     if suite in {"prompt-ablation", "recovery-ablation", "discovery-ablation", "final-ablation"}:
         report["paired_comparisons"] = prompt_comparisons(report)
+    if suite == "final-ae":
+        from sam3_vlm.experiments.final_outputs import write_final_outputs
+        report["metadata"]["final_exports"] = write_final_outputs(report, Path(dep.output_root))
     report_path = Path(dep.output_root) / "pilot_report.json"
     with open(report_path, "w") as file:
         json.dump(report, file, indent=2)
@@ -1183,18 +1222,24 @@ def main() -> int:
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
-        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation", "discovery-ablation", "final-ablation"], default="standard",
-        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants; discovery-ablation: four D threshold/exemplar variants; final-ablation: D current versus neutral confounder misses",
+        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation", "discovery-ablation", "final-ablation", "final-ae"], default="standard",
+        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants; discovery-ablation: four D threshold/exemplar variants; final-ablation: D current versus neutral confounder misses; final-ae: A-E final study with box-only images and results tables",
     )
     parser.add_argument("--pilot-family", choices=["C", "D", "E"],
                         help="Run just one family of the prompt-ablation suite")
+    parser.add_argument("--pilot-variant", help="Run exactly one named variant from the selected suite/family")
     parser.add_argument("--sample-ids", nargs="+", help="Select these manifest sample IDs before applying --max-samples")
     
     args = parser.parse_args()
     if args.pilot_family and args.pilot_suite != "prompt-ablation":
         parser.error("--pilot-family requires --pilot-suite prompt-ablation")
+    if args.pilot_variant and args.stage != "pilot":
+        parser.error("--pilot-variant requires --stage pilot")
     try:
-        load_m8_config(args)
+        deployment = load_m8_config(args)
+        if args.stage == "pilot":
+            _selected_pilot_variants(deployment.v4_config, args.pilot_suite,
+                                     args.pilot_family, args.pilot_variant)
     except ValueError as exc:
         parser.error(str(exc))
     
