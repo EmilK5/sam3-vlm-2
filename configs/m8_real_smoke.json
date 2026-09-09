@@ -32,6 +32,7 @@
   },
   "belief": {
     "num_confounders": 2,
+    "neutral_confounder_misses": false,
     "target_count_commit_threshold": null,
     "target_count_hard_threshold": null
   },

@@ -134,9 +134,13 @@ class ProxyEvidenceModel:
         vocabulary: List[str],
         target_class: Optional[str] = None,
         confounder_class: Optional[str] = None,
+        neutral_confounder_misses: bool = False,
     ) -> Dict[str, float]:
         """Compute bounded likelihood multipliers without inventing classes."""
         likelihoods = {cls: 1.0 for cls in vocabulary}
+        if (neutral_confounder_misses and action.family == ActionFamily.CONFOUNDER
+                and relation == ObservationRelation.NOT_RETRIEVED):
+            return likelihoods
         semantic_weights = action.semantic_prior
         if semantic_weights is None:
             if action.family in (ActionFamily.DISCOVERY, ActionFamily.VERIFICATION):
@@ -263,6 +267,7 @@ class BeliefUpdater:
             vocabulary=vocabulary,
             target_class=target_class,
             confounder_class=confounder_class,
+            neutral_confounder_misses=config.neutral_confounder_misses,
         )
         unnormalized = {
             cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0)
@@ -366,6 +371,7 @@ class BeliefUpdater:
             vocabulary=vocabulary,
             target_class=canonical_target,
             confounder_class=confounder_class,
+            neutral_confounder_misses=config.neutral_confounder_misses,
         )
         unnormalized = {
             cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0)

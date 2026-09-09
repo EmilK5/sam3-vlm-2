@@ -211,8 +211,6 @@ class RealQwenPlanner:
             system_prompt = self.DISCOVERY_GUIDANCE_V3 + "\n" + system_prompt
             if config.planner.prompt_version == "v4":
                 system_prompt = self.EVIDENCE_GUIDANCE_V4 + "\n" + system_prompt
-            if config.planner.target_scope:
-                system_prompt = config.planner.target_scope + "\n\n" + system_prompt
             if config.replanning.continue_until_saturation:
                 # Preserve the historical arm verbatim; fix E's conflicting
                 # system/user stopping instructions only in the new prompt arm.
@@ -223,6 +221,9 @@ class RealQwenPlanner:
                     "An empty proposed_actions list is permitted only when discovery is explicitly saturated.",
                     "Do not return an empty proposed_actions list, including during a discovery-only plateau.",
                 )
+        # Dataset eligibility applies to every prompt version, including old.
+        if config.planner.target_scope:
+            system_prompt = config.planner.target_scope + "\n\n" + system_prompt
         if config.planner.execute_confounder_prompts:
             system_prompt = system_prompt.replace(
                 "Every executable action must search for the user's target:",
@@ -245,6 +246,11 @@ class RealQwenPlanner:
                 "phrases and reasons, not evidence about the image. Correct those errors before "
                 "proposing a novel target query. Do not repeat rejected duplicates or rename frozen "
                 "confounder slots. Keep the original target and the short noun-phrase contract. "
+                "For a length or grammar rejection, repair the same intended target description: "
+                "remove location/prose words, put visual adjectives before the final object noun, "
+                "and recount the words. Do not replace one invalid phrase with another phrase of "
+                "the same invalid form. For a duplicate, select an untried visible appearance of "
+                "the SAME requested target. Check the rejection reasons before returning JSON. "
                 "Do not turn these error messages into SAM3 prompts.\n"
             )
         if evidence_pack.discovery_diagnostics.get("pending_sam3_prompts"):
@@ -261,6 +267,13 @@ class RealQwenPlanner:
             "- No adverbs, stacked nouns, technical jargon, or invented compounds.\n"
             f"- TARGET TO PRESERVE: {evidence_pack.user_prompt!r}.\n"
             "- Preserve the user's target object category in every sam3_prompt and missing_appearance_modes entry.\n"
+            "- Treat the requested color, maturity and other eligibility qualifiers as constraints, "
+            "not suggestions. Do not broaden the target to another color or ripeness to find more objects.\n"
+            "- Keep location and eligibility instructions in your reasoning; do not append "
+            "prepositional phrases to a SAM3 prompt. Respect the dataset scope in every proposal.\n"
+            "- Before returning JSON, count each prompt's words and check that its object noun "
+            "is LAST, with any one or two visual adjectives BEFORE it. Never append an adjective "
+            "after the noun. Preserve required target qualifiers when shortening a phrase.\n"
             "- Vary visible appearance only. Do not substitute a related object, an object part, "
             "or a different developmental stage. Synonyms must refer to the same target objects.\n"
             "- Keep likely_confounders separate: never promote a confounder label into a target action "

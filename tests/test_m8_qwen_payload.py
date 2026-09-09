@@ -402,10 +402,10 @@ def test_v3_prompt_grounding_scope_and_full_context(mock_openai_client, tmp_path
         assert 'Do not return an empty' in system
     else:
         assert 'An empty proposed_actions list is permitted' in system
-    # Historical prompt arm remains byte-for-byte the original system, including
-    # the historical E stopping wording, and does not inherit dataset scope.
+    # The old core retains its stopping wording, but dataset eligibility must
+    # reach every version, including old.
     planner.plan_scene(pack, BudgetState(), replace(config, planner=replace(config.planner, prompt_version='old', execute_confounder_prompts=False)))
-    assert planner.last_request_text['system'] == RealQwenPlanner.SYSTEM_PROMPT
+    assert planner.last_request_text['system'] == config.planner.target_scope + '\n\n' + RealQwenPlanner.SYSTEM_PROMPT
     assert 'Only fruit on trees' not in planner.last_request_text['user']
 
 

@@ -653,13 +653,16 @@ for C and D, plus four E combinations of old/new prompts and negatives off/on.
 See the [prompt comparison guide](docs/M8_PROMPT_ABLATION.md) for the eight-variant
 matrix, commands, and automatic compact review ZIPs.
 
-The next step is the [low-threshold discovery comparison](docs/M8_LOW_THRESHOLD_DISCOVERY.md):
-four D variants compare 0.5 with exemplars against 0.25, 0.20 and 0.15 without
-exemplars. Production uses 0.20 positive discovery, old Qwen instructions, negatives
-at 0.5 and soft counts. A missing valid target can receive one budgeted correction
-while accepted negatives remain queued. Compact reviews include probability-change
-diagnostics. The earlier [recovery/discovery study](docs/M8_RECOVERY_DIAGNOSTIC.md)
-remains reproducible with its historical settings.
+The final step is the [two-arm negative-evidence evaluation](docs/M8_FINAL_EVALUATION.md):
+D at positive threshold 0.20, comparing the current update with neutral evidence
+when a confounder is not retrieved. Run six diagnostic cases, then 68 runs over
+all 34 images. Both arms use the fixed tree-only scope and reinforced open-vocabulary
+prompt/correction instructions. Each compact ZIP includes a short mentor summary.
+
+The earlier [low-threshold comparison](docs/M8_LOW_THRESHOLD_DISCOVERY.md) and
+[recovery/discovery study](docs/M8_RECOVERY_DIAGNOSTIC.md) remain documented.
+Their historical request text is stored in the original artifacts; new requests
+include the shared scope/contract fixes.
 
 See the [M8 runbook](docs/M8_CLUSTER_RUNBOOK.md#4-the-pilot-experiment) for
 stopping semantics and the five-variant pilot commands.

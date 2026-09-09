@@ -1,5 +1,8 @@
 # M8: low-threshold positive discovery
 
+This comparison is complete. Continue with [M8_FINAL_EVALUATION.md](M8_FINAL_EVALUATION.md).
+New requests include shared scope/contract fixes; they are not exact historical prompt reruns.
+
 Production now admits Qwen discovery detections at 0.20 and does not attach target
 exemplar boxes to those queries. Negative queries remain at 0.5. Bootstrap keeps
 its original threshold and exemplar refinement. Counting remains the pure sum of

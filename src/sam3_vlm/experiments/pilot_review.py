@@ -7,6 +7,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 
 PROMPT_CONTRASTS = (
+    ("D_negative_miss_policy", "D_CurrentNegativeEvidence", "D_NeutralNegativeMisses"),
     ("D_discovery_050_vs_025", "D_Discovery_050_Exemplars", "D_Discovery_025_NoExemplars"),
     ("D_discovery_050_vs_020", "D_Discovery_050_Exemplars", "D_Discovery_020_NoExemplars"),
     ("D_discovery_025_vs_020", "D_Discovery_025_NoExemplars", "D_Discovery_020_NoExemplars"),
@@ -77,7 +78,7 @@ def _select_cases(report, limit=3):
         add(failed[0], "execution or validation failure")
     changes = [
         (a["absolute_error"] - b["absolute_error"], a["sample_id"])
-        for label, left, right in PROMPT_CONTRASTS if ("_prompt" in label or "_discovery_" in label) and not label.startswith("E_negatives")
+        for label, left, right in PROMPT_CONTRASTS if ("_prompt" in label or "_discovery_" in label or label == "D_negative_miss_policy") and not label.startswith("E_negatives")
         for a, b in _paired_rows(report, left, right)
     ]
     if changes:
@@ -92,6 +93,44 @@ def _select_cases(report, limit=3):
         if len(selected) >= limit:
             break
     return selected
+
+
+def final_evaluation_summary(report):
+    """Presentation notes generated from the measured report, including failures."""
+    def number(value):
+        return f"{value:.3f}" if value is not None else "unavailable"
+
+    n = report["metadata"]["sample_count"]
+    lines = ["# Final negative-evidence comparison", "",
+        f"Images per variant: {n}. Two D variants, at most two Qwen calls per image.", "",
+        "Both use positive threshold 0.20 without target exemplars, negative threshold 0.50, "
+        "soft counts, IoU+IoM, and the same corrected scope/prompt instructions.", "",
+        "Current: a missed confounder can raise target probability. "
+        "Neutral: a missed confounder has likelihood 1; matched confounder evidence still lowers target probability.", "",
+        "| Variant | Successful / expected | MAE | RMSE | Signed error | Mean runtime (s) |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for variant in report["metadata"]["variants"]:
+        a = report["aggregates"].get(variant, {})
+        runtime = a.get("avg_runtime_ms")
+        lines.append(f"| {variant} | {a.get('n_samples', 0)} / {a.get('n_expected', n)} | "
+                     f"{number(a.get('MAE'))} | {number(a.get('RMSE'))} | "
+                     f"{number(a.get('mean_signed_error'))} | "
+                     f"{number(runtime / 1000 if runtime is not None else None)} |")
+    pair = report.get("paired_comparisons", {}).get("D_negative_miss_policy", {})
+    lines += ["", f"Paired successful images: {pair.get('n_paired', 0)} / {n}. "
+              f"Complete comparison: {pair.get('complete', False)}.",
+              "MAE reduction with neutral misses (positive favors neutral): "
+              f"{number(pair.get('mean_absolute_error_reduction'))}.",
+              f"Neutral better / worse / tied: {pair.get('right_better_images', 0)} / "
+              f"{pair.get('right_worse_images', 0)} / {pair.get('tied_images', 0)}.", "",
+              "Counts are sums of uncalibrated target probabilities. New candidates are not confirmed fruit. "
+              "Qwen proposals may differ between runs; this compares the complete adaptive policies.",
+              "This is a development-set evaluation, including the earlier diagnostic images; "
+              "it is not an independent held-out accuracy estimate.",
+              "The old core prompt now receives tree-only scope and reinforced target/grammar instructions; "
+              "earlier reports are not an identical baseline."]
+    return "\n".join(lines) + "\n"
 
 
 def write_compact_review(report, output_dir):
@@ -247,6 +286,10 @@ def write_compact_review(report, output_dir):
             "prompt_yields.json": [dict(variant=v, family=f, prompt=p, **stats)
                                    for (v, f, p), stats in sorted(prompt_stats.items())],
         }
+        if report["metadata"].get("pilot_suite") == "final-ablation":
+            notes = final_evaluation_summary(report)
+            (output_dir / "mentor_summary.md").write_text(notes)
+            bundle.writestr("mentor_summary.md", notes)
         for name, data in members.items():
             bundle.writestr(name, json.dumps(data, indent=2))
     return path

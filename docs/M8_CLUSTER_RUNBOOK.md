@@ -2,8 +2,8 @@
 
 This is the definitive, from-scratch guide for executing real-model validation of the V4 controller on the GPU cluster.
 
-For the current low-threshold discovery study, use the
-[discovery comparison guide](M8_LOW_THRESHOLD_DISCOVERY.md). Its sensing and
+For the final two-arm negative-evidence study, use the
+[final evaluation guide](M8_FINAL_EVALUATION.md). Its sensing and
 soft-count policy supersede older pilot examples below. The previous
 [prompt comparison guide](M8_PROMPT_ABLATION.md) remains available for historical
 comparisons; this runbook still covers environment and model setup.

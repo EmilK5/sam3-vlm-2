@@ -32,7 +32,14 @@ in this document; generic and historical configurations remain replayable.
   unmatched confounder detections cannot create countable nodes. Existing proxy
   evidence fusion increases confounder probability on matching evidence, reducing
   normalized target probability. This is an uncalibrated evidence model, not a
-  learned classifier. No coefficients are changed by enabling these queries.
+  learned classifier. No matched-evidence coefficients are changed by enabling
+  these queries. `belief.neutral_confounder_misses` (default false) selects whether
+  a `CONFOUNDER` / `NOT_RETRIEVED` observation has unit likelihood for every class.
+  With true, the miss leaves normalized probabilities unchanged (up to floating
+  point rounding); the observation and update bookkeeping remain recorded.
+  With false, the existing 0.15 times correlation-weight penalty to the queried
+  confounder remains, which can raise normalized target probability. Target
+  non-retrieval and strong/weak confounder matches are unchanged in both modes.
 - Qwen target discovery uses `sam3.qwen_discovery_threshold` (0.20 in production)
   and confounder sensing uses `sam3.qwen_confounder_threshold` (0.5). Null overrides
   fall back to `sam3.qwen_prompt_threshold` (historical default 0.5). The controller
@@ -69,17 +76,24 @@ in this document; generic and historical configurations remain replayable.
 - `summary.final_count`, `final_soft_count`, and
   `discovery_statistics.raw_soft_count` agree for these soft-count runs.
   C/D/E use `count_type: soft_posterior_count`; A/B remain hard candidate counts.
-- `planner.prompt_version` selects `old` (historical instructions unchanged) or
+- `planner.prompt_version` selects `old` (historical core instructions) or
   `v3` (image-grounded positive discovery guidance). V3 prioritizes visible,
   insufficiently covered target appearances over cosmetic synonyms; it retains
   open vocabulary and all evidence/images. Optional `planner.target_scope` is
-  included in v3/v4; the configured scope specifies tree fruit, excluding fallen fruit.
+  included in EVERY version, including old; the configured scope specifies tree
+  fruit, excluding fallen fruit. The executable contract reinforces preservation
+  of requested color/maturity qualifiers and a final noun-last/word-count check.
+  Rejection feedback asks for repair of the same target description and explains
+  how to remove prose and restore adjective order. These are open-vocabulary
+  model instructions, not a dictionary or a guarantee of semantic compliance.
   V3 E system instructions consistently require one proposal on every requested
   plan; the old arm retains its historical saturation wording for comparison.
   V4 adds explicit separation of observed evidence, sensor outcomes and hypotheses;
   no assumption that general target queries search only bright fruit is allowed.
   It asks for a final noun-last/length/target/blacklist check, without a dictionary.
-  Old and V3 instruction text remain preserved. Production defaults to old after
+  Core old/V3 instruction constants remain preserved, but the scope fix and shared
+  contract changes mean newly generated requests differ from earlier runs. Exact
+  historical requests remain in their artifacts. Production defaults to old after
   the 34-image comparison; generic configs also default to old.
 - `planner.enable_rejection_correction` defaults false generically and true in
   production M8. Production also enables `planner.correct_missing_target`: a strict
@@ -105,6 +119,15 @@ in this document; generic and historical configurations remain replayable.
   recovery-disabled baseline. Historical recovery/prompt/negative/all suites pin
   0.5 with exemplars and the old recovery trigger for reproducibility. Standard
   A–E use the configured production sensing policy.
+- `final-ablation` is the final two-arm D comparison: `D_CurrentNegativeEvidence`
+  versus `D_NeutralNegativeMisses`. Both use the fixed-scope old core prompt,
+  positive discovery at 0.20 without exemplars, negatives at 0.5, soft counts,
+  IoU+IoM, missing-target correction, two Qwen calls and one replan. Only
+  `belief.neutral_confounder_misses` differs. The three-image check has six runs;
+  the full 34-image development evaluation has 68 runs, with both variants
+  retained rather than selecting one on the diagnostic subset. Compact ZIPs also
+  include `mentor_summary.md`, generated from actual complete/incomplete paired
+  results. Production retains the current evidence default pending evaluation.
 - Observational confidence traces record the bootstrap aggregate and each later
   sensing action: candidate counts, new-node target mass, existing-node probability
   changes, removed-node mass, observation relations and at most five largest gains

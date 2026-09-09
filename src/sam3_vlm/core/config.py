@@ -152,6 +152,8 @@ class BeliefConfig:
     prior_pseudocount: float = 1.0
     discount_repeat_weight: float = 0.8
     num_confounders: int = 2
+    # Ablation: an unreturned confounder is not positive evidence for fruit.
+    neutral_confounder_misses: bool = False
     # Optional reporting-only commitment rule.  A target posterior at or above
     # this threshold contributes 1.0 to the count without mutating the node's
     # posterior.  ``None`` preserves a purely soft posterior sum.
