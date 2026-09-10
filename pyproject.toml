@@ -21,6 +21,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gui = [
+    "gradio>=5.50,<7",
+]
 dev = [
     "pytest>=7.0.0",
 ]

@@ -8,6 +8,20 @@ V4 is a clean architectural rewrite of the current V3 research code. V3 remains 
 
 ### Current M8 execution policy
 
+The optional single-image Gradio interface lives in `src/sam3_vlm/gui`. It reuses
+the final-A–E presets, baseline bootstrap, Runner and rectangle renderer. It may
+override sensing, belief, compute and request settings through validated form
+controls, but does not edit Qwen instruction templates, prompt version or the
+configured tree-fruit scope. Qwen-off execution does not construct a planner and
+reports the A/B candidate count. Qwen-on execution uses the existing count policy,
+defaulting to the soft posterior sum. Model instances are cached; scene state,
+assets and budgets are fresh per submission, with serial execution. Per-run GUI
+model guards also enforce action/tile limits during bootstrap, which has no
+internal pre-call gate. A guard failure preserves partial artifacts and reports
+failure, not a fabricated successful count. Runtime checks occur between calls;
+model loading, queue waiting and exports are excluded. See `GUI.md` for controls
+and `CODE_WALKTHROUGH.md` for the implementation reading guide.
+
 M8 uses the following policy. These rules supersede older target-only M8 examples
 in this document; generic and historical configurations remain replayable.
 

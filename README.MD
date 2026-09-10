@@ -2,6 +2,9 @@
 
 **Zero-shot object counting through active semantic perception with SAM3 and Qwen**
 
+- [Code walkthrough for a mentor review](docs/CODE_WALKTHROUGH.md): source-file guide, call flow, confidence equations and implementation limits.
+- [Single-image Gradio app](docs/GUI.md): upload an image, apply an A–E preset, adjust parameters and download plain-box results. Launch with `python -m sam3_vlm.gui.app` after `python -m pip install -e '.[gui]'`.
+
 SAM3-VLM V4 is a clean rewrite of the SAM3-VLM research pipeline for zero-shot object counting in difficult visual scenes.
 
 The primary research case is **green citrus counting in dense green foliage**, where the target objects are visually similar to leaves and reliable counting requires both broad discovery and careful discrimination. The architecture is intentionally dataset-independent and should also support tasks such as vehicle counting, PiXMo-Count, blood-cell counting, and other dense counting problems.
