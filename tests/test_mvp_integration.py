@@ -13,9 +13,10 @@ def test_sam3_crop_mask_returns_global_coordinates():
     adapter = RealSAM3.__new__(RealSAM3)
 
     class FakeSensor:
-        def _run_inference(self, crop, prompt, threshold):
+        def _run_inference(self, crop, prompt, threshold, positive_boxes=()):
             assert crop.size == (4, 4)
             assert prompt == "fruit" and threshold == 0.0
+            assert positive_boxes == []
             return np.array([[0, 0, 4, 4]]), np.array([0.8]), [np.ones((2, 2), dtype=bool)]
 
     adapter.sensor = FakeSensor()
@@ -24,6 +25,20 @@ def test_sam3_crop_mask_returns_global_coordinates():
     assert detections[0].mask.shape == (10, 10)
     assert detections[0].mask.sum() == 16
     assert detections[0].mask[2:6, 3:7].all()
+
+
+def test_sam3_exemplar_boxes_are_localized_to_crop():
+    adapter = RealSAM3.__new__(RealSAM3)
+
+    class FakeSensor:
+        def _run_inference(self, crop, prompt, threshold, positive_boxes=()):
+            assert crop.size == (10, 10)
+            assert positive_boxes == [[2, 2, 5, 5]]
+            return np.empty((0, 4)), np.empty(0), []
+
+    adapter.sensor = FakeSensor()
+    image = Image.new("RGB", (30, 30))
+    assert adapter.search(image, "fruit", (10, 10, 20, 20), ((12, 12, 15, 15),)) == []
 
 
 def test_vlm_sends_image_candidates_and_action_limit():

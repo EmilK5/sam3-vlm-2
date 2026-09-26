@@ -22,10 +22,17 @@ class RealSAM3:
 
         self.sensor = RealSAM3Sensor(model_id=model_id, device=device)
 
-    def search(self, image: Image.Image, prompt: str, region: Region) -> list[Detection]:
+    def search(self, image: Image.Image, prompt: str, region: Region,
+               exemplar_boxes: tuple[Region, ...] = ()) -> list[Detection]:
         x1, y1, x2, y2 = region
         crop = image.crop(region)
-        _, scores, masks = self.sensor._run_inference(crop, prompt, 0.0)
+        local_boxes = []
+        for bx1, by1, bx2, by2 in exemplar_boxes:
+            if not (x1 <= bx1 < bx2 <= x2 and y1 <= by1 < by2 <= y2):
+                raise ValueError("exemplar box must be fully inside the search region")
+            local_boxes.append([bx1 - x1, by1 - y1, bx2 - x1, by2 - y1])
+        _, scores, masks = self.sensor._run_inference(crop, prompt, 0.0,
+                                                       positive_boxes=local_boxes)
         if len(scores) != len(masks):
             raise ValueError("SAM3 response lacks one mask per score")
         result = []

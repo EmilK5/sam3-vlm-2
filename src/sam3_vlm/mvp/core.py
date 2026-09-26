@@ -6,13 +6,15 @@ return observations and proposals; this module owns every state change.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 import json
 import math
 import time
 from typing import Any, Protocol
 
 import numpy as np
+
+from .tiling import plan_adaptive_tiles
 
 Region = tuple[int, int, int, int]
 
@@ -41,6 +43,13 @@ class Config:
     negative_coverage: float = 0.90
     hard_count_threshold: float = 0.50
     bootstrap_regions: tuple[Region, ...] = ()
+    enable_exemplar_refinement: bool = True
+    exemplar_min_score: float = 0.60
+    exemplar_max_count: int = 5
+    enable_adaptive_tiling: bool = True
+    adaptive_density_threshold: float = 0.69
+    adaptive_density_seed_score: float = 0.50
+    tile_box_iou_threshold: float = 0.50
     max_vlm_calls: int = 2
     max_sam3_calls: int = 16
     max_actions_per_vlm_call: int = 1
@@ -49,7 +58,8 @@ class Config:
 
     def __post_init__(self) -> None:
         for name in ("sam3_score_threshold", "match_iou_threshold", "match_iom_threshold",
-                     "hard_count_threshold"):
+                     "hard_count_threshold", "exemplar_min_score", "adaptive_density_threshold",
+                     "adaptive_density_seed_score", "tile_box_iou_threshold"):
             value = getattr(self, name)
             if not math.isfinite(value) or not 0 <= value <= 1:
                 raise ValueError(f"{name} must be in [0, 1]")
@@ -62,7 +72,7 @@ class Config:
         if (not math.isfinite(self.negative_strength) or not 0 <= self.evidence_discount < 1
                 or not 0 < self.negative_strength):
             raise ValueError("invalid evidence discount or negative strength")
-        for name in ("max_vlm_calls", "max_sam3_calls", "max_candidate_crops"):
+        for name in ("max_vlm_calls", "max_sam3_calls", "max_candidate_crops", "exemplar_max_count"):
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
@@ -73,6 +83,8 @@ class Config:
         ):
             raise ValueError("max_runtime_seconds must be positive or null")
         object.__setattr__(self, "bootstrap_regions", tuple(tuple(r) for r in self.bootstrap_regions))
+        if type(self.enable_exemplar_refinement) is not bool or type(self.enable_adaptive_tiling) is not bool:
+            raise ValueError("feature switches must be boolean")
 
 
 @dataclass(frozen=True)
@@ -88,6 +100,7 @@ class Action:
     source: str
     prompt: str
     region: Region
+    exemplar_boxes: tuple[Region, ...] = ()
 
 
 @dataclass
@@ -119,10 +132,12 @@ class Result:
     unexecuted_batch: list[dict[str, Any]]
     elapsed_seconds: float
     model_seconds: dict[str, float]
+    tiling: dict[str, Any] | None = None
 
 
 class SAM3(Protocol):
-    def search(self, image: Any, prompt: str, region: Region) -> list[Detection]: ...
+    def search(self, image: Any, prompt: str, region: Region,
+               exemplar_boxes: tuple[Region, ...] = ()) -> list[Detection]: ...
 
 
 class VLM(Protocol):
@@ -146,6 +161,22 @@ def overlap(a: np.ndarray, b: np.ndarray) -> tuple[float, float, float]:
     intersection = int(np.count_nonzero(a & b))
     return (intersection / (aa + bb - intersection),
             intersection / min(aa, bb), min(aa, bb) / max(aa, bb))
+
+
+def box_iou(a: Region, b: Region) -> float:
+    intersection = max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(0, min(a[3], b[3]) - max(a[1], b[1]))
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    return intersection / (area_a + area_b - intersection)
+
+
+def select_exemplars(nodes: dict[str, Node], config: Config) -> tuple[tuple[str, Region], ...]:
+    """Select strong SAM3-grounded seed boxes; no VLM or ground truth input."""
+    best_score = {n.node_id: max((score for score, _ in n.positives.values()), default=0.0)
+                  for n in nodes.values()}
+    eligible = [n for n in nodes.values() if best_score[n.node_id] >= config.exemplar_min_score]
+    eligible.sort(key=lambda n: (-best_score[n.node_id], -n.belief, n.node_id))
+    return tuple((n.node_id, n.box) for n in eligible[:config.exemplar_max_count])
 
 
 def parse_batch(raw: Any, width: int, height: int, limit: int) -> tuple[list[tuple[int, str, Region]], list[dict[str, Any]]]:
@@ -208,9 +239,10 @@ class Controller:
         calls = {"sam3_attempted": 0, "sam3_successful": 0,
                  "vlm_attempted": 0, "vlm_successful": 0}
         model_seconds = {"sam3": 0.0, "vlm": 0.0}
-        bootstrap = [(target, (0, 0, width, height))] + [(target, r) for r in self.config.bootstrap_regions]
+        full_region = (0, 0, width, height)
         unexecuted_bootstrap: list[Region] = []
         unexecuted_batch: list[dict[str, Any]] = []
+        tiling: dict[str, Any] | None = None
         stop = ""
 
         def limit() -> str:
@@ -220,23 +252,30 @@ class Controller:
                 return "sam3_budget"
             return ""
 
-        def execute(prompt: str, region: Region, source: str) -> str:
+        def execute(prompt: str, region: Region, source: str,
+                    exemplars: tuple[tuple[str, Region], ...] = ()) -> str:
             key = (normalize_prompt(prompt), region)
-            if key in completed_keys:
+            if key in completed_keys and source != "exemplar_refinement":
                 actions.append({"status": "duplicate", "source": source, "prompt": prompt, "region": region})
                 return ""
             bounded = limit()
             if bounded:
                 return bounded
             action_id = f"a{len(actions) + 1:04d}"
-            action = Action(action_id, source, prompt, region)
+            boxes = tuple(box for _, box in exemplars)
+            action = Action(action_id, source, prompt, region, boxes)
             entry: dict[str, Any] = {"action_id": action_id, "source": source,
-                                      "prompt": prompt, "region": region, "status": "running", "events": []}
+                                      "prompt": prompt, "region": region, "status": "running", "events": [],
+                                      "exemplar_node_ids": [node_id for node_id, _ in exemplars],
+                                      "exemplar_boxes": boxes}
             actions.append(entry)
             calls["sam3_attempted"] += 1
             tick = self.clock()
             try:
-                detections = self.sam3.search(image, prompt, region)
+                if boxes:
+                    detections = self.sam3.search(image, prompt, region, boxes)
+                else:
+                    detections = self.sam3.search(image, prompt, region)
                 model_seconds["sam3"] += max(0.0, self.clock() - tick)
                 entry["status"] = "received"
                 if not isinstance(detections, list):
@@ -257,11 +296,40 @@ class Controller:
                 errors.append(f"SAM3 {action_id}: {exc}")
                 return "error"
 
-        for i, (prompt, region) in enumerate(bootstrap):
-            stop = execute(prompt, region, "bootstrap")
-            if stop:
-                unexecuted_bootstrap = [r for _, r in bootstrap[i + (1 if stop == "error" else 0):]]
-                break
+        stop = execute(target, full_region, "bootstrap")
+        if stop:
+            unexecuted_bootstrap = ([] if stop == "error" else [full_region]) + list(self.config.bootstrap_regions)
+        else:
+            stage1_boxes = [n.box for n in nodes.values() if
+                            max((score for score, _ in n.positives.values()), default=0.0)
+                            >= self.config.adaptive_density_seed_score]
+            plan = plan_adaptive_tiles(stage1_boxes, width, height,
+                                       density_threshold=self.config.adaptive_density_threshold)
+            tiling = asdict(plan)
+            tiling["enabled"] = self.config.enable_adaptive_tiling
+            seed_exemplars = select_exemplars(nodes, self.config) if self.config.enable_exemplar_refinement else ()
+            # A conditioned refinement is intentionally allowed to repeat the
+            # full-image prompt. Its misses are not independent negative evidence.
+            bootstrap_steps: list[tuple[str, Region, tuple[tuple[str, Region], ...]]] = []
+            if seed_exemplars:
+                bootstrap_steps.append(("exemplar_refinement", full_region, seed_exemplars))
+            if self.config.enable_adaptive_tiling and plan.trigger:
+                for tile in plan.tiles:
+                    bootstrap_steps.append(("adaptive_tile", tile, ()))
+            bootstrap_steps.extend(("bootstrap", region, ()) for region in self.config.bootstrap_regions)
+            tile_seed: tuple[tuple[str, Region], ...] | None = None
+            for i, (source, region, exemplars) in enumerate(bootstrap_steps):
+                if source == "adaptive_tile":
+                    if tile_seed is None:
+                        tile_seed = select_exemplars(nodes, self.config) if seed_exemplars else ()
+                    exemplars = tuple((node_id, box) for node_id, box in tile_seed if
+                                      box[0] >= region[0] and box[1] >= region[1] and
+                                      box[2] <= region[2] and box[3] <= region[3])
+                stop = execute(target, region, source, exemplars)
+                if stop:
+                    unexecuted_bootstrap = [step_region for _, step_region, _ in
+                                            bootstrap_steps[i + (1 if stop == "error" else 0):]]
+                    break
         while not stop:
             stop = limit()
             if stop:
@@ -317,13 +385,13 @@ class Controller:
                   "hard": sum(n.belief >= self.config.hard_count_threshold for n in nodes.values()) if countable else None}
         return Result(nodes, actions, proposals, counts, calls, stop,
                       bool(errors or unexecuted_bootstrap or unexecuted_batch), errors,
-                      unexecuted_bootstrap, unexecuted_batch, self.clock() - start, model_seconds)
+                      unexecuted_bootstrap, unexecuted_batch, self.clock() - start, model_seconds, tiling)
 
     def _vlm_state(self, nodes: dict[str, Node], actions: list[dict[str, Any]],
                    calls: dict[str, int], width: int, height: int, start: float) -> dict[str, Any]:
         summary = [{"id": n.node_id, "box": n.box, "belief": n.belief} for n in nodes.values()]
         selected = sorted(nodes.values(), key=lambda n: (abs(n.belief - self.config.hard_count_threshold), n.node_id))
-        history = [{"prompt": a.get("prompt"), "region": a.get("region"),
+        history = [{"source": a.get("source"), "prompt": a.get("prompt"), "region": a.get("region"),
                     "status": a["status"], "detections": a.get("detection_count")}
                    for a in actions[-12:]]
         covered = [a["region"] for a in actions if a["status"] == "completed"]
@@ -382,6 +450,9 @@ class Controller:
                     contained.append(node.node_id)
                 if iou >= self.config.match_iou_threshold or (iom >= self.config.match_iom_threshold and ratio >= self.config.min_match_area_ratio):
                     matches.append(node.node_id)
+                elif (action.source == "adaptive_tile" and
+                      box_iou(box, node.box) > self.config.tile_box_iou_threshold):
+                    matches.append(node.node_id)
             if contained or len(matches) > 1:
                 ambiguous.update(contained + matches)
                 events.append({"type": "ambiguous_containment" if contained else "ambiguous_association",
@@ -420,6 +491,8 @@ class Controller:
                                "before": None, "after": node.belief})
         x1, y1, x2, y2 = action.region
         for node_id in sorted(previous_ids):
+            if action.exemplar_boxes:
+                continue
             node = nodes[node_id]
             coverage = float(node.mask[y1:y2, x1:x2].sum()) / float(node.mask.sum())
             if (coverage >= self.config.negative_coverage and node_id not in retrieved

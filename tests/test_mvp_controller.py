@@ -3,7 +3,12 @@ import math
 import numpy as np
 from PIL import Image
 
-from sam3_vlm.mvp.core import Action, Config, Controller, Detection, parse_batch
+from sam3_vlm.mvp.core import Action, Config as MVPConfig, Controller, Detection, parse_batch
+
+
+def Config(**kwargs):
+    """Keep controller-contract tests focused on the original plain-search path."""
+    return MVPConfig(enable_exemplar_refinement=False, enable_adaptive_tiling=False, **kwargs)
 
 
 IMAGE = Image.new("RGB", (20, 20))
