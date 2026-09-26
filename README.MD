@@ -1,5 +1,21 @@
 # SAM3-VLM V4
 
+## Supported simple counting MVP
+
+The supported single-image workflow is [`sam3_vlm.mvp`](src/sam3_vlm/mvp). It runs a full-image SAM3 target search, optional fixed bootstrap regions, and up to a configured number of VLM-planned positive target searches. See the [authoritative MVP specification](docs/V4_DESIGN_SPEC.md). The M8 pipeline and the rest of this README describe historical research code and experiments.
+
+```bash
+python -m pip install -e .
+export QWEN_BASE_URL=http://localhost:8000/v1
+export QWEN_MODEL=your-qwen-model
+python -m sam3_vlm.mvp.cli image.jpg "green fruit" \
+  --config configs/mvp.json --output result.json --masks masks.npz
+```
+
+SAM3 model weights must be accessible to Transformers. For bootstrap-only counting, set `max_vlm_calls` to `0`; no Qwen endpoint is then needed. Set `max_actions_per_vlm_call` to `1` or a larger integer to compare single and multiple proposed actions per VLM call under the same budgets and evaluation set. The CLI saves counts, node boxes and beliefs, evidence, proposals, action trace, attempted/successful call counts, partial/error status, and runtime. Optional NPZ stores original-image canonical masks. Real model execution has not been validated by the controller's mock tests.
+
+---
+
 **Zero-shot object counting through active semantic perception with SAM3 and Qwen**
 
 - [Code walkthrough for a mentor review](docs/CODE_WALKTHROUGH.md): source-file guide, call flow, confidence equations and implementation limits.
