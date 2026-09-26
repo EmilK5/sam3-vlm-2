@@ -1,0 +1,16 @@
+{
+  "vlm_first": true,
+  "bootstrap_regions": [],
+  "enable_exemplar_refinement": true,
+  "exemplar_min_score": 0.6,
+  "exemplar_max_count": 5,
+  "enable_adaptive_tiling": true,
+  "adaptive_density_threshold": 0.69,
+  "adaptive_density_seed_score": 0.5,
+  "tile_box_iou_threshold": 0.5,
+  "max_vlm_calls": 3,
+  "max_actions_per_vlm_call": 2,
+  "max_sam3_calls": 96,
+  "max_candidate_crops": 4,
+  "max_runtime_seconds": null
+}

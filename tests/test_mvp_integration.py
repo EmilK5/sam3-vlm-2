@@ -62,6 +62,26 @@ def test_vlm_sends_image_candidates_and_action_limit():
     assert "Maximum actions: 2" in content[0]["text"]
 
 
+def test_vlm_first_prompt_requests_roi_and_force_tiling():
+    adapter = RealVLM.__new__(RealVLM)
+    adapter.model = "fake-qwen"
+    captured = {}
+
+    class Completions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return type("Response", (), {"choices": [type("Choice", (), {
+                "message": type("Message", (), {"content": '{"roi":null,"tile_mode":"auto","actions":[]}'})()
+            })()]})()
+
+    adapter.client = type("Client", (), {"chat": type("Chat", (), {"completions": Completions()})()})()
+    raw = adapter.propose_initial(Image.new("RGB", (40, 30)), "berries", {"max_actions": 2})
+    assert '"tile_mode":"auto"' in raw
+    system = captured["messages"][0]["content"]
+    assert "ROI" in system and "force" in system
+    assert "Image size: (40, 30)" in captured["messages"][1]["content"][0]["text"]
+
+
 def test_evaluation_does_not_change_inference_result():
     class EmptySensor:
         def search(self, image, prompt, region):

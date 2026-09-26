@@ -20,7 +20,7 @@ def result_dict(result: Result) -> dict:
         "unexecuted_bootstrap": result.unexecuted_bootstrap,
         "unexecuted_batch": result.unexecuted_batch,
         "elapsed_seconds": result.elapsed_seconds, "model_seconds": result.model_seconds,
-        "tiling": result.tiling,
+        "tiling": result.tiling, "roi": result.roi,
         "proposals": result.proposals, "actions": result.actions,
         "nodes": {key: {"box": node.box, "belief": node.belief,
                          "canonical_detection_id": node.canonical_detection_id,

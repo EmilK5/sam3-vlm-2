@@ -72,8 +72,11 @@ class RealVLM:
 
     def propose(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
         limit = state["max_actions"]
+        roi_guidance = (f"The permitted ROI is {state['roi']}; null means this ROI. "
+                        "Every explicit region must stay within it. " if "roi" in state else "")
         instructions = (
             "You plan positive text searches for SAM3 in this fixed image. Preserve the user's target meaning. "
+            + roi_guidance +
             "Propose up to the stated maximum actions to find missed targets or check uncertain candidates. "
             "Return only JSON of the form {\"actions\":[{\"prompt\":\"short target phrase\","
             "\"region\":null}]}. A region may be null for the whole image or [x1,y1,x2,y2] "
@@ -87,6 +90,31 @@ class RealVLM:
         ]
         for box in state["candidate_boxes"]:
             content.append(self._image_part(image.crop(box)))
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": instructions},
+                      {"role": "user", "content": content}],
+            temperature=0,
+        )
+        return response.choices[0].message.content
+
+    def propose_initial(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
+        """Ask for a spatial ROI and first search before SAM3 sees the image."""
+        instructions = (
+            "Plan a search for all visible instances of the target using SAM3. Inspect the whole image. "
+            "Choose one ROI containing all target-bearing areas, including sparse edge instances; "
+            "use null for the full image if unsure. ROI coordinates are integer [x1,y1,x2,y2] "
+            "with exclusive right and bottom edges. Do not use exemplars, annotation boxes, or counts. "
+            "Select tile_mode force if targets are tiny, crowded, or likely missed by a first crop search; "
+            "otherwise select auto so measured detection density decides. "
+            "Give at least one positive search prompt faithful to the target. "
+            "An action region null means the selected ROI; explicit regions must stay inside it. "
+            "Return only JSON {\"roi\":null,\"tile_mode\":\"auto\","
+            "\"actions\":[{\"prompt\":\"target noun phrase\",\"region\":null}]}. "
+            "Never guess detections or a count."
+        )
+        content = [{"type": "text", "text": f"Target: {target}. Image size: {image.size}. "
+                    f"Maximum actions: {state['max_actions']}."}, self._image_part(image)]
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "system", "content": instructions},

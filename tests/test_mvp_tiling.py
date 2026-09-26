@@ -34,3 +34,15 @@ def test_roi_sliver_keeps_boundary_tile():
     assert plan.trigger
     assert plan.roi == (235, 235, 268, 268)
     assert (0, 0, 250, 250) in plan.tiles
+
+
+def test_vlm_roi_uses_local_density_and_tile_scale_even_without_seeds():
+    roi = (300, 300, 700, 700)
+    boxes = [(310 + 7 * (i % 10), 310 + 7 * (i // 10),
+              312 + 7 * (i % 10), 312 + 7 * (i // 10)) for i in range(60)]
+    plan = plan_adaptive_tiles(boxes, 1000, 1000, roi_override=roi)
+    assert plan.trigger and plan.tile_size == 100
+    assert all(roi[0] <= x1 < x2 <= roi[2] and roi[1] <= y1 < y2 <= roi[3]
+               for x1, y1, x2, y2 in plan.tiles)
+    empty = plan_adaptive_tiles([], 1000, 1000, roi_override=roi, force=True)
+    assert empty.trigger and empty.tiles and empty.roi == roi

@@ -43,6 +43,7 @@ class Config:
     negative_coverage: float = 0.90
     hard_count_threshold: float = 0.50
     bootstrap_regions: tuple[Region, ...] = ()
+    vlm_first: bool = False
     enable_exemplar_refinement: bool = True
     exemplar_min_score: float = 0.60
     exemplar_max_count: int = 5
@@ -83,8 +84,11 @@ class Config:
         ):
             raise ValueError("max_runtime_seconds must be positive or null")
         object.__setattr__(self, "bootstrap_regions", tuple(tuple(r) for r in self.bootstrap_regions))
-        if type(self.enable_exemplar_refinement) is not bool or type(self.enable_adaptive_tiling) is not bool:
+        if (type(self.enable_exemplar_refinement) is not bool or
+                type(self.enable_adaptive_tiling) is not bool or type(self.vlm_first) is not bool):
             raise ValueError("feature switches must be boolean")
+        if self.vlm_first and (self.bootstrap_regions or self.max_vlm_calls < 1):
+            raise ValueError("VLM-first mode requires a VLM call and forbids bootstrap regions")
 
 
 @dataclass(frozen=True)
@@ -133,6 +137,7 @@ class Result:
     elapsed_seconds: float
     model_seconds: dict[str, float]
     tiling: dict[str, Any] | None = None
+    roi: Region | None = None
 
 
 class SAM3(Protocol):
@@ -179,7 +184,8 @@ def select_exemplars(nodes: dict[str, Node], config: Config) -> tuple[tuple[str,
     return tuple((n.node_id, n.box) for n in eligible[:config.exemplar_max_count])
 
 
-def parse_batch(raw: Any, width: int, height: int, limit: int) -> tuple[list[tuple[int, str, Region]], list[dict[str, Any]]]:
+def parse_batch(raw: Any, width: int, height: int, limit: int, *,
+                allowed_region: Region | None = None) -> tuple[list[tuple[int, str, Region]], list[dict[str, Any]]]:
     """Parse a JSON object with `actions`, keeping valid entries in order."""
     rejected: list[dict[str, Any]] = []
     try:
@@ -201,7 +207,7 @@ def parse_batch(raw: Any, width: int, height: int, limit: int) -> tuple[list[tup
             rejected.append({"index": i, "reason": "invalid_prompt"})
             continue
         if region is None:
-            box = (0, 0, width, height)
+            box = allowed_region or (0, 0, width, height)
         elif (type(region) is list and len(region) == 4 and
               all(type(v) is int for v in region)):
             box = tuple(region)
@@ -212,8 +218,37 @@ def parse_batch(raw: Any, width: int, height: int, limit: int) -> tuple[list[tup
         if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
             rejected.append({"index": i, "reason": "invalid_region"})
             continue
+        if allowed_region is not None and not (allowed_region[0] <= x1 < x2 <= allowed_region[2] and
+                                               allowed_region[1] <= y1 < y2 <= allowed_region[3]):
+            rejected.append({"index": i, "reason": "outside_roi"})
+            continue
         accepted.append((i, prompt.strip(), box))
     return accepted, rejected
+
+
+def parse_initial_plan(raw: Any, width: int, height: int, limit: int
+                       ) -> tuple[Region, bool, list[tuple[int, str, Region]], list[dict[str, Any]]]:
+    """Require an explicit VLM ROI and a first positive search batch."""
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"malformed initial VLM JSON: {exc}") from exc
+    if type(data) is not dict or set(data) != {"roi", "tile_mode", "actions"}:
+        raise ValueError("initial VLM plan requires roi, tile_mode, and actions")
+    roi_raw = data["roi"]
+    if roi_raw is None:
+        roi = (0, 0, width, height)
+    elif type(roi_raw) is list and _valid_region(roi_raw, width, height):
+        roi = tuple(roi_raw)
+    else:
+        raise ValueError("invalid VLM ROI")
+    if data["tile_mode"] not in ("auto", "force"):
+        raise ValueError("invalid VLM tile mode")
+    batch, rejected = parse_batch({"actions": data["actions"]}, width, height, limit,
+                                  allowed_region=roi)
+    if not batch:
+        raise ValueError("initial VLM plan has no valid positive search")
+    return roi, data["tile_mode"] == "force", batch, rejected
 
 
 class Controller:
@@ -240,6 +275,8 @@ class Controller:
                  "vlm_attempted": 0, "vlm_successful": 0}
         model_seconds = {"sam3": 0.0, "vlm": 0.0}
         full_region = (0, 0, width, height)
+        roi = full_region
+        force_tiles = False
         unexecuted_bootstrap: list[Region] = []
         unexecuted_batch: list[dict[str, Any]] = []
         tiling: dict[str, Any] | None = None
@@ -296,23 +333,70 @@ class Controller:
                 errors.append(f"SAM3 {action_id}: {exc}")
                 return "error"
 
-        stop = execute(target, full_region, "bootstrap")
-        if stop:
-            unexecuted_bootstrap = ([] if stop == "error" else [full_region]) + list(self.config.bootstrap_regions)
+        if self.config.vlm_first:
+            stop = limit()
+            if not stop:
+                if self.vlm is None or not callable(getattr(self.vlm, "propose_initial", None)):
+                    errors.append("VLM-first mode requires propose_initial")
+                    stop = "error"
+                else:
+                    state = self._vlm_state(nodes, actions, calls, width, height, start)
+                    calls["vlm_attempted"] += 1
+                    tick = self.clock()
+                    try:
+                        raw = self.vlm.propose_initial(image, target, state)
+                        model_seconds["vlm"] += max(0.0, self.clock() - tick)
+                        calls["vlm_successful"] += 1
+                        roi, force_tiles, initial_batch, rejected = parse_initial_plan(
+                            raw, width, height, self.config.max_actions_per_vlm_call)
+                    except Exception as exc:
+                        if not calls["vlm_successful"]:
+                            model_seconds["vlm"] += max(0.0, self.clock() - tick)
+                        errors.append(f"initial VLM plan: {exc}")
+                        stop = "error"
+                    else:
+                        proposal = {"call": 1, "raw": raw, "rejected": rejected, "accepted": [],
+                                    "roi": roi, "tile_mode": "force" if force_tiles else "auto"}
+                        proposals.append(proposal)
+                        seen_initial: set[tuple[str, Region]] = set()
+                        executable = []
+                        for original_index, prompt, region in initial_batch:
+                            key = (normalize_prompt(prompt), region)
+                            if key in seen_initial:
+                                proposal["rejected"].append({"index": original_index, "reason": "duplicate_batch"})
+                                continue
+                            seen_initial.add(key)
+                            accepted = {"prompt": prompt, "region": region, "status": "pending"}
+                            proposal["accepted"].append(accepted)
+                            executable.append((accepted, prompt, region))
+                        for j, (accepted, prompt, region) in enumerate(executable):
+                            stop = execute(prompt, region, "vlm_initial")
+                            accepted["status"] = "failed" if stop == "error" else "pending" if stop else "completed"
+                            if stop:
+                                unexecuted_batch = ([{"prompt": prompt, "region": region}] if stop != "error" else []) + [
+                                    {"prompt": p, "region": r} for _, p, r in executable[j + 1:]]
+                                break
         else:
+            stop = execute(target, full_region, "bootstrap")
+            if stop:
+                unexecuted_bootstrap = ([] if stop == "error" else [full_region]) + list(self.config.bootstrap_regions)
+        if not stop:
             stage1_boxes = [n.box for n in nodes.values() if
                             max((score for score, _ in n.positives.values()), default=0.0)
                             >= self.config.adaptive_density_seed_score]
             plan = plan_adaptive_tiles(stage1_boxes, width, height,
-                                       density_threshold=self.config.adaptive_density_threshold)
+                                       density_threshold=self.config.adaptive_density_threshold,
+                                       roi_override=roi if self.config.vlm_first else None,
+                                       force=force_tiles and self.config.enable_adaptive_tiling)
             tiling = asdict(plan)
             tiling["enabled"] = self.config.enable_adaptive_tiling
+            tiling["forced_by_vlm"] = force_tiles
             seed_exemplars = select_exemplars(nodes, self.config) if self.config.enable_exemplar_refinement else ()
             # A conditioned refinement is intentionally allowed to repeat the
             # full-image prompt. Its misses are not independent negative evidence.
             bootstrap_steps: list[tuple[str, Region, tuple[tuple[str, Region], ...]]] = []
             if seed_exemplars:
-                bootstrap_steps.append(("exemplar_refinement", full_region, seed_exemplars))
+                bootstrap_steps.append(("exemplar_refinement", roi, seed_exemplars))
             if self.config.enable_adaptive_tiling and plan.trigger:
                 for tile in plan.tiles:
                     bootstrap_steps.append(("adaptive_tile", tile, ()))
@@ -342,6 +426,8 @@ class Controller:
                 errors.append("VLM adapter required when max_vlm_calls > 0")
                 break
             state = self._vlm_state(nodes, actions, calls, width, height, start)
+            if self.config.vlm_first:
+                state["roi"] = roi
             calls["vlm_attempted"] += 1
             tick = self.clock()
             try:
@@ -353,7 +439,8 @@ class Controller:
                 errors.append(f"VLM request: {exc}")
                 stop = "error"
                 break
-            batch, rejected = parse_batch(raw, width, height, self.config.max_actions_per_vlm_call)
+            batch, rejected = parse_batch(raw, width, height, self.config.max_actions_per_vlm_call,
+                                          allowed_region=roi if self.config.vlm_first else None)
             proposal = {"call": calls["vlm_attempted"], "raw": raw, "rejected": rejected, "accepted": []}
             proposals.append(proposal)
             batch_keys: set[tuple[str, Region]] = set()
@@ -385,7 +472,8 @@ class Controller:
                   "hard": sum(n.belief >= self.config.hard_count_threshold for n in nodes.values()) if countable else None}
         return Result(nodes, actions, proposals, counts, calls, stop,
                       bool(errors or unexecuted_bootstrap or unexecuted_batch), errors,
-                      unexecuted_bootstrap, unexecuted_batch, self.clock() - start, model_seconds, tiling)
+                      unexecuted_bootstrap, unexecuted_batch, self.clock() - start, model_seconds, tiling,
+                      roi if self.config.vlm_first else None)
 
     def _vlm_state(self, nodes: dict[str, Node], actions: list[dict[str, Any]],
                    calls: dict[str, int], width: int, height: int, start: float) -> dict[str, Any]:
