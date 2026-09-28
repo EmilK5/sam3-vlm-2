@@ -28,6 +28,8 @@ python -m sam3_vlm.mvp.fscd_cli evaluate /path/to/FSCD-147 \
 
 The first command reads images and class names only. The second reads FSCD boxes, reports complete-split MAE/RMSE, and exports hard-count boxes for COCO AP/AP50 evaluation with the paper's evaluator. Use `--max-images N` on `run` for a smoke test; its partial split will not yield benchmark metrics. Tune on `val` and freeze the configuration before `test`. No real FSCD-147 benchmark run has been completed here.
 
+The same VLM-first controller is arm **F** of the [A–F fruit experiment](docs/M8_FINAL_AF_FRUITS.md). `--pilot-suite final-af` adds it to the existing A–E fruit manifest, tables, and box-image exports; `final-ae` remains available for reproducing the original five-arm study.
+
 ---
 
 **Zero-shot object counting through active semantic perception with SAM3 and Qwen**

@@ -41,9 +41,21 @@ def test_sam3_exemplar_boxes_are_localized_to_crop():
     assert adapter.search(image, "fruit", (10, 10, 20, 20), ((12, 12, 15, 15),)) == []
 
 
+def test_mvp_reuses_loaded_legacy_sam3_sensor():
+    class LoadedSensor:
+        def _run_inference(self, *args, **kwargs):
+            return np.empty((0, 4)), np.empty(0), []
+
+    loaded = LoadedSensor()
+    adapter = RealSAM3(sensor=loaded)
+    assert adapter.sensor is loaded
+    assert adapter.search(Image.new("RGB", (8, 8)), "fruit", (0, 0, 8, 8)) == []
+
+
 def test_vlm_sends_image_candidates_and_action_limit():
     adapter = RealVLM.__new__(RealVLM)
     adapter.model = "fake-qwen"
+    adapter.scope = "Only count fruit on trees."
     captured = {}
 
     class Completions:
@@ -60,11 +72,16 @@ def test_vlm_sends_image_candidates_and_action_limit():
     content = captured["messages"][1]["content"]
     assert len([part for part in content if part["type"] == "image_url"]) == 2
     assert "Maximum actions: 2" in content[0]["text"]
+    assert "Only count fruit on trees" in captured["messages"][0]["content"]
+    assert captured["response_format"] == {"type": "json_object"}
+    assert captured["extra_body"] == {"reasoning_effort": "none"}
 
 
 def test_vlm_first_prompt_requests_roi_and_force_tiling():
     adapter = RealVLM.__new__(RealVLM)
     adapter.model = "fake-qwen"
+    adapter.scope = "Focus on fruit on trees; exclude fallen fruit."
+    adapter.request_log = []
     captured = {}
 
     class Completions:
@@ -79,7 +96,10 @@ def test_vlm_first_prompt_requests_roi_and_force_tiling():
     assert '"tile_mode":"auto"' in raw
     system = captured["messages"][0]["content"]
     assert "ROI" in system and "force" in system
+    assert "exclude fallen fruit" in system
     assert "Image size: (40, 30)" in captured["messages"][1]["content"][0]["text"]
+    assert adapter.request_log[0]["system"] == system
+    assert "Image size: (40, 30)" in adapter.request_log[0]["user_text"]
 
 
 def test_evaluation_does_not_change_inference_result():

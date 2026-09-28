@@ -17,10 +17,14 @@ from .core import Detection, Region
 class RealSAM3:
     """One text and one crop per request; masks are returned in image coordinates."""
 
-    def __init__(self, model_id: str = "facebook/sam3", device: str | None = None):
-        from sam3_vlm.models.sam3 import RealSAM3Sensor
-
-        self.sensor = RealSAM3Sensor(model_id=model_id, device=device)
+    def __init__(self, model_id: str = "facebook/sam3", device: str | None = None,
+                 sensor: Any | None = None):
+        if sensor is None:
+            from sam3_vlm.models.sam3 import RealSAM3Sensor
+            sensor = RealSAM3Sensor(model_id=model_id, device=device)
+        if not callable(getattr(sensor, "_run_inference", None)):
+            raise TypeError("SAM3 sensor must provide _run_inference")
+        self.sensor = sensor
 
     def search(self, image: Image.Image, prompt: str, region: Region,
                exemplar_boxes: tuple[Region, ...] = ()) -> list[Detection]:
@@ -53,7 +57,9 @@ class RealVLM:
     """OpenAI-compatible multimodal Qwen endpoint with SDK retries disabled."""
 
     def __init__(self, base_url: str | None = None, model: str | None = None,
-                 api_key: str | None = None):
+                 api_key: str | None = None, scope: str | None = None,
+                 max_output_tokens: int = 512, timeout_seconds: float = 45.0,
+                 reasoning_effort: str | None = "none"):
         from openai import OpenAI
 
         self.model = model or os.environ.get("QWEN_MODEL")
@@ -62,6 +68,11 @@ class RealVLM:
             raise ValueError("QWEN_MODEL and QWEN_BASE_URL are required")
         self.client = OpenAI(base_url=endpoint, api_key=api_key or os.environ.get("QWEN_API_KEY") or "EMPTY",
                              max_retries=0)
+        self.scope = scope.strip() if scope else None
+        self.request_log: list[dict[str, str]] = []
+        self.max_output_tokens = max_output_tokens
+        self.timeout_seconds = timeout_seconds
+        self.reasoning_effort = reasoning_effort
 
     @staticmethod
     def _image_part(image: Image.Image) -> dict[str, Any]:
@@ -70,13 +81,29 @@ class RealVLM:
         encoded = base64.b64encode(buf.getvalue()).decode("ascii")
         return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
 
+    def _complete(self, instructions: str, content: list[dict[str, Any]]) -> Any:
+        options = {"model": self.model,
+                   "messages": [{"role": "system", "content": instructions},
+                                {"role": "user", "content": content}],
+                   "temperature": 0,
+                   "response_format": {"type": "json_object"},
+                   "max_tokens": getattr(self, "max_output_tokens", 512),
+                   "timeout": getattr(self, "timeout_seconds", 45.0)}
+        reasoning_effort = getattr(self, "reasoning_effort", "none")
+        if reasoning_effort is not None:
+            options["extra_body"] = {"reasoning_effort": reasoning_effort}
+        response = self.client.chat.completions.create(**options)
+        return response.choices[0].message.content
+
     def propose(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
         limit = state["max_actions"]
         roi_guidance = (f"The permitted ROI is {state['roi']}; null means this ROI. "
                         "Every explicit region must stay within it. " if "roi" in state else "")
+        scope_guidance = (f"Target scope: {self.scope} Preserve this scope in every search. "
+                          if getattr(self, "scope", None) else "")
         instructions = (
             "You plan positive text searches for SAM3 in this fixed image. Preserve the user's target meaning. "
-            + roi_guidance +
+            + scope_guidance + roi_guidance +
             "Propose up to the stated maximum actions to find missed targets or check uncertain candidates. "
             "Return only JSON of the form {\"actions\":[{\"prompt\":\"short target phrase\","
             "\"region\":null}]}. A region may be null for the whole image or [x1,y1,x2,y2] "
@@ -90,18 +117,16 @@ class RealVLM:
         ]
         for box in state["candidate_boxes"]:
             content.append(self._image_part(image.crop(box)))
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": instructions},
-                      {"role": "user", "content": content}],
-            temperature=0,
-        )
-        return response.choices[0].message.content
+        if hasattr(self, "request_log"):
+            self.request_log.append({"system": instructions, "user_text": content[0]["text"]})
+        return self._complete(instructions, content)
 
     def propose_initial(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
         """Ask for a spatial ROI and first search before SAM3 sees the image."""
         instructions = (
             "Plan a search for all visible instances of the target using SAM3. Inspect the whole image. "
+            + (f"Target scope: {self.scope} Choose the ROI and searches for only this scope. "
+               if getattr(self, "scope", None) else "") +
             "Choose one ROI containing all target-bearing areas, including sparse edge instances; "
             "use null for the full image if unsure. ROI coordinates are integer [x1,y1,x2,y2] "
             "with exclusive right and bottom edges. Do not use exemplars, annotation boxes, or counts. "
@@ -115,10 +140,6 @@ class RealVLM:
         )
         content = [{"type": "text", "text": f"Target: {target}. Image size: {image.size}. "
                     f"Maximum actions: {state['max_actions']}."}, self._image_part(image)]
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": instructions},
-                      {"role": "user", "content": content}],
-            temperature=0,
-        )
-        return response.choices[0].message.content
+        if hasattr(self, "request_log"):
+            self.request_log.append({"system": instructions, "user_text": content[0]["text"]})
+        return self._complete(instructions, content)
