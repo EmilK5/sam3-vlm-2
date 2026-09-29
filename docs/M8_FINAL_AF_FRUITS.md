@@ -12,6 +12,9 @@ With the standard local Ollama endpoint (`:11434/v1`), F sends its VLM requests
 through Ollama's native JSON chat API with thinking disabled, so the ROI plan
 arrives in the answer field. Other OpenAI-compatible endpoints retain the
 existing chat-completions transport.
+The initial-plan parser accepts a JSON code fence and an action without a
+`region` field, which uses the VLM-selected ROI. Invalid replies are saved in
+the per-run Qwen artifacts for diagnosis.
 
 F reports the number of nodes above its hard-belief threshold. A/B report hard
 candidate counts; C/D/E report soft probability sums. The table labels each

@@ -186,7 +186,7 @@ def select_exemplars(nodes: dict[str, Node], config: Config) -> tuple[tuple[str,
 
 def parse_batch(raw: Any, width: int, height: int, limit: int, *,
                 allowed_region: Region | None = None) -> tuple[list[tuple[int, str, Region]], list[dict[str, Any]]]:
-    """Parse a JSON object with `actions`, keeping valid entries in order."""
+    """Parse positive actions; an omitted region uses the permitted ROI."""
     rejected: list[dict[str, Any]] = []
     try:
         data = json.loads(raw) if isinstance(raw, str) else raw
@@ -199,10 +199,10 @@ def parse_batch(raw: Any, width: int, height: int, limit: int, *,
         rejected.extend({"index": i, "reason": "batch_truncated"} for i in range(limit, len(actions)))
     accepted: list[tuple[int, str, Region]] = []
     for i, item in enumerate(actions[:limit]):
-        if type(item) is not dict or set(item) != {"prompt", "region"}:
+        if type(item) is not dict or set(item) not in ({"prompt"}, {"prompt", "region"}):
             rejected.append({"index": i, "reason": "invalid_action"})
             continue
-        prompt, region = item["prompt"], item["region"]
+        prompt, region = item["prompt"], item.get("region")
         if type(prompt) is not str or not normalize_prompt(prompt):
             rejected.append({"index": i, "reason": "invalid_prompt"})
             continue
@@ -230,9 +230,19 @@ def parse_initial_plan(raw: Any, width: int, height: int, limit: int
                        ) -> tuple[Region, bool, list[tuple[int, str, Region]], list[dict[str, Any]]]:
     """Require an explicit VLM ROI and a first positive search batch."""
     try:
-        data = json.loads(raw) if isinstance(raw, str) else raw
+        if isinstance(raw, str):
+            text = raw.strip()
+            lines = text.splitlines()
+            if (len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"}
+                    and lines[-1].strip() == "```"):
+                text = "\n".join(lines[1:-1]).strip()
+            data = json.loads(text)
+        else:
+            data = raw
     except (ValueError, TypeError) as exc:
-        raise ValueError(f"malformed initial VLM JSON: {exc}") from exc
+        preview = repr(raw[:160]) if isinstance(raw, str) else repr(raw)[:160]
+        raise ValueError(f"malformed initial VLM JSON: {exc}; "
+                         f"response starts with {preview}") from exc
     if type(data) is not dict or set(data) != {"roi", "tile_mode", "actions"}:
         raise ValueError("initial VLM plan requires roi, tile_mode, and actions")
     roi_raw = data["roi"]
@@ -343,6 +353,7 @@ class Controller:
                     state = self._vlm_state(nodes, actions, calls, width, height, start)
                     calls["vlm_attempted"] += 1
                     tick = self.clock()
+                    raw = None
                     try:
                         raw = self.vlm.propose_initial(image, target, state)
                         model_seconds["vlm"] += max(0.0, self.clock() - tick)
@@ -352,6 +363,9 @@ class Controller:
                     except Exception as exc:
                         if not calls["vlm_successful"]:
                             model_seconds["vlm"] += max(0.0, self.clock() - tick)
+                        if raw is not None:
+                            proposals.append({"call": 1, "raw": raw, "rejected": [],
+                                              "accepted": [], "status": "invalid"})
                         errors.append(f"initial VLM plan: {exc}")
                         stop = "error"
                     else:

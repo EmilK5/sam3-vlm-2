@@ -1,7 +1,9 @@
+import json
+
 import numpy as np
 from PIL import Image
 
-from sam3_vlm.mvp.core import Config, Controller, Detection, parse_initial_plan
+from sam3_vlm.mvp.core import Config, Controller, Detection, parse_batch, parse_initial_plan
 
 
 IMAGE = Image.new("RGB", (400, 400))
@@ -103,3 +105,72 @@ def test_initial_plan_contract_rejects_no_search_and_outside_roi():
         assert "forbids bootstrap" in str(exc)
     else:
         assert False
+
+
+def test_initial_plan_accepts_cluster_qwen_fence_and_roi_default():
+    raw = '''```json
+{
+    "roi": [4, 36, 995, 786],
+    "tile_mode": "auto",
+    "actions": [
+        {"prompt": "green fruit on trees"}
+    ]
+}
+```'''
+    roi, force_tiles, batch, rejected = parse_initial_plan(raw, 1000, 800, 2)
+    assert roi == (4, 36, 995, 786)
+    assert force_tiles is False
+    assert batch == [(0, "green fruit on trees", roi)]
+    assert rejected == []
+    sensor = Sensor([[]])
+    result = Controller(sensor, Planner(raw), Config(vlm_first=True, max_vlm_calls=1,
+                        enable_adaptive_tiling=False, enable_exemplar_refinement=False)).run(
+                            Image.new("RGB", (1000, 800)), "green fruit")
+    assert sensor.calls == [("green fruit on trees", roi, ())]
+    assert result.actions[0]["source"] == "vlm_initial"
+
+
+def test_initial_plan_still_rejects_prose_and_ambiguous_actions():
+    try:
+        parse_initial_plan('Here is the plan: {"roi":null,"tile_mode":"auto","actions":[]}',
+                           400, 400, 2)
+    except ValueError as exc:
+        assert "malformed initial VLM JSON" in str(exc)
+    else:
+        assert False
+    try:
+        parse_initial_plan({"roi": ROI, "tile_mode": "auto",
+                            "actions": [{"prompt": "berries", "unexpected": True}]},
+                           400, 400, 2)
+    except ValueError as exc:
+        assert "no valid positive search" in str(exc)
+    else:
+        assert False
+
+
+def test_followup_action_without_region_uses_vlm_roi():
+    batch, rejected = parse_batch({"actions": [{"prompt": "more green fruit"}]},
+                                  400, 400, 2, allowed_region=tuple(ROI))
+    assert batch == [(0, "more green fruit", tuple(ROI))]
+    assert rejected == []
+
+
+def test_malformed_initial_reply_is_saved_for_diagnosis():
+    sensor = Sensor([])
+    result = Controller(sensor, Planner("```json\nnot valid\n```"),
+                        Config(vlm_first=True, max_vlm_calls=1)).run(IMAGE, "berries")
+    assert result.stop_reason == "error"
+    assert sensor.calls == []
+    assert result.proposals[0]["raw"] == "```json\nnot valid\n```"
+    assert result.proposals[0]["status"] == "invalid"
+    assert "response starts with '```json" in result.errors[0]
+
+
+def test_malformed_initial_reply_is_written_to_qwen_artifact(tmp_path):
+    from sam3_vlm.experiments.mvp_fruit_arm import run_fruit_arm
+
+    result = run_fruit_arm(IMAGE, "berries", Config(vlm_first=True, max_vlm_calls=1),
+                           Sensor([]), Planner("not JSON"), tmp_path)
+    assert result.partial
+    saved = json.loads((tmp_path / "artifacts" / "qwen" / "call_001.json").read_text())
+    assert saved["output"] == "not JSON"
