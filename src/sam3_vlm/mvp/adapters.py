@@ -62,7 +62,8 @@ class RealVLM:
     def __init__(self, base_url: str | None = None, model: str | None = None,
                  api_key: str | None = None, scope: str | None = None,
                  max_output_tokens: int = 512, timeout_seconds: float = 45.0,
-                 reasoning_effort: str | None = "none"):
+                 reasoning_effort: str | None = "none",
+                 coordinate_mode: str = "pixels"):
         self.model = model or os.environ.get("QWEN_MODEL")
         endpoint = base_url or os.environ.get("QWEN_BASE_URL")
         if not self.model or not endpoint:
@@ -84,6 +85,9 @@ class RealVLM:
         self.max_output_tokens = max_output_tokens
         self.timeout_seconds = timeout_seconds
         self.reasoning_effort = reasoning_effort
+        if coordinate_mode not in {"pixels", "normalized_1000"}:
+            raise ValueError("invalid VLM coordinate mode")
+        self.coordinate_mode = coordinate_mode
 
     @staticmethod
     def _image_part(image: Image.Image) -> dict[str, Any]:
@@ -158,8 +162,20 @@ class RealVLM:
 
     def propose(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
         limit = state["max_actions"]
-        roi_guidance = (f"The permitted ROI is {state['roi']}; null means this ROI. "
+        normalized = getattr(self, "coordinate_mode", "pixels") == "normalized_1000"
+        def to_grid(box):
+            return [round(box[0] * 1000 / image.width),
+                    round(box[1] * 1000 / image.height),
+                    round(box[2] * 1000 / image.width),
+                    round(box[3] * 1000 / image.height)]
+        roi_for_prompt = state.get("roi")
+        if normalized and roi_for_prompt is not None:
+            roi_for_prompt = to_grid(roi_for_prompt)
+        roi_guidance = (f"The permitted ROI is {roi_for_prompt}; null means this ROI. "
                         "Every explicit region must stay within it. " if "roi" in state else "")
+        coordinate_guidance = ("Coordinates use a normalized 0–1000 grid on each image axis. "
+                               "Do not use pixel coordinates. " if normalized else
+                               "Coordinates use original-image pixels. ")
         scope_guidance = (f"Target scope: {self.scope} Preserve this scope in every search. "
                           if getattr(self, "scope", None) else "")
         instructions = (
@@ -167,11 +183,22 @@ class RealVLM:
             + scope_guidance + roi_guidance +
             "Propose up to the stated maximum actions to find missed targets or check uncertain candidates. "
             "Return only JSON of the form {\"actions\":[{\"prompt\":\"short target phrase\","
-            "\"region\":null}]}. A region may be null for the whole image or [x1,y1,x2,y2] "
-            "with exclusive right/bottom image coordinates. Do not count or declare detections. "
+            "\"region\":null}]}. A region may be null for the permitted ROI or [x1,y1,x2,y2] "
+            "with exclusive right/bottom edges. " + coordinate_guidance +
+            "Do not count or declare detections. "
             "Do not propose confounder searches."
         )
         compact = {k: v for k, v in state.items() if k != "candidate_boxes"}
+        if normalized:
+            if "roi" in compact:
+                compact["roi"] = roi_for_prompt
+            compact["nodes"] = [{**node, "box": to_grid(node["box"])}
+                                for node in compact.get("nodes", [])]
+            compact["history"] = [{**event, "region": to_grid(event["region"])
+                                   if event.get("region") is not None else None}
+                                  for event in compact.get("history", [])]
+            compact["recent_successful_coverage"] = [to_grid(box) for box in
+                                                      compact.get("recent_successful_coverage", [])]
         content: list[dict[str, Any]] = [
             {"type": "text", "text": f"Target: {target}. Maximum actions: {limit}. State: {json.dumps(compact)}"},
             self._image_part(image),
@@ -184,13 +211,21 @@ class RealVLM:
 
     def propose_initial(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
         """Ask for a spatial ROI and first search before SAM3 sees the image."""
+        normalized = getattr(self, "coordinate_mode", "pixels") == "normalized_1000"
+        coordinate_guidance = (
+            "ROI and action region coordinates use a normalized 0–1000 grid on each image axis: "
+            "x=0 is left, x=1000 is right, y=0 is top, and y=1000 is bottom. "
+            "Do not use image pixel coordinates. " if normalized else
+            "ROI and action region coordinates use original-image pixels. "
+        )
         instructions = (
             "Plan a search for all visible instances of the target using SAM3. Inspect the whole image. "
             + (f"Target scope: {self.scope} Choose the ROI and searches for only this scope. "
                if getattr(self, "scope", None) else "") +
             "Choose one ROI containing all target-bearing areas, including sparse edge instances; "
-            "use null for the full image if unsure. ROI coordinates are integer [x1,y1,x2,y2] "
-            "with exclusive right and bottom edges. Do not use exemplars, annotation boxes, or counts. "
+            "use null for the full image if unsure. " + coordinate_guidance +
+            "Use integer [x1,y1,x2,y2] coordinates with exclusive right and bottom edges. "
+            "Do not use exemplars, annotation boxes, or counts. "
             "Select tile_mode force if targets are tiny, crowded, or likely missed by a first crop search; "
             "otherwise select auto so measured detection density decides. "
             "Give at least one positive search prompt faithful to the target. "

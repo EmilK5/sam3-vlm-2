@@ -44,6 +44,7 @@ class Config:
     hard_count_threshold: float = 0.50
     bootstrap_regions: tuple[Region, ...] = ()
     vlm_first: bool = False
+    vlm_coordinate_mode: str = "pixels"
     enable_exemplar_refinement: bool = True
     exemplar_min_score: float = 0.60
     exemplar_max_count: int = 5
@@ -89,6 +90,9 @@ class Config:
             raise ValueError("feature switches must be boolean")
         if self.vlm_first and (self.bootstrap_regions or self.max_vlm_calls < 1):
             raise ValueError("VLM-first mode requires a VLM call and forbids bootstrap regions")
+        if (type(self.vlm_coordinate_mode) is not str or
+                self.vlm_coordinate_mode not in {"pixels", "normalized_1000"}):
+            raise ValueError("vlm_coordinate_mode must be pixels or normalized_1000")
 
 
 @dataclass(frozen=True)
@@ -184,8 +188,25 @@ def select_exemplars(nodes: dict[str, Node], config: Config) -> tuple[tuple[str,
     return tuple((n.node_id, n.box) for n in eligible[:config.exemplar_max_count])
 
 
+def _vlm_region_to_pixels(raw: Any, width: int, height: int,
+                          coordinate_mode: str) -> Region | None:
+    if type(raw) is not list or len(raw) != 4 or any(type(v) is not int for v in raw):
+        return None
+    if coordinate_mode == "normalized_1000":
+        if not (0 <= raw[0] < raw[2] <= 1000 and 0 <= raw[1] < raw[3] <= 1000):
+            return None
+        box = (raw[0] * width // 1000, raw[1] * height // 1000,
+               (raw[2] * width + 999) // 1000, (raw[3] * height + 999) // 1000)
+    elif coordinate_mode == "pixels":
+        box = tuple(raw)
+    else:
+        raise ValueError("unknown VLM coordinate mode")
+    return box if _valid_region(box, width, height) else None
+
+
 def parse_batch(raw: Any, width: int, height: int, limit: int, *,
-                allowed_region: Region | None = None) -> tuple[list[tuple[int, str, Region]], list[dict[str, Any]]]:
+                allowed_region: Region | None = None,
+                coordinate_mode: str = "pixels") -> tuple[list[tuple[int, str, Region]], list[dict[str, Any]]]:
     """Parse positive actions; an omitted region uses the permitted ROI."""
     rejected: list[dict[str, Any]] = []
     try:
@@ -208,12 +229,11 @@ def parse_batch(raw: Any, width: int, height: int, limit: int, *,
             continue
         if region is None:
             box = allowed_region or (0, 0, width, height)
-        elif (type(region) is list and len(region) == 4 and
-              all(type(v) is int for v in region)):
-            box = tuple(region)
         else:
-            rejected.append({"index": i, "reason": "invalid_region"})
-            continue
+            box = _vlm_region_to_pixels(region, width, height, coordinate_mode)
+            if box is None:
+                rejected.append({"index": i, "reason": "invalid_region"})
+                continue
         x1, y1, x2, y2 = box
         if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
             rejected.append({"index": i, "reason": "invalid_region"})
@@ -226,7 +246,8 @@ def parse_batch(raw: Any, width: int, height: int, limit: int, *,
     return accepted, rejected
 
 
-def parse_initial_plan(raw: Any, width: int, height: int, limit: int
+def parse_initial_plan(raw: Any, width: int, height: int, limit: int, *,
+                       coordinate_mode: str = "pixels"
                        ) -> tuple[Region, bool, list[tuple[int, str, Region]], list[dict[str, Any]]]:
     """Require an explicit VLM ROI and a first positive search batch."""
     try:
@@ -248,14 +269,14 @@ def parse_initial_plan(raw: Any, width: int, height: int, limit: int
     roi_raw = data["roi"]
     if roi_raw is None:
         roi = (0, 0, width, height)
-    elif type(roi_raw) is list and _valid_region(roi_raw, width, height):
-        roi = tuple(roi_raw)
     else:
-        raise ValueError("invalid VLM ROI")
+        roi = _vlm_region_to_pixels(roi_raw, width, height, coordinate_mode)
+        if roi is None:
+            raise ValueError("invalid VLM ROI")
     if data["tile_mode"] not in ("auto", "force"):
         raise ValueError("invalid VLM tile mode")
     batch, rejected = parse_batch({"actions": data["actions"]}, width, height, limit,
-                                  allowed_region=roi)
+                                  allowed_region=roi, coordinate_mode=coordinate_mode)
     if not batch:
         raise ValueError("initial VLM plan has no valid positive search")
     return roi, data["tile_mode"] == "force", batch, rejected
@@ -359,7 +380,8 @@ class Controller:
                         model_seconds["vlm"] += max(0.0, self.clock() - tick)
                         calls["vlm_successful"] += 1
                         roi, force_tiles, initial_batch, rejected = parse_initial_plan(
-                            raw, width, height, self.config.max_actions_per_vlm_call)
+                            raw, width, height, self.config.max_actions_per_vlm_call,
+                            coordinate_mode=self.config.vlm_coordinate_mode)
                     except Exception as exc:
                         if not calls["vlm_successful"]:
                             model_seconds["vlm"] += max(0.0, self.clock() - tick)
@@ -454,7 +476,8 @@ class Controller:
                 stop = "error"
                 break
             batch, rejected = parse_batch(raw, width, height, self.config.max_actions_per_vlm_call,
-                                          allowed_region=roi if self.config.vlm_first else None)
+                                          allowed_region=roi if self.config.vlm_first else None,
+                                          coordinate_mode=self.config.vlm_coordinate_mode)
             proposal = {"call": calls["vlm_attempted"], "raw": raw, "rejected": rejected, "accepted": []}
             proposals.append(proposal)
             batch_keys: set[tuple[str, Region]] = set()

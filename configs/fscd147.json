@@ -1,5 +1,6 @@
 {
   "vlm_first": true,
+  "vlm_coordinate_mode": "normalized_1000",
   "bootstrap_regions": [],
   "enable_exemplar_refinement": true,
   "exemplar_min_score": 0.6,

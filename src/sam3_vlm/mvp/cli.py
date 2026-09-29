@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> None:
     config = Config(**data)
     image = Image.open(args.image).convert("RGB")
     sam3 = RealSAM3(model_id=args.sam3_model, device=args.device)
-    vlm = RealVLM() if config.max_vlm_calls else None
+    vlm = RealVLM(coordinate_mode=config.vlm_coordinate_mode) if config.max_vlm_calls else None
     result = Controller(sam3, vlm, config).run(image, args.target)
     data = result_dict(result)
     data["metadata"] = {"image": str(args.image), "target": args.target,

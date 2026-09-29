@@ -20,11 +20,13 @@ def fruit_config() -> Config:
     return Config(**json.loads(FRUIT_CONFIG.read_text()))
 
 
-def make_adapters(legacy_sam3, deployment):
+def make_adapters(legacy_sam3, deployment, config: Config | None = None):
     """Reuse the already-loaded SAM3 weights; Qwen uses the fruit target scope."""
+    config = config or fruit_config()
     sam3 = RealSAM3(sensor=legacy_sam3)
     vlm = RealVLM(base_url=deployment.qwen_base_url, model=deployment.qwen_model,
-                  scope=deployment.v4_config.planner.target_scope)
+                  scope=deployment.v4_config.planner.target_scope,
+                  coordinate_mode=config.vlm_coordinate_mode)
     return sam3, vlm
 
 

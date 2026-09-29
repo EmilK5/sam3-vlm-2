@@ -117,15 +117,17 @@ def test_initial_plan_accepts_cluster_qwen_fence_and_roi_default():
     ]
 }
 ```'''
-    roi, force_tiles, batch, rejected = parse_initial_plan(raw, 1000, 800, 2)
-    assert roi == (4, 36, 995, 786)
+    roi, force_tiles, batch, rejected = parse_initial_plan(
+        raw, 720, 1280, 2, coordinate_mode="normalized_1000")
+    assert roi == (2, 46, 717, 1007)
     assert force_tiles is False
     assert batch == [(0, "green fruit on trees", roi)]
     assert rejected == []
     sensor = Sensor([[]])
     result = Controller(sensor, Planner(raw), Config(vlm_first=True, max_vlm_calls=1,
-                        enable_adaptive_tiling=False, enable_exemplar_refinement=False)).run(
-                            Image.new("RGB", (1000, 800)), "green fruit")
+                        vlm_coordinate_mode="normalized_1000", enable_adaptive_tiling=False,
+                        enable_exemplar_refinement=False)).run(
+                            Image.new("RGB", (720, 1280)), "green fruit")
     assert sensor.calls == [("green fruit on trees", roi, ())]
     assert result.actions[0]["source"] == "vlm_initial"
 
@@ -153,6 +155,29 @@ def test_followup_action_without_region_uses_vlm_roi():
                                   400, 400, 2, allowed_region=tuple(ROI))
     assert batch == [(0, "more green fruit", tuple(ROI))]
     assert rejected == []
+
+
+def test_explicit_normalized_region_is_converted_before_roi_check():
+    roi = (2, 46, 717, 1007)
+    batch, rejected = parse_batch({"actions": [{"prompt": "small green fruit",
+                                                  "region": [100, 100, 900, 700]}]},
+                                  720, 1280, 2, allowed_region=roi,
+                                  coordinate_mode="normalized_1000")
+    assert batch == [(0, "small green fruit", (72, 128, 648, 896))]
+    assert rejected == []
+    outside, rejected = parse_batch({"actions": [{"prompt": "fruit",
+                                                   "region": [0, 0, 1000, 1000]}]},
+                                    720, 1280, 2, allowed_region=roi,
+                                    coordinate_mode="normalized_1000")
+    assert outside == [] and rejected == [{"index": 0, "reason": "outside_roi"}]
+    try:
+        parse_initial_plan({"roi": [0, 0, 1001, 900], "tile_mode": "auto",
+                            "actions": [{"prompt": "fruit"}]},
+                           720, 1280, 2, coordinate_mode="normalized_1000")
+    except ValueError as exc:
+        assert "invalid VLM ROI" in str(exc)
+    else:
+        assert False
 
 
 def test_malformed_initial_reply_is_saved_for_diagnosis():

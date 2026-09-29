@@ -92,7 +92,8 @@ def main(argv: list[str] | None = None) -> None:
     dataset = FSCD147(args.dataset_root, args.split)
     if args.command == "run":
         path = run_dataset(dataset, config, RealSAM3(args.sam3_model, args.device),
-                           RealVLM(), args.output_dir, args.max_images)
+                           RealVLM(coordinate_mode=config.vlm_coordinate_mode),
+                           args.output_dir, args.max_images)
         print(path)
     else:
         metrics = evaluate_saved(dataset, args.prediction_path, config, args.coco_output)

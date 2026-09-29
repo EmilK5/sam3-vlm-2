@@ -1041,7 +1041,7 @@ def m8_4_and_5_pilot(args):
                 mvp_result = None
                 if isinstance(run_config, MVPConfig):
                     from sam3_vlm.experiments.mvp_fruit_arm import make_adapters, run_fruit_arm
-                    mvp_sam3, mvp_vlm = make_adapters(sam3, dep)
+                    mvp_sam3, mvp_vlm = make_adapters(sam3, dep, run_config)
                     mvp_result = run_fruit_arm(image, prompt, run_config,
                                                mvp_sam3, mvp_vlm, paths.base_dir)
                     if (mvp_result.partial or mvp_result.counts["hard"] is None or

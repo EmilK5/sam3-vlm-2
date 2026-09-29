@@ -45,7 +45,7 @@ class FruitVLM:
     def propose_initial(self, image, target, state):
         self.initial_calls += 1
         assert "gt_count" not in state and "ground_truth" not in state
-        return {"roi": [0, 0, image.width, image.height], "tile_mode": "auto",
+        return {"roi": [0, 0, 1000, 1000], "tile_mode": "auto",
                 "actions": [{"prompt": target, "region": None}]}
 
     def propose(self, image, target, state):
@@ -62,6 +62,7 @@ def test_final_af_appends_f_without_changing_original_arms():
     assert f.name == FRUIT_ARM and f.count_type == "hard_belief_count"
     assert isinstance(f.config, MVPConfig)
     assert f.config.vlm_first and not f.config.bootstrap_regions
+    assert f.config.vlm_coordinate_mode == "normalized_1000"
     assert f.config.enable_adaptive_tiling and f.config.enable_exemplar_refinement
 
 
@@ -84,6 +85,7 @@ def test_f_reuses_loaded_sensor_and_sends_tree_only_scope(monkeypatch):
     sam3, vlm = mvp_fruit_arm.make_adapters(loaded, deployment)
     assert sam3.sensor is loaded and isinstance(vlm, FakeVLM)
     assert captured["scope"] == "fruit on trees only"
+    assert captured["coordinate_mode"] == "normalized_1000"
 
 
 def test_f_overlay_selects_exact_hard_count_boxes(tmp_path):
@@ -112,7 +114,7 @@ def test_final_af_runs_f_on_same_fruit_and_exports_all_six(tmp_path, monkeypatch
     monkeypatch.setattr("sam3_vlm.experiments.m8_smoke._get_models",
                         lambda args: (MockSAM3Adapter(), SequencePlanner([proposal("dark green fruit")])))
     monkeypatch.setattr("sam3_vlm.experiments.mvp_fruit_arm.make_adapters",
-                        lambda legacy, deployment: (sensor, vlm))
+                        lambda legacy, deployment, config: (sensor, vlm))
     output_dir = tmp_path / "results"
     args = DummyArgs(manifest=str(manifest), max_samples=1,
                      pilot_suite="final-af", output_dir=str(output_dir))

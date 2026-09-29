@@ -15,6 +15,10 @@ existing chat-completions transport.
 The initial-plan parser accepts a JSON code fence and an action without a
 `region` field, which uses the VLM-selected ROI. Invalid replies are saved in
 the per-run Qwen artifacts for diagnosis.
+F asks Qwen for ROI and action coordinates on its native 0–1000 image grid,
+then converts them to the original image's pixel coordinates before SAM3,
+exemplar refinement, or adaptive tiling. This matters for portrait citrus
+images, where a normalized x value can exceed the image's pixel width.
 
 F reports the number of nodes above its hard-belief threshold. A/B report hard
 candidate counts; C/D/E report soft probability sums. The table labels each

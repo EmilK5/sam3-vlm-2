@@ -104,6 +104,29 @@ def test_vlm_first_prompt_requests_roi_and_force_tiling():
     assert "Image size: (40, 30)" in adapter.request_log[0]["user_text"]
 
 
+def test_vlm_prompt_requests_normalized_coordinates_for_fruit_roi():
+    adapter = RealVLM.__new__(RealVLM)
+    adapter.scope = "Focus on fruit on trees; exclude fallen fruit."
+    adapter.coordinate_mode = "normalized_1000"
+    captured = []
+    adapter._complete = lambda instructions, content: captured.append((instructions, content)) or "{}"
+    image = Image.new("RGB", (720, 1280))
+    adapter.propose_initial(image, "green fruit", {"max_actions": 2})
+    assert "normalized 0–1000 grid" in captured[0][0]
+    assert "Do not use image pixel coordinates" in captured[0][0]
+    adapter.propose(image, "green fruit", {"max_actions": 1, "roi": (2, 46, 717, 1007),
+                                           "nodes": [{"id": "n1", "box": (72, 128, 144, 256)}],
+                                           "history": [{"region": (72, 128, 144, 256)}],
+                                           "recent_successful_coverage": [(72, 128, 144, 256)],
+                                           "candidate_boxes": []})
+    assert "normalized 0–1000 grid" in captured[1][0]
+    assert "[3, 36, 996, 787]" in captured[1][0]
+    state = json.loads(captured[1][1][0]["text"].split("State: ", 1)[1])
+    assert state["nodes"][0]["box"] == [100, 100, 200, 200]
+    assert state["history"][0]["region"] == [100, 100, 200, 200]
+    assert state["recent_successful_coverage"] == [[100, 100, 200, 200]]
+
+
 def test_ollama_vlm_uses_native_json_without_thinking(monkeypatch):
     adapter = RealVLM(base_url="http://127.0.0.1:11434/v1", model="qwen-test",
                       api_key="ollama")
