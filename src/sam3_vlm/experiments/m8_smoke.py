@@ -32,6 +32,7 @@ from sam3_vlm.logging.validator import RunValidator
 from sam3_vlm.logging.replay import ReplayEngine
 from sam3_vlm.logging.schema import RunSummary
 from sam3_vlm.evaluation.metrics import CountingMetrics, aggregate_count_metrics
+from sam3_vlm.mvp.core import Config as MVPConfig
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -546,7 +547,7 @@ def m8_3_full_run(args):
 @dataclasses.dataclass(frozen=True)
 class PilotVariant:
     name: str
-    config: V4Config
+    config: V4Config | MVPConfig
     uses_qwen: bool
     count_type: str
 
@@ -560,6 +561,10 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
         ),
     )
     posterior_count_type = "soft_posterior_count"
+    if suite == "final-af":
+        from sam3_vlm.experiments.mvp_fruit_arm import FRUIT_ARM, fruit_config
+        return _pilot_variants(base, "final-ae") + [
+            PilotVariant(FRUIT_ARM, fruit_config(), True, "hard_belief_count")]
     if suite == "final-ae":
         # Carry the selected D policy into all Qwen arms. Only the A/B
         # baseline target passes receive the explicitly requested lower cutoff.
@@ -1000,6 +1005,8 @@ def m8_4_and_5_pilot(args):
             "sample_targets": {sample["sample_id"]: sample["target"] for sample in samples},
             "resolved_config": dataclasses.asdict(dep.v4_config),
             "variants": [variant.name for variant in variants],
+            "variant_engines": {variant.name: ("mvp_vlm_first" if isinstance(variant.config, MVPConfig)
+                                                else "historical_m8") for variant in variants},
             "variant_configs": {
                 variant.name: dataclasses.asdict(variant.config)
                 for variant in variants
@@ -1021,10 +1028,9 @@ def m8_4_and_5_pilot(args):
             paths = RunArtifactPaths(
                 base_dir=Path(dep.output_root) / "pilot" / variant.name / run_id
             )
-            run_config = dataclasses.replace(
-                variant.config,
-                assets_dir=str(paths.base_dir / "assets"),
-            )
+            run_config = (variant.config if isinstance(variant.config, MVPConfig) else
+                          dataclasses.replace(variant.config,
+                              assets_dir=str(paths.base_dir / "assets")))
             logger.info(f"Processing {image_id} [{variant.name}]...")
 
             try:
@@ -1032,7 +1038,21 @@ def m8_4_and_5_pilot(args):
                     image = loaded_image.convert("RGB")
                 start = time.perf_counter()
 
-                if variant.uses_qwen:
+                mvp_result = None
+                if isinstance(run_config, MVPConfig):
+                    from sam3_vlm.experiments.mvp_fruit_arm import make_adapters, run_fruit_arm
+                    mvp_sam3, mvp_vlm = make_adapters(sam3, dep)
+                    mvp_result = run_fruit_arm(image, prompt, run_config,
+                                               mvp_sam3, mvp_vlm, paths.base_dir)
+                    if (mvp_result.partial or mvp_result.counts["hard"] is None or
+                            mvp_result.stop_reason in {"error", "time_budget", "sam3_budget"}):
+                        raise RuntimeError("F VLM-first run incomplete: " +
+                                           ", ".join(mvp_result.errors or [mvp_result.stop_reason]))
+                    count = float(mvp_result.counts["hard"])
+                    valid_run = True
+                    validator_status = "NOT_APPLICABLE_MVP"
+                    replay_status = "NOT_APPLICABLE_MVP"
+                elif variant.uses_qwen:
                     runner, _ = assemble_e2e_runner(
                         paths,
                         run_config,
@@ -1076,10 +1096,35 @@ def m8_4_and_5_pilot(args):
                     summary = json.load(file)
 
                 bbox_export = {}
-                if suite == "final-ae":
-                    from sam3_vlm.experiments.final_outputs import render_candidate_boxes, overlay_path
+                if suite in {"final-ae", "final-af"}:
+                    from sam3_vlm.experiments.final_outputs import (
+                        render_candidate_boxes, render_mvp_boxes, overlay_path)
                     bbox_file = overlay_path(Path(dep.output_root), variant.name, image_id)
-                    bbox_export = render_candidate_boxes(image, state.graph, bbox_file)
+                    bbox_export = (render_mvp_boxes(image, mvp_result, bbox_file,
+                        run_config.hard_count_threshold) if mvp_result is not None else
+                        render_candidate_boxes(image, state.graph, bbox_file))
+
+                if mvp_result is not None:
+                    candidate_count = len(mvp_result.nodes)
+                    iterations = len(mvp_result.actions)
+                    prompt_outcomes = [
+                        {"prompt": action.get("prompt"), "family": action.get("source"),
+                         "new_nodes": sum(event.get("type") == "new_node"
+                                          for event in action.get("events", [])),
+                         "variance_change": 0.0}
+                        for action in mvp_result.actions if action.get("status") == "completed"]
+                    confidence_trace = []
+                else:
+                    candidate_count = len(state.graph.active_nodes())
+                    iterations = state.iteration
+                    prompt_outcomes = [
+                        {"prompt": prompt_text,
+                         "family": record.families_by_execution[index],
+                         "new_nodes": record.new_nodes_by_execution[index],
+                         "variance_change": record.variance_change_by_execution[index]}
+                        for record in state.semantic_memory.records.values()
+                        for index, prompt_text in enumerate(record.prompts_by_execution)]
+                    confidence_trace = summary.get("discovery_statistics", {}).get("confidence_trace", [])
 
                 sam3_calls = int(summary.get("sam3_calls", 0))
                 sam3_tiles = int(summary.get("sam3_tiles", 0))
@@ -1107,7 +1152,7 @@ def m8_4_and_5_pilot(args):
                     qwen_calls=qwen_calls,
                     cleanup_calls=cleanup_calls,
                     replans=replans,
-                    iterations=state.iteration,
+                    iterations=iterations,
                     total_runtime_ms=runtime_ms,
                     storage_bytes=total_bytes,
                 )
@@ -1119,22 +1164,16 @@ def m8_4_and_5_pilot(args):
                         "sample_id": image_id,
                         "target": prompt,
                         "image_path": sample["image_path"],
-                        "candidate_count": len(state.graph.active_nodes()),
+                        "candidate_count": candidate_count,
                         **bbox_export,
                         "predicted_count": count,
                         "raw_soft_count": summary.get("discovery_statistics", {}).get("raw_soft_count"),
+                        "roi": summary.get("roi"),
+                        "tiling_forced": (mvp_result.tiling or {}).get("forced_by_vlm")
+                                         if mvp_result is not None else None,
                         "count_type": variant.count_type,
-                        "confidence_trace": summary.get("discovery_statistics", {}).get("confidence_trace", []),
-                        "prompt_outcomes": [
-                            {
-                                "prompt": prompt_text,
-                                "family": record.families_by_execution[index],
-                                "new_nodes": record.new_nodes_by_execution[index],
-                                "variance_change": record.variance_change_by_execution[index],
-                            }
-                            for record in state.semantic_memory.records.values()
-                            for index, prompt_text in enumerate(record.prompts_by_execution)
-                        ],
+                        "confidence_trace": confidence_trace,
+                        "prompt_outcomes": prompt_outcomes,
                         "gt_count": gt_count,
                         "absolute_error": absolute_error,
                         "signed_error": count - gt_count,
@@ -1149,7 +1188,7 @@ def m8_4_and_5_pilot(args):
                         "qwen_calls": qwen_calls,
                         "cleanup_calls": cleanup_calls,
                         "replans": replans,
-                        "iterations": state.iteration,
+                        "iterations": iterations,
                         "stop_reason": summary.get("final_stop_reason"),
                         "validator_status": validator_status,
                         "replay_status": replay_status,
@@ -1193,7 +1232,7 @@ def m8_4_and_5_pilot(args):
     from sam3_vlm.experiments.pilot_review import prompt_comparisons, write_compact_review
     if suite in {"prompt-ablation", "recovery-ablation", "discovery-ablation", "final-ablation"}:
         report["paired_comparisons"] = prompt_comparisons(report)
-    if suite == "final-ae":
+    if suite in {"final-ae", "final-af"}:
         from sam3_vlm.experiments.final_outputs import write_final_outputs
         report["metadata"]["final_exports"] = write_final_outputs(report, Path(dep.output_root))
     report_path = Path(dep.output_root) / "pilot_report.json"
@@ -1222,8 +1261,8 @@ def main() -> int:
     parser.add_argument("--qwen-base-url", type=str, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument(
-        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation", "discovery-ablation", "final-ablation", "final-ae"], default="standard",
-        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants; discovery-ablation: four D threshold/exemplar variants; final-ablation: D current versus neutral confounder misses; final-ae: A-E final study with box-only images and results tables",
+        "--pilot-suite", choices=["standard", "negative-ablation", "all", "prompt-ablation", "recovery-ablation", "discovery-ablation", "final-ablation", "final-ae", "final-af"], default="standard",
+        help="standard: A–E; negative-ablation: E off/on; all: six variants; prompt-ablation: C/D old/new and four E variants; recovery-ablation: three D recovery/evidence variants; discovery-ablation: four D threshold/exemplar variants; final-ablation: D current versus neutral confounder misses; final-ae: original A-E fruit study; final-af: A-E plus F VLM-first adaptive ROI",
     )
     parser.add_argument("--pilot-family", choices=["C", "D", "E"],
                         help="Run just one family of the prompt-ablation suite")
