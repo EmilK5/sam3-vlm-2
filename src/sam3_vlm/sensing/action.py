@@ -67,6 +67,8 @@ class SensingAction:
     # Persistent run-level execution domain for GLOBAL/TILED sensing.
     # Kept separate from roi, which remains reserved for LOCAL/ROI_BATCH.
     search_region: Optional[Geometry] = None
+    # A single adaptive crop is an independently budgeted SAM3 request.
+    tile_id: Optional[str] = None
 
     def validate(self) -> None:
         """Validate executable action invariants before SAM3."""

@@ -81,7 +81,7 @@ class Runner:
         self.bank_generator = ActionBankGenerator()
         self.association_policy = (
             IoUIoMAssociationPolicy()
-            if self.config.association.enable_iom_dedup
+            if self.config.association.enable_iom_dedup or self.config.association.mask_only
             else IoUAssociationPolicy()
         )
         self.belief_updater = BeliefUpdater()
@@ -153,6 +153,7 @@ class Runner:
                     controller_runtime_ms=self.scene_state.budget.controller_runtime_ms,
                     number_of_replans=self.scene_state.replans_executed,
                     discovery_statistics={
+                        "adaptive_tiling": self.scene_state.discovery_state.adaptive_tiling,
                         "coverage_ratio": self.scene_state.discovery_state.spatial_coverage.coverage_ratio,
                         "saturated": discovery_is_plateaued(
                             self.scene_state, self.config
@@ -694,10 +695,12 @@ class Runner:
             self.scene_state.graph.nodes.pop(node.node_id, None)
         if provisional_new_nodes and self.config.planner.execute_confounder_prompts:
             from sam3_vlm.scene.association_dual import dual_overlap
+            from sam3_vlm.core.geometry import mask_overlap
             active = self.scene_state.graph.active_nodes()
             for node in active:
                 overlaps = [
-                    dual_overlap(node.geometry.bbox(), other.geometry.bbox())
+                    (mask_overlap(node.geometry, other.geometry) if self.config.association.mask_only
+                     else dual_overlap(node.geometry.bbox(), other.geometry.bbox()))
                     for other in active if other.node_id != node.node_id
                 ]
                 node.diagnostics.duplicate_risk = max(

@@ -78,6 +78,7 @@ class DiscoveryState:
     recent_new_node_counts: List[float] = field(default_factory=list)
     spatial_coverage: CoverageSummary = field(default_factory=CoverageSummary)
     tiled_bootstrap_gain: Optional[float] = None
+    adaptive_tiling: Optional[dict] = None
     plateau_score: float = 0.0
     saturated: bool = False
     unresolved_regions: List[Geometry] = field(default_factory=list)

@@ -209,6 +209,12 @@ class RunRecorder:
         detections = []
         for detection in observation.detections:
             if "mask" in detection.raw_metadata:
+                from sam3_vlm.core.geometry import detection_mask_geometry
+                geometry = detection_mask_geometry(detection)
+                detection.raw_metadata = dict(
+                    detection.raw_metadata, mask=geometry.mask,
+                    mask_offset_x=geometry.offset[0], mask_offset_y=geometry.offset[1],
+                )
                 artifact = self.save_mask_artifact(
                     detection.detection_id,
                     detection.raw_metadata["mask"],
@@ -234,6 +240,8 @@ class RunRecorder:
                         "mask_artifact",
                         None,
                     ),
+                    "mask_offset": [detection.raw_metadata.get("mask_offset_x", 0),
+                                    detection.raw_metadata.get("mask_offset_y", 0)],
                 }
             )
 

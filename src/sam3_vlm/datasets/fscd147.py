@@ -24,6 +24,8 @@ class FSCDGroundTruth:
     coco_image_id: int
     category_id: int
     boxes: tuple[tuple[float, float, float, float], ...]
+    width: int | None = None
+    height: int | None = None
 
     @property
     def point_count(self) -> int:
@@ -77,12 +79,16 @@ class FSCD147:
 
     def ground_truth(self) -> dict[str, FSCDGroundTruth]:
         """Evaluation only. Never pass this output to a planner or controller."""
-        annotations = json.loads((self.root / "annotation_FSC147_384.json").read_text())
+        points_path = self.root / "annotation_FSC147_384.json"
+        annotations = json.loads(points_path.read_text()) if points_path.exists() else {}
         coco = json.loads((self.root / f"instances_{self.split}.json").read_text())
         if not isinstance(coco, dict) or not isinstance(coco.get("images"), list) or not isinstance(coco.get("annotations"), list):
             raise ValueError("invalid FSCD COCO annotations")
         images = {item["file_name"]: item["id"] for item in coco["images"]
                   if isinstance(item, dict) and "file_name" in item and "id" in item}
+        image_records = {item["file_name"]: item for item in coco["images"]}
+        if len(images) != len(coco["images"]) or len(set(images.values())) != len(images):
+            raise ValueError("duplicate or invalid COCO image IDs")
         if any(image_id not in images for image_id in self.image_ids):
             raise ValueError("FSCD COCO annotations missing split images")
         by_image: dict[int, list[dict]] = {images[image_id]: [] for image_id in self.image_ids}
@@ -93,7 +99,7 @@ class FSCD147:
                 by_image[item["image_id"]].append(item)
         result: dict[str, FSCDGroundTruth] = {}
         for image_id in self.image_ids:
-            record = annotations.get(image_id)
+            record = annotations.get(image_id, {"points": []})
             if not isinstance(record, dict) or not isinstance(record.get("points"), list):
                 raise ValueError(f"missing point annotations for {image_id}")
             points = []
@@ -105,6 +111,8 @@ class FSCD147:
                 points.append((float(point[0]), float(point[1])))
             box_records = by_image[images[image_id]]
             categories = {item.get("category_id") for item in box_records}
+            if not box_records:
+                categories = {category["id"] for category in coco.get("categories", [])}
             if len(categories) != 1 or any(type(v) is not int for v in categories):
                 raise ValueError(f"expected one FSCD category for {image_id}")
             boxes = []
@@ -117,7 +125,8 @@ class FSCD147:
                 boxes.append(tuple(float(v) for v in box))
             result[image_id] = FSCDGroundTruth(
                 image_id, len(boxes), tuple(points), images[image_id],
-                next(iter(categories)), tuple(boxes))
+                next(iter(categories)), tuple(boxes),
+                image_records[image_id].get("width"), image_records[image_id].get("height"))
         return result
 
 
@@ -131,7 +140,7 @@ def evaluate_counts(predictions: dict[str, float | int | None],
              if image_id in predictions and predictions[image_id] is not None and
              not isinstance(predictions[image_id], bool) and
              isinstance(predictions[image_id], (int, float)) and
-             math.isfinite(predictions[image_id])}
+             math.isfinite(predictions[image_id]) and predictions[image_id] >= 0}
     errors = [valid[image_id] - ground_truth[image_id].count for image_id in valid]
     n = len(errors)
     complete = n == len(ground_truth) and n > 0
@@ -140,31 +149,3 @@ def evaluate_counts(predictions: dict[str, float | int | None],
             "mae": sum(abs(e) for e in errors) / n if complete else None,
             "rmse": math.sqrt(sum(e * e for e in errors) / n) if complete else None}
 
-
-def coco_detections(results: dict[str, object], ground_truth: dict[str, FSCDGroundTruth],
-                    *, hard_count_threshold: float) -> list[dict]:
-    """Convert completed controller Results to COCO boxes for evaluator use only."""
-    if set(results) != set(ground_truth):
-        raise ValueError("detection evaluation requires every split image")
-    if not math.isfinite(hard_count_threshold) or not 0 <= hard_count_threshold <= 1:
-        raise ValueError("invalid hard-count threshold")
-    detections = []
-    for image_id, result in results.items():
-        partial = result["partial"] if isinstance(result, dict) else result.partial
-        stop_reason = result["stop_reason"] if isinstance(result, dict) else result.stop_reason
-        counts = result["counts"] if isinstance(result, dict) else result.counts
-        nodes = result["nodes"] if isinstance(result, dict) else result.nodes
-        if partial or stop_reason in {"error", "time_budget", "sam3_budget"} or counts["hard"] is None:
-            raise ValueError(f"incomplete controller result for {image_id}")
-        truth = ground_truth[image_id]
-        selected = [node for node in nodes.values()
-                    if (node["belief"] if isinstance(node, dict) else node.belief) >= hard_count_threshold]
-        if len(selected) != counts["hard"]:
-            raise ValueError(f"hard-count threshold mismatch for {image_id}")
-        for node in selected:
-            x1, y1, x2, y2 = node["box"] if isinstance(node, dict) else node.box
-            detections.append({"image_id": truth.coco_image_id,
-                               "category_id": truth.category_id,
-                               "bbox": [x1, y1, x2 - x1, y2 - y1],
-                               "score": float(node["belief"] if isinstance(node, dict) else node.belief)})
-    return detections

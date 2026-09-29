@@ -9,6 +9,7 @@ Invariants (V4 Design Spec §21.2):
 
 from dataclasses import dataclass
 from typing import Literal, Protocol, Sequence, Tuple, runtime_checkable
+import numpy as np
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,73 @@ class GeometryRef:
         
     def iou(self, other: Geometry) -> float:
         return self.box.iou(other.bbox())
+
+
+@dataclass(frozen=True, eq=False)
+class MaskGeometry:
+    """Compact binary mask with its top-left offset in original-image pixels.
+
+    Replay keeps the artifact pointer and area without inlining pixel arrays.
+    Live association always requires the binary pixels of both geometries.
+    """
+
+    box: Box
+    mask: np.ndarray | None
+    offset: Tuple[int, int]
+    pixel_area: int
+    mask_artifact: str | None = None
+
+    def bbox(self) -> Box:
+        return self.box
+
+    def area(self) -> float:
+        return float(self.pixel_area)
+
+    def iou(self, other: Geometry) -> float:
+        return mask_overlap(self, other)[0]
+
+
+def mask_overlap(a: Geometry, b: Geometry) -> Tuple[float, float]:
+    """Mask IoU and intersection/minimum mask area, with no box fallback."""
+    if not isinstance(a, MaskGeometry) or not isinstance(b, MaskGeometry):
+        raise ValueError("Mask association requires masks on both objects")
+    if a.mask is None or b.mask is None:
+        raise ValueError("Load mask artifacts before resuming live association")
+    ax, ay = a.offset
+    bx, by = b.offset
+    x1, y1 = max(ax, bx), max(ay, by)
+    x2 = min(ax + a.mask.shape[1], bx + b.mask.shape[1])
+    y2 = min(ay + a.mask.shape[0], by + b.mask.shape[0])
+    intersection = 0
+    if x2 > x1 and y2 > y1:
+        intersection = int(np.count_nonzero(
+            a.mask[y1-ay:y2-ay, x1-ax:x2-ax] & b.mask[y1-by:y2-by, x1-bx:x2-bx]
+        ))
+    union = a.pixel_area + b.pixel_area - intersection
+    minimum = min(a.pixel_area, b.pixel_area)
+    return (intersection / union if union else 0.0,
+            intersection / minimum if minimum else 0.0)
+
+
+def detection_mask_geometry(detection) -> MaskGeometry:
+    """Read, validate and trim a sensor mask while preserving global offsets."""
+    raw = detection.raw_metadata
+    if "mask" not in raw:
+        raise ValueError(f"Detection {detection.detection_id} has no mask; box fallback is disabled")
+    mask = np.asarray(raw["mask"])
+    if mask.ndim != 2 or not np.all(np.isfinite(mask)) or not np.all((mask == 0) | (mask == 1)):
+        raise ValueError("SAM3 must supply a finite 2D binary mask")
+    ys, xs = np.nonzero(mask)
+    if not len(xs):
+        raise ValueError("SAM3 supplied an empty mask")
+    ox, oy = raw.get("mask_offset_x", 0), raw.get("mask_offset_y", 0)
+    if any(not np.isfinite(v) or int(v) != v or v < 0 for v in (ox, oy)):
+        raise ValueError("Mask offsets must be nonnegative integer image coordinates")
+    left, top, right, bottom = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+    ox, oy = int(ox) + left, int(oy) + top
+    pixels = np.array(mask[top:bottom, left:right], dtype=bool, copy=True)
+    return MaskGeometry(Box(ox, oy, ox + pixels.shape[1], oy + pixels.shape[0]),
+                        pixels, (ox, oy), int(pixels.sum()), detection.mask_artifact)
 
 def deserialize_geometry(data: dict) -> Geometry:
     if "box" in data:

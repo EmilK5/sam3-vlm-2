@@ -216,13 +216,13 @@ def test_bootstrap_refines_with_pseudoexemplar_before_qwen(monkeypatch):
         user_prompt="green fruit",
         target_class="target",
     )
-    assert len(sensor.actions) == 3
-    assert sensor.actions[0].prompt == "tree canopy"
-    assert sensor.actions[1].prompt == "green fruit"
-    assert sensor.actions[1].positive_exemplar_boxes == ()
-    assert sensor.actions[2].prompt == "green fruit"
-    assert sensor.actions[2].positive_exemplar_ids
-    assert sensor.actions[2].positive_exemplar_boxes == ((200.0, 200.0, 240.0, 240.0),)
+    assert len(sensor.actions) == 2
+    assert all(action.prompt == "green fruit" for action in sensor.actions)
+    assert all(action.search_region.bbox().as_tuple() == (0, 0, 1000, 1000) for action in sensor.actions)
+    assert sensor.actions[0].positive_exemplar_boxes == ()
+    assert sensor.actions[1].positive_exemplar_ids
+    assert sensor.actions[1].positive_exemplar_boxes == ((200.0, 200.0, 240.0, 240.0),)
+
 
 
 class _NoopPlanner:

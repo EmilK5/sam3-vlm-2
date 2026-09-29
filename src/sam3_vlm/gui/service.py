@@ -54,7 +54,7 @@ The wrapped model weights/clients can be shared, but these counters cannot.
     def observe(self, image, action):
         self._check_time()
         tiling = action.tiling or self.config.tiling
-        tiles = tiling.grid_rows * tiling.grid_cols if action.spatial_mode == SpatialMode.TILED else 0
+        tiles = tiling.grid_rows * tiling.grid_cols if action.spatial_mode == SpatialMode.TILED else int(action.tile_id is not None)
         budget = self.config.budget
         if self.sam3_calls >= budget.max_sam3_calls:
             raise RuntimeError("SAM3 budget reached before a model call; increase it or disable bootstrap stages.")

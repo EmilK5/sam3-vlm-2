@@ -57,32 +57,6 @@ def render_candidate_boxes(image, graph, path):
     return {'bbox_image': str(path), 'bbox_count': drawn, 'bbox_outside_image_count': outside}
 
 
-def render_mvp_boxes(image, result, path, threshold):
-    """Draw the same hard-belief boxes that define F's reported count."""
-    canvas = image.convert('RGB').copy()
-    width, height = canvas.size
-    pen = ImageDraw.Draw(canvas)
-    line_width = max(2, round(min(width, height) / 400))
-    drawn, outside = 0, 0
-    for node in result.nodes.values():
-        if node.belief < threshold:
-            continue
-        x1, y1, x2, y2 = node.box
-        if not all(math.isfinite(v) for v in node.box) or x2 <= x1 or y2 <= y1:
-            raise ValueError('Final boxes must have finite original-image coordinates and positive area')
-        if x2 <= 0 or y2 <= 0 or x1 >= width or y1 >= height:
-            outside += 1
-            continue
-        clipped = (max(0, min(width - 1, round(x1))), max(0, min(height - 1, round(y1))),
-                   max(0, min(width - 1, round(x2))), max(0, min(height - 1, round(y2))))
-        pen.rectangle(clipped, outline=(255, 48, 48), width=line_width)
-        drawn += 1
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    canvas.save(path, format='PNG')
-    return {'bbox_image': str(path), 'bbox_count': drawn, 'bbox_outside_image_count': outside}
-
-
 def _write_csv(path, rows, fields):
     def cell(value):
         # Keep numeric values numeric, including negative signed errors. Protect
@@ -150,7 +124,7 @@ def write_final_outputs(report, output_dir):
         'sample_id', 'image_path', 'target', 'variant', 'gt_count', 'predicted_count', 'count_type', 'candidate_count',
         'absolute_error', 'signed_error', 'squared_error', 'relative_error_percent', 'success',
         'runtime_seconds', 'qwen_calls', 'sam3_calls', 'sam3_tiles', 'replans', 'stop_reason',
-        'roi', 'tiling_forced', 'bbox_count', 'bbox_outside_image_count', 'bbox_image',
+ 'bbox_count', 'bbox_outside_image_count', 'bbox_image',
         'failure_message', 'run_id',
     ])
     wide = []
@@ -164,8 +138,7 @@ def write_final_outputs(report, output_dir):
 
     def number(value):
         return f'{value:.3f}' if value is not None else '—'
-    has_f = any(v.startswith('F_') for v in variants)
-    lines = ['# Final A–F results' if has_f else '# Final A–E results', '',
+    lines = ['# Final A–E results', '',
         '| Variant | Complete runs | GT total (successful images) | Predicted total | MAE | RMSE | MRE (%) | Signed error | Mean seconds |',
         '|---|---:|---:|---:|---:|---:|---:|---:|---:|']
     for a in aggregate_rows:
@@ -173,24 +146,15 @@ def write_final_outputs(report, output_dir):
                      + ' | '.join(number(a[k]) for k in ['predicted_total_successful_images', 'MAE', 'RMSE',
                          'MRE_percent', 'mean_signed_error', 'mean_runtime_seconds']) + ' |')
     lines += ['',
-        ('A/B report hard candidate counts. C/D/E report the sum of target probabilities (soft counts). '
-         'F reports the VLM-first controller hard-belief count.' if has_f else
-         'A/B report hard candidate counts. C/D/E report the sum of target probabilities (soft counts).'),
+        'A/B report hard candidate counts. C/D/E report the sum of target probabilities (soft counts).',
         'A/B target passes use 0.20. C/D/E preserve the selected D bootstrap at 0.25 and Qwen positives at 0.20.',
         'C/D/E use the same prompt and negative-evidence policy. Qwen caps are 1/2/100. E keeps its '
         '1000-SAM3 cap and saturation policy with no separate tile, iteration or total-runtime cap.',
         'Metrics use successful runs only. CSV tables expose failures and MAE on the common successful image set. '
         'Relative error excludes zero-GT images; an unavailable value is blank in CSV.',
-        ('Each PNG contains only red rectangle outlines. A–E draw all final active candidates; F draws only '
-         'nodes above its hard-count threshold. Rectangle counts need not equal C/D/E soft counts.' if has_f else
-         'Each PNG contains only red rectangle outlines for final active candidates, without text, scores, IDs, '
-         'masks or confidence filtering. Rectangle counts need not equal soft counts.'),
+        'Each PNG contains only rectangle outlines for all final active candidates. Rectangle counts need not equal soft counts.',
         'Ground truth counts fruit on trees. Counts alone do not provide detection precision/recall or box IoU metrics.',
         'This 34-image development set informed parameter selection. The final run is not an independent held-out evaluation.']
-    if has_f:
-        lines.append('F asks Qwen for the fruit-on-tree ROI and first positive search before SAM3; it then uses '
-                     'SAM3-grounded exemplar refinement and ROI-local adaptive tiles. F uses a separate controller '
-                     'and its legacy replay validator is not applicable; its complete action trace is saved per run.')
     (output_dir / TABLE_FILES[3]).write_text('\n'.join(lines) + '\n')
 
     manifest = []

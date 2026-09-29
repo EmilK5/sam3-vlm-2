@@ -4,6 +4,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+import numpy as np
 
 from sam3_vlm.core.config import BootstrapConfig, SAM3Config, V4Config
 from sam3_vlm.core.geometry import Box, BoxGeometry
@@ -88,6 +89,7 @@ class DiscoveringSensor(DummySAM3Sensor):
         observation.detections = [Detection(
             detection_id=f'd{self.call_count}',
             geometry=BoxGeometry(Box(x, 0, x + 4, 4)), score=0.6,
+            raw_metadata={"mask": np.ones((4, 4), dtype=bool), "mask_offset_x": x, "mask_offset_y": 0},
         )]
         # Simulated model time passes the old five-minute limit.
         observation.runtime_ms = 10000

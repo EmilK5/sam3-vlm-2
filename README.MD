@@ -1,34 +1,28 @@
 # SAM3-VLM V4
 
-## Supported simple counting MVP
+The supported workflow is the A–E scene-graph pipeline. Bootstrap starts with the dataset target prompt over the full image. Optional refinement and density-based adaptive tiles reuse that prompt; there is no bootstrap ROI selection. All A–E deduplication uses mask IoU/IoM. See the [authoritative specification](docs/V4_DESIGN_SPEC.md).
 
-The supported single-image workflow is [`sam3_vlm.mvp`](src/sam3_vlm/mvp). It runs a full-image SAM3 target search, strong-seed exemplar refinement, density-triggered ROI tiles, optional fixed bootstrap regions, and up to a configured number of VLM-planned positive target searches. See the [authoritative MVP specification](docs/V4_DESIGN_SPEC.md). The M8 pipeline and the rest of this README describe historical research code and experiments.
+The single-image interface is the [Gradio app](docs/GUI.md). The fruit benchmark remains `python -m sam3_vlm.experiments.m8_smoke --stage pilot --pilot-suite final-ae`. The F controller and `final-af` suite have been removed.
+
+FSCD-147 now runs the same A–E models, with dataset-neutral Qwen scope and ground truth isolated to evaluation:
 
 ```bash
 python -m pip install -e .
 export QWEN_BASE_URL=http://localhost:8000/v1
 export QWEN_MODEL=your-qwen-model
-python -m sam3_vlm.mvp.cli image.jpg "green fruit" \
-  --config configs/mvp.json --output result.json --masks masks.npz
-```
-
-SAM3 model weights must be accessible to Transformers. The supplied `configs/mvp.json` enables exemplar refinement and adaptive tiling; set either feature switch to `false` for an ablation. For bootstrap-only counting, set `max_vlm_calls` to `0`; no Qwen endpoint is then needed. Set `max_actions_per_vlm_call` to `1` or a larger integer to compare single and multiple proposed actions per VLM call under the same budgets and evaluation set. The CLI saves counts, node boxes and beliefs, evidence, proposals, tiling decision, action trace, attempted/successful call counts, partial/error status, and runtime. Optional NPZ stores original-image canonical masks. Real model execution has not been validated by the controller's mock tests.
-
-### FSCD-147 adapter
-
-Place `images_384_VarV2/`, `Train_Test_Val_FSC_147.json`, `ImageClasses_FSC147.txt`, `annotation_FSC147_384.json`, and FSCD `instances_val.json` / `instances_test.json` under one dataset root. The FSCD configuration asks Qwen to choose the ROI and first search before SAM3 runs. It has no bootstrap search. Qwen can force ROI-local overlapping tiles when the first search is empty or the objects look small and crowded; strong SAM3 detections drive exemplar refinement.
-
-```bash
-python -m sam3_vlm.mvp.fscd_cli run /path/to/FSCD-147 outputs/fscd_val \
+python -m sam3_vlm.experiments.fscd147 run /path/to/FSCD-147 outputs/fscd_val \
   --split val --config configs/fscd147.json
-python -m sam3_vlm.mvp.fscd_cli evaluate /path/to/FSCD-147 \
-  outputs/fscd_val/predictions.jsonl --split val --config configs/fscd147.json \
-  --coco-output outputs/fscd_val/detections.json
+python -m sam3_vlm.experiments.fscd147 evaluate /path/to/FSCD-147 \
+  outputs/fscd_val/predictions.jsonl --split val
 ```
 
-The first command reads images and class names only. The second reads FSCD boxes, reports complete-split MAE/RMSE, and exports hard-count boxes for COCO AP/AP50 evaluation with the paper's evaluator. Use `--max-images N` on `run` for a smoke test; its partial split will not yield benchmark metrics. Tune on `val` and freeze the configuration before `test`. No real FSCD-147 benchmark run has been completed here.
+Use `--arm D` for only the two-round model, `--max-images 5` for a smoke subset, or `--dry-run` to check dataset paths without loading models. A/B require no Qwen endpoint. The default benchmark config requires a CUDA host and accessible SAM3 weights. Optional `pip install -e '.[evaluation]'` and evaluation `--ap` add COCO bbox AP/AP50 with an explicit 1000-detection cap.
 
-The same VLM-first controller is arm **F** of the [A–F fruit experiment](docs/M8_FINAL_AF_FRUITS.md). `--pilot-suite final-af` adds it to the existing A–E fruit manifest, tables, and box-image exports; `final-ae` remains available for reproducing the original five-arm study.
+Place `images_384_VarV2/`, `Train_Test_Val_FSC_147.json`, and `ImageClasses_FSC147.txt` under the dataset root for inference. Evaluation additionally needs FSCD `instances_val.json` / `instances_test.json`; `annotation_FSC147_384.json` is optional. Predictions save counts, boxes, scores, calls, errors, and the frozen configuration. MAE/RMSE and COCO exports require a complete successful split. Use a fresh output directory for each run. Tune on `val`, then freeze configuration for `test`.
+
+For a reproducible ten-image smoke test, a visual A–E gallery, and step-by-step GPU cluster setup, follow [the FSCD-147 cluster runbook](docs/FSCD147_CLUSTER_RUNBOOK.md).
+
+These changes have synthetic behavioral coverage; a real FSCD-147 benchmark requires the dataset and GPU models. The remaining research notes below describe the original architecture; the current specification supersedes their bootstrap/tiling/association details.
 
 ---
 

@@ -1,6 +1,7 @@
-"""Sensor-first bootstrap with optional locked context search domain."""
+"""Full-image target bootstrap, refinement and adaptive spatial sensing."""
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
+import time
 from typing import Any, Optional, Protocol
 
 from sam3_vlm.core.config import V4Config
@@ -17,6 +18,7 @@ from sam3_vlm.scene.state import DiscoveryState, SceneState
 from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.sensing.evidence import ContactSheetBuilder, QwenEvidencePack
 from sam3_vlm.sensing.tiling import DefaultTilingPolicy, TilingPolicy
+from sam3_vlm.sensing.adaptive_tiling import plan_adaptive_tiles
 
 
 @dataclass
@@ -38,7 +40,7 @@ class BootstrapStage(Protocol):
 
 
 class BootstrapPipeline:
-    """Bootstrap without Qwen: optional context lock, global target, optional tiled target."""
+    """Bootstrap without Qwen or ROI selection; every search uses the input target."""
 
     def __init__(
         self,
@@ -53,7 +55,7 @@ class BootstrapPipeline:
         self.sensor = sensor
         self.association_policy = association_policy or (
             IoUIoMAssociationPolicy()
-            if config.association.enable_iom_dedup
+            if config.association.enable_iom_dedup or config.association.mask_only
             else IoUAssociationPolicy()
         )
         self.belief_updater = belief_updater or BeliefUpdater()
@@ -76,10 +78,19 @@ class BootstrapPipeline:
         if self.recorder:
             self.recorder.record_sam3_action_selected(action.action_id, action.semantic_key)
             self.recorder.record_sam3_action_started(action.action_id)
+        budget = self.config.budget
+        if state.budget.sam3_calls >= budget.max_sam3_calls:
+            raise RuntimeError("SAM3 budget exhausted during bootstrap; partial artifacts retained")
+        if action.tile_id and budget.max_sam3_tiles is not None and state.budget.sam3_tiles >= budget.max_sam3_tiles:
+            raise RuntimeError("Tile budget exhausted during bootstrap; partial artifacts retained")
+        if budget.max_runtime_seconds is not None and max(
+            time.perf_counter() - self._bootstrap_start, state.budget.total_runtime_ms / 1000
+        ) >= budget.max_runtime_seconds:
+            raise RuntimeError("Runtime budget exhausted during bootstrap; partial artifacts retained")
         observation = self.sensor.observe(image, action)
         predicted_tiles = (
             action.tiling.grid_rows * action.tiling.grid_cols
-            if action.spatial_mode == SpatialMode.TILED and action.tiling else 0
+            if action.spatial_mode == SpatialMode.TILED and action.tiling else int(action.tile_id is not None)
         )
         state.budget.sam3_calls += 1
         state.budget.sam3_tiles += predicted_tiles
@@ -90,19 +101,6 @@ class BootstrapPipeline:
             self.recorder.record_sam3_observation(action, observation)
             self.recorder.record_budget_updated(state.budget.__dict__)
         return observation
-
-    @staticmethod
-    def _enclosing_detection_region(detections, img_w: int, img_h: int) -> Optional[BoxGeometry]:
-        if not detections:
-            return None
-        boxes = [det.geometry.bbox() for det in detections]
-        box = Box(
-            x1=max(0.0, min(b.x1 for b in boxes)),
-            y1=max(0.0, min(b.y1 for b in boxes)),
-            x2=min(float(img_w), max(b.x2 for b in boxes)),
-            y2=min(float(img_h), max(b.y2 for b in boxes)),
-        )
-        return BoxGeometry(box) if box.area > 0.0 else None
 
     def _update_beliefs(self, state: SceneState, action: SensingAction, observation, assoc_result) -> None:
         for node_id, obs_ref in assoc_result.matched_observations:
@@ -236,48 +234,7 @@ class BootstrapPipeline:
             qwen_round=0,
         )
 
-        # Pass 0: deployment-configured context localization.  It never enters
-        # the counted graph.  Green citrus config uses "tree canopy".
-        context_prompt = self.config.bootstrap.locked_context_prompt
-        if context_prompt:
-            context_action = SensingAction(
-                action_id=self.id_gen.next_action_id(),
-                semantic_key="locked_context_region",
-                prompt=context_prompt,
-                family=ActionFamily.CONTEXT,
-                spatial_mode=SpatialMode.GLOBAL,
-                source=ActionSource.CONTROLLER,
-                threshold=self.config.bootstrap.locked_context_threshold,
-            )
-            context_obs = self._execute_sensor_action(state, image, context_action)
-            state.semantic_memory.record_execution(
-                context_action,
-                context_obs.call_id,
-                new_nodes=0,
-                runtime_ms=context_obs.runtime_ms,
-            )
-            state.search_region_call_id = context_obs.call_id
-            context_region = self._enclosing_detection_region(context_obs.detections, img_w, img_h)
-            if context_region is not None:
-                state.search_region = context_region
-                state.search_region_locked = True
-                state.search_region_source = f"SAM3_CONTEXT:{context_prompt}"
-            elif self.config.bootstrap.locked_context_fallback_full_image:
-                state.search_region = full_image
-                state.search_region_locked = True
-                state.search_region_source = f"SAM3_CONTEXT_FALLBACK:{context_prompt}"
-                state.search_region_fallback_used = True
-            else:
-                raise RuntimeError(f"Locked context prompt {context_prompt!r} returned no usable region.")
-            if self.recorder:
-                self.recorder.record_semantic_memory_updated(state.semantic_memory.to_dict())
-                self.recorder.record_controller_state_updated({
-                    "search_region": state.search_region.bbox().as_tuple(),
-                    "search_region_locked": state.search_region_locked,
-                    "search_region_source": state.search_region_source,
-                    "search_region_fallback_used": state.search_region_fallback_used,
-                    "search_region_call_id": state.search_region_call_id,
-                })
+        self._bootstrap_start = time.perf_counter()
 
         # Pass 1: target bootstrap across the active search domain.
         global_action = SensingAction(
@@ -293,6 +250,22 @@ class BootstrapPipeline:
         )
         obs_global = self._execute_sensor_action(state, image, global_action)
         self._associate_discovery(state, global_action, obs_global)
+
+        adaptive_plan = None
+        if self.config.tiling.enable_adaptive:
+            seeds = [node for node in state.graph.active_nodes()
+                     if max((obs.score or 0 for obs in node.observations), default=0)
+                     >= self.config.tiling.adaptive_seed_min_score]
+            boxes = [tuple(int(v) for v in node.geometry.bbox().as_tuple()) for node in seeds]
+            adaptive_plan = plan_adaptive_tiles(
+                boxes, img_w, img_h,
+                density_threshold=self.config.tiling.adaptive_density_threshold,
+                min_tile_size=self.config.tiling.adaptive_min_tile_size,
+                max_tile_size=self.config.tiling.adaptive_max_tile_size,
+            )
+            state.discovery_state.adaptive_tiling = asdict(adaptive_plan)
+            if self.recorder:
+                self.recorder.record_discovery_state_updated(state.discovery_state.to_dict())
 
         pseudo = select_target_pseudoexemplars(
             state.graph,
@@ -334,7 +307,28 @@ class BootstrapPipeline:
             graph=state.graph,
         )
         tiled_executed = False
-        if tiling_decision.should_tile and self.config.bootstrap.enable_tiled_bootstrap:
+        if adaptive_plan is not None and self.config.bootstrap.enable_tiled_bootstrap:
+            gain = 0
+            for index, coords in enumerate(adaptive_plan.tiles):
+                if coords == (0, 0, img_w, img_h):
+                    continue  # The identical text-only full-image search already ran.
+                tile_action = SensingAction(
+                    action_id=self.id_gen.next_action_id(),
+                    semantic_key=state.target_class, prompt=user_prompt,
+                    family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.LOCAL,
+                    source=ActionSource.USER_BOOTSTRAP,
+                    roi=BoxGeometry(Box(*coords)), tile_id=f"adaptive_{index:03d}",
+                    threshold=self.config.sam3.default_threshold,
+                    semantic_prior={state.target_class: 1.0},
+                    correlation_group=state.target_class,
+                    positive_exemplar_ids=pseudo.node_ids if self.config.bootstrap.enable_pseudoexemplar_refinement else (),
+                    positive_exemplar_boxes=pseudo.boxes if self.config.bootstrap.enable_pseudoexemplar_refinement else (),
+                )
+                tile_obs = self._execute_sensor_action(state, image, tile_action)
+                gain += len(self._associate_discovery(state, tile_action, tile_obs).new_nodes)
+                tiled_executed = True
+            state.discovery_state.tiled_bootstrap_gain = float(gain)
+        elif tiling_decision.should_tile and self.config.bootstrap.enable_tiled_bootstrap:
             tiled_action = SensingAction(
                 action_id=self.id_gen.next_action_id(),
                 semantic_key=state.target_class,
@@ -398,6 +392,7 @@ class BootstrapPipeline:
                 "sam3_calls": state.budget.sam3_calls,
                 "active_nodes": len(state.graph.active_nodes()),
                 "tiled_bootstrap_executed": tiled_executed,
+                "adaptive_tiling": asdict(adaptive_plan) if adaptive_plan is not None else None,
                 "coverage_ratio": state.discovery_state.spatial_coverage.coverage_ratio,
                 "discovery_saturated": state.discovery_state.saturated,
                 "plateau_score": state.discovery_state.plateau_score,

@@ -249,7 +249,7 @@ class _CanopySensor:
         )
 
 
-def test_citrus_bootstrap_locks_enclosing_canopy_before_target_and_excludes_context_nodes(monkeypatch):
+def test_bootstrap_ignores_legacy_context_prompt_and_searches_full_image(monkeypatch):
     sensor = _CanopySensor([
         _det("canopy_a", 100, 120, 350, 600),
         _det("canopy_b", 300, 80, 700, 650),
@@ -269,20 +269,20 @@ def test_citrus_bootstrap_locks_enclosing_canopy_before_target_and_excludes_cont
         image_id="img", image="dummy.jpg", user_prompt="green citrus"
     )
     state = result.state
-    assert sensor.actions[0].prompt == "tree canopy"
+    assert len(sensor.actions) == 1
+    assert sensor.actions[0].prompt == "green citrus"
     assert sensor.actions[0].roi is None
-    assert sensor.actions[1].prompt == "green citrus"
-    assert sensor.actions[1].roi is None
-    assert sensor.actions[1].search_region.bbox().as_tuple() == (100, 80, 700, 650)
-    assert state.search_region.bbox().as_tuple() == (100, 80, 700, 650) 
-    assert state.search_region_locked
+    assert sensor.actions[0].search_region.bbox().as_tuple() == (0, 0, 1000, 1000)
+    assert state.search_region.bbox().as_tuple() == (0, 0, 1000, 1000)
+    assert not state.search_region_locked
     assert not state.search_region_fallback_used
-    assert len(state.graph.nodes) == 1  # canopy detections never become count nodes
-    assert state.budget.sam3_calls == 2
+    assert state.search_region_source == "FULL_IMAGE"
+    assert len(state.graph.nodes) == 1
+    assert state.budget.sam3_calls == 1
     assert state.discovery_state.spatial_coverage.coverage_ratio == pytest.approx(1.0)
 
 
-def test_citrus_bootstrap_canopy_failure_falls_back_to_full_image(monkeypatch):
+def test_empty_legacy_context_result_does_not_change_bootstrap(monkeypatch):
     sensor = _CanopySensor([])
     cfg = V4Config(
         bootstrap=BootstrapConfig(
@@ -299,11 +299,13 @@ def test_citrus_bootstrap_canopy_failure_falls_back_to_full_image(monkeypatch):
         image_id="img", image="dummy.jpg", user_prompt="green citrus"
     ).state
     assert state.search_region.bbox().as_tuple() == (0, 0, 1000, 1000)
-    assert state.search_region_locked
-    assert state.search_region_fallback_used
-    assert "FALLBACK" in state.search_region_source
-    assert sensor.actions[1].roi is None
-    assert sensor.actions[1].search_region.bbox().as_tuple() == (0, 0, 1000, 1000)
+    assert not state.search_region_locked
+    assert not state.search_region_fallback_used
+    assert state.search_region_source == "FULL_IMAGE"
+    assert len(sensor.actions) == 1
+    assert sensor.actions[0].roi is None
+    assert sensor.actions[0].search_region.bbox().as_tuple() == (0, 0, 1000, 1000)
+
 
 
 class _NoopPlanner:

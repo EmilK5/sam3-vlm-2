@@ -179,7 +179,7 @@ def test_pilot_variants_isolate_sam3_and_qwen_costs():
 
     sam3_bootstrap = variants["B_SAM3_Bootstrap"]
     assert sam3_bootstrap.config.budget.max_qwen_calls == 0
-    assert sam3_bootstrap.config.bootstrap.locked_context_prompt == "tree canopy"
+    assert sam3_bootstrap.config.bootstrap.locked_context_prompt is None
 
     one_round = variants["C_Qwen_OneRound"]
     assert one_round.config.budget.max_qwen_calls == 1

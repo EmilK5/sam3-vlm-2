@@ -12,6 +12,21 @@ class TilingConfig:
     grid_cols: int = 2
     overlap_ratio: float = 0.15
     tile_min_size: int = 512
+    enable_adaptive: bool = False
+    adaptive_density_threshold: float = 0.69
+    adaptive_seed_min_score: float = 0.50
+    adaptive_min_tile_size: int = 97
+    adaptive_max_tile_size: int = 1024
+
+    def __post_init__(self) -> None:
+        if self.grid_rows < 1 or self.grid_cols < 1 or self.tile_min_size < 1:
+            raise ValueError("tile grid and minimum size must be positive")
+        if not 0 <= self.overlap_ratio < 1:
+            raise ValueError("tile overlap must be in [0, 1)")
+        if not 0 <= self.adaptive_density_threshold <= 1 or not 0 <= self.adaptive_seed_min_score <= 1:
+            raise ValueError("adaptive density and seed thresholds must be in [0, 1]")
+        if not 1 <= self.adaptive_min_tile_size <= self.adaptive_max_tile_size:
+            raise ValueError("invalid adaptive tile size bounds")
 
 
 @dataclass(frozen=True)
@@ -39,10 +54,9 @@ class StoppingConfig:
 class BootstrapConfig:
     """Bootstrap pipeline configuration (V4 Design Spec §5).
 
-    ``locked_context_prompt`` is deliberately generic.  Dataset/deployment
-    configuration may use it to establish one SAM3-grounded search domain
-    before target bootstrap.  For the green-citrus deployment this is
-    ``"tree canopy"``.  The core controller never hard-codes that concept.
+    Bootstrap always searches the full image with the supplied target text.
+    The deprecated ``locked_context_*`` fields are accepted when loading older
+    configurations but have no effect on execution.
     """
 
     enable_tiled_bootstrap: bool = True
@@ -138,6 +152,8 @@ class AssociationConfig:
     iom_match_threshold: float = 0.90
     new_node_iom_threshold: float = 0.90
     tiled_nms_iom_threshold: float = 0.90
+    # Historical box-only fixtures may opt out; all supported A–E runs enable this.
+    mask_only: bool = False
 
 
 @dataclass(frozen=True)

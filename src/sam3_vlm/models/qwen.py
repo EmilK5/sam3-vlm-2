@@ -135,7 +135,7 @@ class RealQwenPlanner:
         "Separate direct visual observations, recorded sensor outcomes, and hypotheses in your rationale. "
         "Only claim that a previous query missed an appearance or searched a restricted lighting condition "
         "when the supplied evidence establishes that. A general target prompt does not imply a search "
-        "limited to bright objects. Low support is not proof of a missed fruit.\n"
+        "limited to bright objects. Low support is not proof of a missed target instance.\n"
         "Choose the next description from visible evidence and per-query outcomes, not a default assumption "
         "about shadows. If the cause of a miss is unknown, say so. Do not claim unseen objects exist. "
         "A repeated zero-gain appearance needs a different visible justification, not merely a synonym.\n"
@@ -356,7 +356,7 @@ class RealQwenPlanner:
                 ("the controller runs these as negative SAM3 queries at the same fixed threshold. "
                  if discovery_threshold == confounder_threshold else
                  f"the controller runs these as negative SAM3 queries at fixed threshold {confounder_threshold}. ") +
-                "Name visible basic non-target objects using 1–3 words. Do not write 'not fruit'. "
+                "Name visible basic non-target objects using 1–3 words. Do not write 'not target'. "
                 "Keep frozen slot meanings unchanged; do not rename existing labels.",
             )
         text_bytes = len((system_prompt + text).encode("utf-8"))

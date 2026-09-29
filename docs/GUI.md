@@ -91,12 +91,15 @@ another preset resets the controls, including nullable count cutoffs.
   Hard mode counts a node if `P(target) > cutoff`; commitment mode gives nodes
   with `P(target) >= cutoff` a contribution of one and keeps others soft. These
   two modes are mutually exclusive and apply only with Qwen enabled.
-- **Context prompt:** a SAM3 localization request, normally `tree canopy`.
-  Blank searches the full image. This does not edit Qwen's fixed tree-only scope.
+- **Bootstrap:** always starts with the supplied target on the full image.
+  There is no context/ROI selection. Fruit presets retain Qwen's tree-fruit scope;
+  FSCD-147 uses a separate dataset-neutral configuration.
 - **Negatives:** separate object queries such as a Qwen-generated leaf description.
   They update existing candidates. They do not add negative detections as fruit.
   The neutral-miss switch controls whether an absent negative is neutral.
-- **Tiling/exemplars:** control search crops and sensor-selected positive boxes.
+- **Tiling/exemplars:** density-based adaptive tiles cover the full image;
+  separate controls set the density/seed thresholds and tile size bounds.
+  Exemplars are strong SAM3 detections. Duplicate suppression uses mask IoU/IoM.
   The bootstrap tile switch does not prohibit Qwen from proposing a tiled query.
 - **Utility/cleanup:** expose the existing controller's research options. Cleanup
   remains off by default. With negatives enabled, accepted target/negative queries

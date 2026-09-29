@@ -230,6 +230,13 @@ class MockSAM3Adapter:
                     )
                 )
 
+        for det in detections:
+            if "mask" not in det.raw_metadata:
+                b = det.geometry.bbox()
+                x1, y1, x2, y2 = (int(v) for v in b.as_tuple())
+                det.raw_metadata = dict(det.raw_metadata, mask=np.ones((y2-y1, x2-x1), dtype=bool),
+                                        mask_offset_x=x1, mask_offset_y=y1)
+
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         return SAM3Observation(
             call_id=call_id,

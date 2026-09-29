@@ -299,7 +299,7 @@ def write_compact_review(report, output_dir):
             notes = final_evaluation_summary(report)
             (output_dir / "mentor_summary.md").write_text(notes)
             bundle.writestr("mentor_summary.md", notes)
-        if report["metadata"].get("pilot_suite") in {"final-ae", "final-af"}:
+        if report["metadata"].get("pilot_suite") in {"final-ae"}:
             from sam3_vlm.experiments.final_outputs import TABLE_FILES
             for name in TABLE_FILES:
                 bundle.write(output_dir / name, name)

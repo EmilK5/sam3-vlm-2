@@ -1,11 +1,7 @@
-"""IoU + IoM association for the active V4/M8 counting path.
+"""Mask IoU/IoM association for A–E, with a historical box-fixture mode.
 
-IoU is reliable when two observations have comparable scale.  IoM
-(intersection over the smaller box) is the complementary containment signal:
-it remains near one when a tight SAM3 box sits inside a looser box for the same
-physical object.  The dual gate prevents those nested detections from becoming
-multiple graph nodes without globally lowering the IoU threshold for nearby
-fruits.
+Supported runs compare binary mask pixels in original-image coordinates.
+IoM associates crop fragments without letting box overlap merge disjoint masks.
 """
 
 from __future__ import annotations
@@ -13,7 +9,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from sam3_vlm.core.config import AssociationConfig
-from sam3_vlm.core.geometry import Box, BoxGeometry
+from sam3_vlm.core.geometry import Box, BoxGeometry, MaskGeometry, mask_overlap, detection_mask_geometry
 from sam3_vlm.core.id_generator import IDGenerator
 from sam3_vlm.core.types import Detection, NodeObservationRef, ObservationRelation
 from sam3_vlm.scene.association import AssociationResult
@@ -61,17 +57,22 @@ def deduplicate_observation_detections(
     )
     kept_ranked: List[Detection] = []
     kept_indices = set()
+    geometries = {id(det): detection_mask_geometry(det) for det in detections} if config.mask_only else {}
     for index, detection in ranked:
-        candidate = detection.geometry.bbox()
-        if any(
-            _same_detection(
-                candidate,
-                survivor.geometry.bbox(),
-                iou_threshold=config.tiled_nms_threshold,
-                iom_threshold=config.tiled_nms_iom_threshold,
-            )
-            for survivor in kept_ranked
-        ):
+        candidate = geometries.get(id(detection), detection.geometry.bbox())
+        duplicate = False
+        for survivor in kept_ranked:
+            if config.mask_only:
+                iou, iom = mask_overlap(candidate, geometries[id(survivor)])
+                duplicate = (iou >= config.tiled_nms_threshold or
+                             (config.enable_iom_dedup and iom >= config.tiled_nms_iom_threshold))
+            else:
+                duplicate = _same_detection(candidate, survivor.geometry.bbox(),
+                    iou_threshold=config.tiled_nms_threshold,
+                    iom_threshold=config.tiled_nms_iom_threshold)
+            if duplicate:
+                break
+        if duplicate:
             continue
         kept_ranked.append(detection)
         kept_indices.add(index)
@@ -99,7 +100,8 @@ class IoUIoMAssociationPolicy:
         active_nodes = graph.active_nodes()
 
         for det in deduplicate_observation_detections(detections, config):
-            det_box = det.geometry.bbox()
+            det_geometry = detection_mask_geometry(det) if config.mask_only else BoxGeometry(det.geometry.bbox())
+            det_box = det_geometry.bbox()
             best_node: Optional[Node] = None
             best_iou = 0.0
             best_iom = 0.0
@@ -108,7 +110,9 @@ class IoUIoMAssociationPolicy:
 
             for node in active_nodes:
                 node_box = node.geometry.bbox()
-                iou, iom = dual_overlap(det_box, node_box)
+                iou, iom = mask_overlap(det_geometry, node.geometry) if config.mask_only else dual_overlap(det_box, node_box)
+                if config.mask_only and not config.enable_iom_dedup:
+                    iom = 0.0
                 iom_candidate = iom >= config.new_node_iom_threshold
                 if iou >= config.new_node_iou_threshold or iom_candidate:
                     overlapping_nodes.append((node, iou, iom))
@@ -143,6 +147,9 @@ class IoUIoMAssociationPolicy:
                 score=det.score,
                 association_score=max(best_iou, best_iom),
             )
+            # Keep the complete mask when later tiles return clipped fragments.
+            if config.mask_only and det_geometry.area() > best_node.geometry.area() and len(overlapping_nodes) == 1:
+                best_node.geometry = det_geometry
             best_node.observations.append(obs_ref)
             best_node.diagnostics.support_count += 1
             best_node.diagnostics.independent_semantic_support_count = len(
@@ -174,7 +181,7 @@ class IoUIoMAssociationPolicy:
             )
             new_node = Node(
                 node_id=id_gen.next_node_id(),
-                geometry=BoxGeometry(det.geometry.bbox()),
+                geometry=detection_mask_geometry(det) if config.mask_only else BoxGeometry(det.geometry.bbox()),
                 created_by_call_id=sam3_call_id,
                 observations=[obs_ref],
             )
@@ -188,7 +195,10 @@ class IoUIoMAssociationPolicy:
             for other in active_after:
                 if other.node_id == node.node_id:
                     continue
-                iou, iom = dual_overlap(node_box, other.geometry.bbox())
+                iou, iom = (mask_overlap(node.geometry, other.geometry) if config.mask_only
+                            else dual_overlap(node_box, other.geometry.bbox()))
+                if config.mask_only and not config.enable_iom_dedup:
+                    iom = 0.0
                 max_overlap = max(max_overlap, iou, iom)
             node.diagnostics.duplicate_risk = max_overlap
 

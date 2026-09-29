@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
-from sam3_vlm.core.geometry import Box, BoxGeometry, Geometry
+from sam3_vlm.core.geometry import Box, BoxGeometry, Geometry, MaskGeometry
 from sam3_vlm.core.types import (
     ClassBelief,
     NodeObservationRef,
@@ -52,7 +52,7 @@ class Node:
     def to_dict(self) -> Dict[str, Any]:
         """Serialize node state to a serializable dictionary."""
         box = self.geometry.bbox()
-        return {
+        result = {
             "node_id": self.node_id,
             "box": box.as_tuple(),
             "coordinate_space": box.coordinate_space,
@@ -89,6 +89,12 @@ class Node:
             "status": self.status.value,
             "merged_from": list(self.merged_from),
         }
+        if isinstance(self.geometry, MaskGeometry):
+            result["mask_geometry"] = {
+                "offset": list(self.geometry.offset), "pixel_area": self.geometry.pixel_area,
+                "mask_artifact": self.geometry.mask_artifact,
+            }
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Node":
@@ -97,6 +103,9 @@ class Node:
         coord_space = data.get("coordinate_space", "image")
         box = Box(x1=box_coords[0], y1=box_coords[1], x2=box_coords[2], y2=box_coords[3], coordinate_space=coord_space)
         geometry = BoxGeometry(box=box)
+        if "mask_geometry" in data:
+            mask = data["mask_geometry"]
+            geometry = MaskGeometry(box, None, tuple(mask["offset"]), mask["pixel_area"], mask["mask_artifact"])
 
         cb_data = data.get("class_belief", {})
         class_belief = ClassBelief(
