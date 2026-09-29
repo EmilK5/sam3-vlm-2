@@ -8,6 +8,10 @@ Qwen sees the image and tree-only scope before any SAM3 search, selects an ROI
 and positive target prompt, then SAM3 may refine strong detections with
 pseudoexemplars and search overlapping ROI-local tiles. There is no bootstrap
 search in F. Its frozen settings come from `configs/fscd147.json`.
+With the standard local Ollama endpoint (`:11434/v1`), F sends its VLM requests
+through Ollama's native JSON chat API with thinking disabled, so the ROI plan
+arrives in the answer field. Other OpenAI-compatible endpoints retain the
+existing chat-completions transport.
 
 F reports the number of nodes above its hard-belief threshold. A/B report hard
 candidate counts; C/D/E report soft probability sums. The table labels each

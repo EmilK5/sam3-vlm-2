@@ -1,7 +1,9 @@
 import json
+from io import BytesIO
 
 import numpy as np
 from PIL import Image
+import pytest
 
 from sam3_vlm.mvp.adapters import RealSAM3, RealVLM
 from sam3_vlm.mvp.cli import result_dict
@@ -100,6 +102,48 @@ def test_vlm_first_prompt_requests_roi_and_force_tiling():
     assert "Image size: (40, 30)" in captured["messages"][1]["content"][0]["text"]
     assert adapter.request_log[0]["system"] == system
     assert "Image size: (40, 30)" in adapter.request_log[0]["user_text"]
+
+
+def test_ollama_vlm_uses_native_json_without_thinking(monkeypatch):
+    adapter = RealVLM(base_url="http://127.0.0.1:11434/v1", model="qwen-test",
+                      api_key="ollama")
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        captured["payload"] = json.loads(request.data)
+        return BytesIO(b'{"message":{"content":"{\\"roi\\":null,\\"tile_mode\\":\\"auto\\",\\"actions\\":[]}"},"done_reason":"stop"}')
+
+    monkeypatch.setattr("sam3_vlm.mvp.adapters.urlopen", fake_urlopen)
+    result = adapter.propose_initial(Image.new("RGB", (8, 8)), "green fruit",
+                                     {"max_actions": 2})
+    assert json.loads(result)["roi"] is None
+    assert captured["url"] == "http://127.0.0.1:11434/api/chat"
+    assert captured["timeout"] == 45.0
+    payload = captured["payload"]
+    assert payload["model"] == "qwen-test"
+    assert payload["stream"] is False and payload["format"] == "json"
+    assert payload["think"] is False
+    assert payload["options"] == {"temperature": 0, "num_predict": 512}
+    assert len(payload["messages"][1]["images"]) == 1
+    assert "green fruit" in payload["messages"][1]["content"]
+
+
+def test_vlm_reports_empty_openai_content_with_finish_reason():
+    adapter = RealVLM.__new__(RealVLM)
+    adapter.model = "qwen-test"
+
+    class Completions:
+        def create(self, **kwargs):
+            choice = type("Choice", (), {"message": type("Message", (), {"content": ""})(),
+                                         "finish_reason": "length"})()
+            return type("Response", (), {"choices": [choice],
+                                         "usage": type("Usage", (), {"completion_tokens": 512})()})()
+
+    adapter.client = type("Client", (), {"chat": type("Chat", (), {"completions": Completions()})()})()
+    with pytest.raises(ValueError, match="finish_reason=length, completion_tokens=512"):
+        adapter._complete("Return JSON", [{"type": "text", "text": "target"}])
 
 
 def test_evaluation_does_not_change_inference_result():

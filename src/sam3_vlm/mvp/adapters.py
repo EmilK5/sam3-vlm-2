@@ -7,6 +7,9 @@ from io import BytesIO
 import json
 import os
 from typing import Any
+from urllib.error import HTTPError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 import numpy as np
 from PIL import Image
@@ -60,14 +63,22 @@ class RealVLM:
                  api_key: str | None = None, scope: str | None = None,
                  max_output_tokens: int = 512, timeout_seconds: float = 45.0,
                  reasoning_effort: str | None = "none"):
-        from openai import OpenAI
-
         self.model = model or os.environ.get("QWEN_MODEL")
         endpoint = base_url or os.environ.get("QWEN_BASE_URL")
         if not self.model or not endpoint:
             raise ValueError("QWEN_MODEL and QWEN_BASE_URL are required")
-        self.client = OpenAI(base_url=endpoint, api_key=api_key or os.environ.get("QWEN_API_KEY") or "EMPTY",
-                             max_retries=0)
+        self.api_key = api_key or os.environ.get("QWEN_API_KEY") or "EMPTY"
+        parsed = urlsplit(endpoint)
+        # Ollama's native API reliably disables Qwen thinking. Some Ollama
+        # versions leave OpenAI-compatible message.content empty instead.
+        self.ollama_chat_url = (urlunsplit((parsed.scheme, parsed.netloc, "/api/chat", "", ""))
+                                if parsed.port == 11434 and parsed.path.rstrip("/") == "/v1"
+                                else None)
+        if self.ollama_chat_url is None:
+            from openai import OpenAI
+            self.client = OpenAI(base_url=endpoint, api_key=self.api_key, max_retries=0)
+        else:
+            self.client = None
         self.scope = scope.strip() if scope else None
         self.request_log: list[dict[str, str]] = []
         self.max_output_tokens = max_output_tokens
@@ -82,6 +93,8 @@ class RealVLM:
         return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
 
     def _complete(self, instructions: str, content: list[dict[str, Any]]) -> Any:
+        if getattr(self, "ollama_chat_url", None):
+            return self._complete_ollama(instructions, content)
         options = {"model": self.model,
                    "messages": [{"role": "system", "content": instructions},
                                 {"role": "user", "content": content}],
@@ -93,7 +106,55 @@ class RealVLM:
         if reasoning_effort is not None:
             options["extra_body"] = {"reasoning_effort": reasoning_effort}
         response = self.client.chat.completions.create(**options)
-        return response.choices[0].message.content
+        choice = response.choices[0]
+        answer = choice.message.content
+        if not isinstance(answer, str) or not answer.strip():
+            usage = getattr(response, "usage", None)
+            raise ValueError("Qwen returned empty message.content "
+                             f"(finish_reason={getattr(choice, 'finish_reason', None)}, "
+                             f"completion_tokens={getattr(usage, 'completion_tokens', None)}); "
+                             "check whether the server spent its output budget on thinking")
+        return answer
+
+    def _complete_ollama(self, instructions: str, content: list[dict[str, Any]]) -> str:
+        images = []
+        user_text = []
+        for part in content:
+            if part["type"] == "text":
+                user_text.append(part["text"])
+            elif part["type"] == "image_url":
+                url = part["image_url"]["url"]
+                if not url.startswith("data:image/") or "," not in url:
+                    raise ValueError("Ollama requires embedded image data")
+                images.append(url.split(",", 1)[1])
+            else:
+                raise ValueError(f"Unsupported Qwen content part: {part['type']}")
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": instructions},
+                         {"role": "user", "content": "\n".join(user_text), "images": images}],
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0, "num_predict": self.max_output_tokens},
+        }
+        if self.reasoning_effort is not None:
+            payload["think"] = (False if self.reasoning_effort == "none"
+                                else self.reasoning_effort)
+        request = Request(self.ollama_chat_url, data=json.dumps(payload).encode("utf-8"),
+                          headers={"Content-Type": "application/json",
+                                   "Authorization": f"Bearer {self.api_key}"}, method="POST")
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                result = json.load(response)
+        except HTTPError as exc:
+            detail = exc.read(500).decode("utf-8", errors="replace")
+            raise RuntimeError(f"Ollama native Qwen request failed: HTTP {exc.code}: {detail}") from exc
+        answer = result.get("message", {}).get("content")
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("Ollama returned empty message.content "
+                             f"(done_reason={result.get('done_reason')}); "
+                             "no VLM plan was available")
+        return answer
 
     def propose(self, image: Image.Image, target: str, state: dict[str, Any]) -> Any:
         limit = state["max_actions"]
