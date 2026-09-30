@@ -18,6 +18,7 @@ dependencies = [
     "opencv-python",
     "openai",
     "torchvision",
+    "inflect==7.5.0",
 ]
 
 [project.optional-dependencies]

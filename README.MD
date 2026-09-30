@@ -28,6 +28,8 @@ To share results without the images, run `python -m sam3_vlm.experiments.fscd147
 
 The report separates candidate recovery from changes in soft target mass. Optional `--annotation-audit audit.json` adds annotation-gap notes and separately scored manual counts without changing official scores; see the cluster runbook for the format.
 
+Deployment configs enable singular SAM3 noun phrases across bootstrap and Qwen queries. Reinstall with `python -m pip install -e .` after updating code to install the inflection dependency. FSCD `run --no-singular-prompts` reproduces the plural-prompt policy for comparison; `--singular-prompts` enables the new policy explicitly. Dataset labels remain unchanged, and summaries show executed queries.
+
 These changes have synthetic behavioral coverage; a real FSCD-147 benchmark requires the dataset and GPU models. The remaining research notes below describe the original architecture; the current specification supersedes their bootstrap/tiling/association details.
 
 ---

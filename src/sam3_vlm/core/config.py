@@ -118,6 +118,7 @@ class SAM3Config:
     qwen_discovery_threshold: Optional[float] = None
     qwen_confounder_threshold: Optional[float] = None
     qwen_discovery_use_exemplars: bool = True
+    singularize_prompts: bool = False
 
     def threshold_for_family(self, family) -> float:
         name = getattr(family, "value", family)
@@ -128,6 +129,8 @@ class SAM3Config:
     def __post_init__(self) -> None:
         if not (0.0 <= self.qwen_prompt_threshold <= 1.0):
             raise ValueError("qwen_prompt_threshold must be in [0, 1]")
+        if type(self.singularize_prompts) is not bool:
+            raise ValueError("singularize_prompts must be boolean")
         for name in ("qwen_discovery_threshold", "qwen_confounder_threshold"):
             value = getattr(self, name)
             if value is not None and not (0.0 <= value <= 1.0):

@@ -56,7 +56,7 @@ class TraceSensor(MockSAM3Adapter):
 
     def observe(self, image, action):
         self.actions.append(action)
-        assert action.prompt in {'green apples', 'bottle caps'}
+        assert action.prompt in {'green apple', 'bottle cap'}
         assert action.search_region.bbox().as_tuple() == (0, 0, 384, 384)
         return super().observe(image, action)
 
@@ -193,6 +193,19 @@ def test_fscd_cli_dry_run_needs_no_models_or_annotations(dataset, tmp_path, monk
     result = json.loads(capsys.readouterr().out)
     assert result == {'split_images': 2, 'run_images': 1, 'variants': ['D_Qwen_TwoRound']}
     assert not (tmp_path / 'dry').exists()
+
+
+@pytest.mark.parametrize('flag,expected', [('--singular-prompts', True), ('--no-singular-prompts', False)])
+def test_cli_singularization_override_is_applied_before_variants(dataset, tmp_path, monkeypatch, flag, expected):
+    from sam3_vlm.experiments import fscd147
+    observed = []
+    original = fscd147.select_variants
+    def select(config, arm=None):
+        observed.append(config.sam3.singularize_prompts)
+        return original(config, arm)
+    monkeypatch.setattr(fscd147, 'select_variants', select)
+    assert fscd147.main(['run', str(dataset.root), str(tmp_path / 'dry'), '--dry-run', flag]) == 0
+    assert observed == [expected]
 
 
 def test_optional_coco_ap_reports_perfect_and_empty_detections(dataset):

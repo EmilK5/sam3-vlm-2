@@ -84,6 +84,7 @@ def _artifact_diagnostics(prediction_path, row):
 
     events_path = run_dir / "events.jsonl"
     event_count = matched = new = raw_detections = 0
+    executed_prompts = Counter()
     if events_path.exists():
         with events_path.open() as stream:
             for line_number, line in enumerate(stream, 1):
@@ -105,12 +106,18 @@ def _artifact_diagnostics(prediction_path, row):
                     if data.get("adaptive_tiling") is not None:
                         result["adaptive_tiling"] = data["adaptive_tiling"]
                 elif kind == "SAM3_ACTION_COMPLETED":
-                    raw_detections += data.get("observation", {}).get("num_detections", 0)
+                    observation = data.get("observation", {})
+                    raw_detections += observation.get("num_detections", 0)
+                    if isinstance(observation.get("prompt"), str):
+                        executed_prompts[observation["prompt"]] += 1
                 elif kind == "ASSOCIATION_COMPLETED":
                     matched += data.get("matched_nodes", 0)
                     new += data.get("new_nodes", 0)
         result.update(event_count=event_count, raw_detections=raw_detections,
                       association_matches=matched, association_new_nodes=new)
+        result["executed_sam3_prompts"] = [{"prompt": _text(prompt, 150), "calls": calls}
+                                           for prompt, calls in list(executed_prompts.items())[:12]]
+        result["omitted_sam3_prompts"] = max(0, len(executed_prompts) - 12)
 
     graph_path = run_dir / "artifacts" / "graph" / "final_graph.json"
     if graph_path.exists():
@@ -402,6 +409,9 @@ def render_summary(report):
             for example in diag.get("qwen_first_last", []):
                 if example["prompts"]:
                     lines.append(f"  Qwen proposals: {'; '.join(example['prompts'])}; accepted actions={example['accepted_actions']}.")
+            if diag.get("executed_sam3_prompts"):
+                lines.append("  Executed SAM3 queries: " + "; ".join(
+                    f"{item['prompt']} ({item['calls']} calls)" for item in diag['executed_sam3_prompts']) + ".")
         if a["artifact_warning_runs"]:
             lines += ["", f"Artifact warnings in {a['artifact_warning_runs']} runs:", ""]
             for warning in a["artifact_warnings"]:

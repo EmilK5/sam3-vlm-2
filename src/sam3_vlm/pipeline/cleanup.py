@@ -7,6 +7,7 @@ from sam3_vlm.core.types import ActionFamily, ActionSource, SpatialMode
 from sam3_vlm.scene.graph import SceneGraph
 from sam3_vlm.scene.node import Node
 from sam3_vlm.sensing.action import SensingAction
+from sam3_vlm.sensing.prompts import sensor_prompt
 from sam3_vlm.core.id_generator import IDGenerator
 
 
@@ -133,7 +134,7 @@ class CleanupController:
         action = SensingAction(
             action_id=self.id_gen.next_action_id(),
             semantic_key=f"cleanup_{target_class}",
-            prompt=user_prompt or "ambiguous object",
+            prompt=sensor_prompt(user_prompt or "ambiguous object", config),
             family=ActionFamily.VERIFICATION,
             spatial_mode=mode,
             source=ActionSource.CLEANUP,

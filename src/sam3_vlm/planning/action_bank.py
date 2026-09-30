@@ -10,6 +10,7 @@ from sam3_vlm.core.types import ActionSource, SpatialMode
 from sam3_vlm.planning.qwen_planner import PlannerOutput, ProposedAction
 from sam3_vlm.scene.belief import SemanticMemory, canonical_belief_classes
 from sam3_vlm.sensing.action import SensingAction, validate_sam3_prompt_contract
+from sam3_vlm.sensing.prompts import sensor_prompt
 
 
 def canonicalize_semantic_key(key: str) -> str:
@@ -157,7 +158,7 @@ class ActionBankGenerator:
             )
 
             existing_prompts.update(
-                p.strip().lower()
+                (sensor_prompt(p, config) if config else p).strip().lower()
                 for p in record.prompts
             )
 
@@ -191,7 +192,7 @@ class ActionBankGenerator:
             )
 
             existing_prompts.add(
-                entry.action.prompt.strip().lower()
+                (sensor_prompt(entry.action.prompt, config) if config else entry.action.prompt).strip().lower()
             ) 
 
         allowed_classes = set(allowed_belief_classes or [])
@@ -210,9 +211,13 @@ class ActionBankGenerator:
                 self._reject(proposal, ActionRejectionReason.EMPTY_PROMPT, "sam3_prompt is empty")
                 continue
 
+            # Preserve the backend's raw proposal for audit; the executable
+            # prompt and duplicate/history checks share one normalized form.
+            executable_prompt = sensor_prompt(proposal.prompt, config) if config else proposal.prompt
+
             if enforce_qwen_contract:
                 try:
-                    validate_sam3_prompt_contract(proposal.prompt)
+                    validate_sam3_prompt_contract(executable_prompt)
                 except ValueError as exc:
                     self._reject(
                         proposal,
@@ -292,7 +297,7 @@ class ActionBankGenerator:
                 )
                 continue
 
-            clean_prompt = proposal.prompt.strip().lower()
+            clean_prompt = executable_prompt.strip().lower()
 
             if clean_prompt in existing_prompts:
                 self._reject(
@@ -306,7 +311,7 @@ class ActionBankGenerator:
                 proposal.correlation_group
                 or derive_correlation_group(
                     canonical_key,
-                    proposal.prompt,
+                    executable_prompt,
                 )
             )
 
@@ -373,7 +378,7 @@ class ActionBankGenerator:
             action = SensingAction(
                 action_id=id_gen.next_action_id(),
                 semantic_key=canonical_key,
-                prompt=proposal.prompt,
+                prompt=executable_prompt,
                 family=proposal.family,
                 threshold=(config.sam3 if config is not None else SAM3Config()).threshold_for_family(proposal.family),
                 spatial_mode=proposal.suggested_spatial_mode,

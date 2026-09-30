@@ -16,7 +16,7 @@ A/B bootstrap uses threshold 0.20. C/D/E retains the selected D policy: bootstra
 
 ## Bootstrap
 
-The first model call is a text-only SAM3 search over the entire image, using exactly the first supplied dataset target description. There is no Qwen planning or SAM3 context localization before this call. Bootstrap never selects or locks an ROI. Legacy `locked_context_*` configuration fields are ignored, and the GUI no longer exposes them.
+The first model call is a text-only SAM3 search over the entire image, using the first supplied dataset target description. Supported deployment configs now enable `sam3.singularize_prompts`: the executable description is singularized without selecting another label or rewriting the target category. There is no Qwen planning or SAM3 context localization before this call. Bootstrap never selects or locks an ROI. Legacy `locked_context_*` configuration fields are ignored, and the GUI no longer exposes them.
 
 All optional bootstrap refinement and tile calls reuse that same target text. Strong SAM3 seeds (score at least 0.60, at most five) may supply positive pseudoexemplar boxes for one full-image refinement pass. Those boxes come from SAM3 detections, never ground-truth annotations. Only exemplars fully contained in a tile are passed to its sensor crop. A disables both refinement and tiling. B–E preserve the switches for these two features.
 
@@ -49,6 +49,10 @@ IoM containment requires a mask area ratio at most `iom_max_area_ratio` (4), unl
 Persistent node JSON contains mask area, offset, crop-boundary provenance, and an NPZ artifact pointer; binary arrays stay outside JSON. Mask artifacts include their pixel data, and observation records include offsets. Replay reconstructs graph metadata and beliefs without loading model weights or inlining masks.
 
 ## Counting unit and confidence diagnostics
+
+With `sam3.singularize_prompts`, bootstrap, refinement, fixed/adaptive tiles, all Qwen target/negative queries, and optional cleanup use deterministic English noun inflection (`inflect==7.5.0`). For example, `polka dots` becomes `polka dot`, `bottle caps` becomes `bottle cap`, `chicken wings` becomes `chicken wing`, and `leaves` becomes `leaf`. Already singular words such as `glass`, `citrus`, and `lens`, uninflected words, and naturally plural names for one object such as `scissors` and `sunglasses` are protected. Compound modifiers are inflected too: `donuts tray` becomes `donut tray`; morphology does not decide whether that target should instead mean individual donuts.
+
+The original dataset label remains in the run manifest, prediction target, scene state, and Qwen evidence. Raw Qwen proposals remain auditable; normalization precedes prompt validation, duplicate checks, action creation, and semantic history. Singular/plural forms cannot consume separate queries. Observation events and compact summaries record the actual executed SAM3 text. Qwen receives singular-query guidance and the normalized target alongside its original text. Config and CLI `--singular-prompts`/`--no-singular-prompts` permit a controlled comparison on identical samples without changing count, belief, tiling, or budget policies. Historical fixtures retain the opt-out dataclass default.
 
 All Qwen instruction versions preserve the supplied target's individual counting unit. For targets such as polka dots, search variants must describe individual dots, not their supporting sphere or fabric. Parent surfaces containing targets must not serve as negative queries. Vocabulary remains open, with the existing short-prompt and target-action contract; these are planner instructions rather than a hardcoded category allowlist.
 

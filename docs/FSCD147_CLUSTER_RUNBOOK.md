@@ -261,7 +261,7 @@ export FSCD_SAMPLE="$PWD/data/fscd_val10_seed42"
 export FSCD_RUN="$PWD/outputs/fscd_val10_seed42_ae_dedup_v2"
 python -u -m sam3_vlm.experiments.fscd147 run \
   "$FSCD_SAMPLE" "$FSCD_RUN" --split val \
-  --config configs/fscd147.json > logs/fscd_val10_dedup_v2.log 2>&1
+  --config configs/fscd147.json --no-singular-prompts > logs/fscd_val10_dedup_v2.log 2>&1
 python -m sam3_vlm.experiments.fscd147_smoke review \
   "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val
 python -m sam3_vlm.experiments.fscd147_smoke summary \
@@ -299,6 +299,34 @@ Official MAE/RMSE and AP continue to use the original annotations. The report
 adds a separately labelled count evaluation only for manually audited images,
 and leaves metrics unavailable if any of those predictions failed or are missing.
 The audit never enters inference and does not modify dataset annotations.
+
+### Singular-prompt comparison on the same sample
+
+After copying the latest source from your Mac, activate the existing environment
+and reinstall the editable package to add its pinned `inflect` dependency. Keep
+the same Ollama endpoint, model profile, and ten-image sample:
+
+```bash
+python -m pip install -e .
+export FSCD_SAMPLE="$PWD/data/fscd_val10_seed42"
+export FSCD_RUN="$PWD/outputs/fscd_val10_seed42_ae_singular_v1"
+python -u -m sam3_vlm.experiments.fscd147 run \
+  "$FSCD_SAMPLE" "$FSCD_RUN" --split val \
+  --config configs/fscd147.json --singular-prompts \
+  > logs/fscd_val10_singular_v1.log 2>&1
+python -m sam3_vlm.experiments.fscd147_smoke review \
+  "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val
+python -m sam3_vlm.experiments.fscd147_smoke summary \
+  "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val
+```
+
+All five arms use singularized executable prompts; original dataset targets stay
+in metadata. The summary's executed-query list lets you verify the conversion.
+Singularization is enabled in the current deployment configs; the explicit flag
+makes the experiment clear. For a fresh matched plural control, repeat with
+`--no-singular-prompts`, another unused output directory, and another log file.
+Every other policy remains the same. Count agreement alone cannot establish
+better mask quality, so inspect the gallery as well as the metrics.
 
 ## 8. Run the complete validation split only after reviewing the gallery
 

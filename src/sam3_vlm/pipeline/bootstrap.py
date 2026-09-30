@@ -19,6 +19,7 @@ from sam3_vlm.sensing.action import SensingAction
 from sam3_vlm.sensing.evidence import ContactSheetBuilder, QwenEvidencePack
 from sam3_vlm.sensing.tiling import DefaultTilingPolicy, TilingPolicy
 from sam3_vlm.sensing.adaptive_tiling import plan_adaptive_tiles
+from sam3_vlm.sensing.prompts import sensor_prompt
 
 
 @dataclass
@@ -245,7 +246,7 @@ class BootstrapPipeline:
         global_action = SensingAction(
             action_id=self.id_gen.next_action_id(),
             semantic_key=state.target_class,
-            prompt=user_prompt,
+            prompt=sensor_prompt(user_prompt, self.config),
             family=ActionFamily.DISCOVERY,
             spatial_mode=SpatialMode.GLOBAL,
             source=ActionSource.USER_BOOTSTRAP,
@@ -289,7 +290,7 @@ class BootstrapPipeline:
             refine_action = SensingAction(
                 action_id=self.id_gen.next_action_id(),
                 semantic_key="target",
-                prompt=user_prompt,
+                prompt=sensor_prompt(user_prompt, self.config),
                 family=ActionFamily.DISCOVERY,
                 spatial_mode=SpatialMode.GLOBAL,
                 source=ActionSource.USER_BOOTSTRAP,
@@ -324,7 +325,7 @@ class BootstrapPipeline:
                     continue  # The identical text-only full-image search already ran.
                 tile_action = SensingAction(
                     action_id=self.id_gen.next_action_id(),
-                    semantic_key=state.target_class, prompt=user_prompt,
+                    semantic_key=state.target_class, prompt=sensor_prompt(user_prompt, self.config),
                     family=ActionFamily.DISCOVERY, spatial_mode=SpatialMode.LOCAL,
                     source=ActionSource.USER_BOOTSTRAP,
                     roi=BoxGeometry(Box(*coords)), tile_id=f"adaptive_{index:03d}",
@@ -342,7 +343,7 @@ class BootstrapPipeline:
             tiled_action = SensingAction(
                 action_id=self.id_gen.next_action_id(),
                 semantic_key=state.target_class,
-                prompt=user_prompt,
+                prompt=sensor_prompt(user_prompt, self.config),
                 family=ActionFamily.DISCOVERY,
                 spatial_mode=SpatialMode.TILED,
                 source=ActionSource.USER_BOOTSTRAP,

@@ -213,6 +213,8 @@ def main(argv=None):
     run.add_argument("--sam3-model")
     run.add_argument("--qwen-model")
     run.add_argument("--qwen-base-url")
+    run.add_argument("--singular-prompts", action=argparse.BooleanOptionalAction, default=None,
+                     help="Override prompt singularization for a controlled comparison")
     evaluate = commands.add_parser("evaluate", help="Score a saved complete split")
     evaluate.add_argument("dataset_root", type=Path)
     evaluate.add_argument("prediction_path", type=Path)
@@ -231,6 +233,9 @@ def main(argv=None):
         parser.error(f"Configuration file does not exist: {args.config}")
     args.output_dir = str(args.output_dir)
     deployment = load_m8_config(args, config_path=args.config)
+    if args.singular_prompts is not None:
+        deployment = replace(deployment, v4_config=replace(deployment.v4_config,
+            sam3=replace(deployment.v4_config.sam3, singularize_prompts=args.singular_prompts)))
     variants = select_variants(deployment.v4_config, args.arm)
     if args.dry_run:
         # Consume the image iterator to validate paths without loading models/annotations.

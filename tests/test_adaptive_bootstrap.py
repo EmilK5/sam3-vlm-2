@@ -15,15 +15,16 @@ from sam3_vlm.planning.qwen_planner import PlannerOutput
 
 
 class DenseSensor(DummySAM3Sensor):
-    def __init__(self, seed_score=.9):
+    def __init__(self, seed_score=.9, expected_prompt='bottle caps'):
         super().__init__()
         self.actions = []
         self.seed_score = seed_score
+        self.expected_prompt = expected_prompt
 
     def observe(self, image, action):
         observation = super().observe(image, action)
         self.actions.append(action)
-        assert action.prompt == 'bottle caps'
+        assert action.prompt == self.expected_prompt
         region = observation.searched_regions[0].bbox()
         for i in range(60):
             x, y = 100 + (i % 10)*8, 100 + (i // 10)*8
@@ -71,6 +72,24 @@ def test_dense_bootstrap_covers_full_image_and_budgets_each_actual_tile(tmp_path
     plan = result.qwen_evidence_pack.discovery_diagnostics['adaptive_tiling']
     assert plan['object_count'] == 60 and plan['trigger']
     assert state.discovery_state.adaptive_tiling == plan
+
+
+def test_singular_target_covers_refinement_tiles_and_mask_replay(tmp_path):
+    cfg = config(tmp_path)
+    cfg = replace(cfg, sam3=replace(cfg.sam3, singularize_prompts=True))
+    sensor = DenseSensor(expected_prompt='bottle cap')
+    class Planner:
+        model = 'none'
+        def plan_scene(self, evidence, *args):
+            assert evidence.user_prompt == 'bottle caps'
+            return PlannerOutput(proposed_actions=[])
+    paths = RunArtifactPaths(tmp_path / 'singular')
+    runner, _ = assemble_e2e_runner(paths, cfg, sensor, Planner(), 'singular', 'bottle caps', 'target', 'caps')
+    runner.run(Image.new('RGB', (384, 384)), 'bottle caps', image_id='caps')
+    assert sum(action.source.value == 'USER_BOOTSTRAP' for action in sensor.actions) == 27
+    assert any(action.source.value == 'CLEANUP' for action in sensor.actions)
+    assert all(action.prompt == 'bottle cap' for action in sensor.actions)
+    assert _run_validator_and_replay(paths, runner.scene_state)
 
 
 @pytest.mark.parametrize('limit', ['calls', 'tiles', 'runtime'])

@@ -55,6 +55,7 @@ class Control:
 CONTROL_GROUPS = {
     "Detection and Qwen": (
         Control("sam3.default_threshold", "Bootstrap target threshold", maximum=1),
+        Control("sam3.singularize_prompts", "Use singular SAM3 prompts", "bool"),
         Control("sam3.qwen_discovery_threshold", "Qwen positive threshold", maximum=1),
         Control("sam3.qwen_confounder_threshold", "Negative threshold", maximum=1),
         Control("planner.execute_confounder_prompts", "Run negative prompts", "bool"),

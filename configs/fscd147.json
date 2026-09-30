@@ -60,6 +60,7 @@
   "output_root": "runs/fscd147",
   "pilot_sample_limit": 0,
   "sam3": {
+    "singularize_prompts": true,
     "qwen_discovery_threshold": 0.2,
     "qwen_confounder_threshold": 0.5,
     "qwen_discovery_use_exemplars": false,

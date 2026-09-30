@@ -53,7 +53,7 @@ def artifacts(path, row):
     (root / "artifacts" / "graph").mkdir(parents=True)
     (root / "artifacts" / "qwen").mkdir()
     events = [
-        {"event_type": "SAM3_ACTION_COMPLETED", "data": {"observation": {"num_detections": 5}}},
+        {"event_type": "SAM3_ACTION_COMPLETED", "data": {"observation": {"num_detections": 5, "prompt": "green apple"}}},
         {"event_type": "ASSOCIATION_COMPLETED", "data": {"matched_nodes": 3, "new_nodes": 2}},
         {"event_type": "BUDGET_UPDATED", "data": {"sam3_calls": 7, "qwen_calls": 2, "sam3_tiles": 5}},
         {"event_type": "STOP_DECIDED", "data": {"reason": "RUNTIME_BUDGET"}},
@@ -134,6 +134,7 @@ def test_artifact_diagnostics_find_moved_runs_and_omit_full_evidence(saved):
     assert "PRIVATE LONG EVIDENCE" not in json.dumps(report)
     # Canonical prediction budget takes precedence over log snapshots on successful rows.
     assert record["sam3_calls"] == 3
+    assert diag['executed_sam3_prompts'] == [{'prompt': 'green apple', 'calls': 1}]
 
 
 def test_soft_count_summary_separates_discovery_and_negative_mass(saved):

@@ -60,6 +60,7 @@
   "output_root": "runs/m8_real_smoke",
   "pilot_sample_limit": 10,
   "sam3": {
+    "singularize_prompts": true,
     "qwen_discovery_threshold": 0.2,
     "qwen_confounder_threshold": 0.5,
     "qwen_discovery_use_exemplars": false,

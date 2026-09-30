@@ -7,6 +7,7 @@ from sam3_vlm.sensing.evidence import QwenEvidencePack
 import os
 import logging
 from sam3_vlm.core.config import V4Config
+from sam3_vlm.sensing.prompts import sensor_prompt
 from sam3_vlm.core.types import BudgetState
 from sam3_vlm.scene.belief import canonical_belief_classes
 
@@ -231,6 +232,14 @@ class RealQwenPlanner:
         # Dataset eligibility applies to every prompt version, including old.
         if config.planner.target_scope:
             system_prompt = config.planner.target_scope + "\n\n" + system_prompt
+        if config.sam3.singularize_prompts:
+            system_prompt += (
+                " Use singular noun forms in all SAM3 queries, appearance modes and confounder labels: "
+                "'polka dot', 'bottle cap', 'chicken wing'. This describes one instance's counting unit, "
+                "while SAM3 still searches for every instance. Preserve nouns naturally used for one "
+                "object in plural form, such as scissors or sunglasses. The controller normalizes "
+                "executable prompt morphology and never changes the target category."
+            )
         if config.planner.execute_confounder_prompts:
             system_prompt = system_prompt.replace(
                 "Every executable action must search for the user's target:",
@@ -246,6 +255,8 @@ class RealQwenPlanner:
             continue_until_saturation=config.replanning.continue_until_saturation,
             execute_confounder_prompts=config.planner.execute_confounder_prompts,
         )
+        if config.sam3.singularize_prompts:
+            text += f"\nSingular SAM3 target phrase: {sensor_prompt(evidence_pack.user_prompt, config)!r}."
         if evidence_pack.discovery_diagnostics.get("previous_plan_feedback"):
             text += (
                 "\n\nCONTROLLER REJECTION FEEDBACK:\n"

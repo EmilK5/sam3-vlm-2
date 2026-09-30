@@ -250,6 +250,8 @@ class RunRecorder:
             observation.call_id,
             {
                 "num_detections": len(observation.detections),
+                "prompt": action.prompt,
+                "family": action.family.value,
                 "runtime_ms": observation.runtime_ms,
                 "model_metadata": dict(observation.model_metadata),
                 "mask_artifacts": mask_artifacts,
