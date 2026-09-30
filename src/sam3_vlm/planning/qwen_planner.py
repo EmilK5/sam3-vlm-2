@@ -56,6 +56,8 @@ class ProposedAction:
     positive_exemplar_ids: List[str] = field(default_factory=list)
     negative_exemplar_ids: List[str] = field(default_factory=list)
     tiling: Optional[Dict[str, Any]] = None
+    confounder_relation: Optional[str] = None
+    confounder_reason: str = ""
 
     @property
     def sam3_prompt(self) -> str:
@@ -77,6 +79,8 @@ class ProposedAction:
             "positive_exemplar_ids": self.positive_exemplar_ids,
             "negative_exemplar_ids": self.negative_exemplar_ids,
             "tiling": self.tiling,
+            **({"confounder_relation": self.confounder_relation,
+                "confounder_reason": self.confounder_reason} if self.confounder_relation is not None else {}),
         }
 
     @classmethod
@@ -99,6 +103,8 @@ class ProposedAction:
             positive_exemplar_ids=data.get("positive_exemplar_ids", []),
             negative_exemplar_ids=data.get("negative_exemplar_ids", []),
             tiling=data.get("tiling"),
+            confounder_relation=data.get("confounder_relation"),
+            confounder_reason=data.get("confounder_reason", ""),
         )
 
 
@@ -108,6 +114,7 @@ class PlannerOutput:
     proposed_actions: List[ProposedAction] = field(default_factory=list)
     missing_appearance_modes: List[str] = field(default_factory=list)
     likely_confounders: List[str] = field(default_factory=list)
+    confounder_assessments: List[Dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -115,6 +122,7 @@ class PlannerOutput:
             "proposed_actions": [a.to_dict() for a in self.proposed_actions],
             "missing_appearance_modes": list(self.missing_appearance_modes),
             "likely_confounders": list(self.likely_confounders),
+            **({"confounder_assessments": self.confounder_assessments} if self.confounder_assessments else {}),
         }
 
     @classmethod
@@ -124,6 +132,8 @@ class PlannerOutput:
             proposed_actions=[ProposedAction.from_dict(a) for a in data.get("proposed_actions", [])],
             missing_appearance_modes=list(data.get("missing_appearance_modes", [])),
             likely_confounders=list(data.get("likely_confounders", [])),
+            confounder_assessments=(data.get("confounder_assessments", [])
+                if isinstance(data.get("confounder_assessments", []), list) else []),
         )
 
     def to_json(self, indent: int = 2) -> str:
@@ -280,6 +290,14 @@ class QwenPlannerService:
                     label = normalized.likely_confounders[index]
                 if not label or str(label).strip().lower() in tried:
                     continue
+                assessment = {}
+                if config.planner.validate_confounders:
+                    from sam3_vlm.sensing.prompts import singularize_prompt
+                    matching = [item for item in normalized.confounder_assessments
+                        if isinstance(item, dict) and isinstance(item.get("label"), str)
+                        and singularize_prompt(item["label"]).lower() == singularize_prompt(str(label)).lower()]
+                    if len(matching) == 1:
+                        assessment = matching[0]
                 normalized.proposed_actions.append(ProposedAction(
                     semantic_key=slot,
                     prompt=str(label).strip(),
@@ -289,6 +307,8 @@ class QwenPlannerService:
                     suggested_threshold=config.sam3.threshold_for_family(ActionFamily.CONFOUNDER),
                     suggested_spatial_mode=SpatialMode.TILED,
                     rationale="Controller executes Qwen's confounder label as negative evidence.",
+                    confounder_relation=assessment.get("relationship"),
+                    confounder_reason=assessment.get("reason", ""),
                 ))
         return normalized
 
@@ -336,6 +356,8 @@ class QwenPlannerService:
                     positive_exemplar_ids=list(action.positive_exemplar_ids),
                     negative_exemplar_ids=list(action.negative_exemplar_ids),
                     tiling=action.tiling,
+                    confounder_relation=action.confounder_relation,
+                    confounder_reason=action.confounder_reason,
                 )
             )
         normalized_actions.sort(key=lambda a: a.priority, reverse=True)
@@ -344,4 +366,5 @@ class QwenPlannerService:
             proposed_actions=normalized_actions[:max_actions],
             missing_appearance_modes=list(output.missing_appearance_modes),
             likely_confounders=list(output.likely_confounders),
+            confounder_assessments=list(output.confounder_assessments),
         )

@@ -32,6 +32,16 @@ Deployment configs enable singular SAM3 noun phrases across bootstrap and Qwen q
 
 These changes have synthetic behavioral coverage; a real FSCD-147 benchmark requires the dataset and GPU models. The remaining research notes below describe the original architecture; the current specification supersedes their bootstrap/tiling/association details.
 
+The new controlled policy suite tests plural versus singular prompts, semantic
+negative validation, neutral appearance misses, adaptive E stopping, the donut
+counting unit, and their combination on the same ten images (270 runs). It also
+records observational mask overlap diagnostics. Run
+`python -m sam3_vlm.experiments.fscd147_ablation run data/fscd_val10_seed42 outputs/fscd_policy_suite_v1 --config configs/fscd147.json --dry-run`
+to check the suite, then omit `--dry-run` on the GPU machine. It produces one
+`summary.zip` containing all profile reports and paired comparisons. New policies
+remain experimental and disabled in normal runs; see step 8 of the cluster
+runbook for complete commands.
+
 ---
 
 **Zero-shot object counting through active semantic perception with SAM3 and Qwen**

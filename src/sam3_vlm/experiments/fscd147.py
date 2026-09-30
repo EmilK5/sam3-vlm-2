@@ -32,11 +32,24 @@ def select_variants(config, arm=None):
     return variants
 
 
-def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_images=None):
+def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_images=None,
+                arms=None, target_overrides=None, audit=False, progress=None):
     """Inference reads only the image, split and class name; never annotations."""
     if max_images is not None and (type(max_images) is not int or max_images < 1):
         raise ValueError("max_images must be positive")
     variants = select_variants(deployment.v4_config, arm)
+    if arms is not None:
+        if arm is not None or not arms or any(value not in list("ABCDE") for value in arms):
+            raise ValueError("Use either arm or a nonempty arms selection from A–E")
+        variants = [variant for variant in variants if variant.name[0] in arms]
+    overrides = {}
+    for key, value in (target_overrides or {}).items():
+        if not isinstance(key, str) or not isinstance(value, str) or not key.strip() or not value.strip():
+            raise ValueError("Target overrides require nonempty labels and counting units")
+        normalized = " ".join(key.lower().split())
+        if normalized in overrides:
+            raise ValueError("Duplicate normalized target override")
+        overrides[normalized] = value.strip()
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     prediction_path = output_dir / "predictions.jsonl"
@@ -50,9 +63,14 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                 "model_settings": {"sam3": deployment.sam3_model, "qwen": deployment.qwen_model,
                                    "seed": deployment.seed},
                 "dataset_root": str(dataset.root.resolve())}
+    if overrides:
+        metadata["target_overrides"] = overrides
+    if audit:
+        metadata["mask_audit"] = True
     (output_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     with prediction_path.open("x") as stream:
         for sample in islice(dataset.samples(), max_images):
+            inference_target = overrides.get(" ".join(sample.target.lower().split()), sample.target)
             for variant in variants:
                 run_key = hashlib.sha256(sample.image_id.encode()).hexdigest()[:20]
                 run_id = f"{variant.name}_{run_key}"
@@ -62,6 +80,8 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                        "target": sample.target, "count_type": variant.count_type,
                        "success": False, "predicted_count": None, "nodes": [],
                        "artifact_directory": str(paths.base_dir)}
+                if overrides:
+                    row["inference_target"] = inference_target
                 started = time.perf_counter()
                 try:
                     random.seed(deployment.seed)
@@ -75,11 +95,11 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                         if qwen is None:
                             raise ValueError("C–E require a Qwen planner")
                         runner, _ = assemble_e2e_runner(
-                            paths, config, sam3, qwen, run_id, sample.target,
+                            paths, config, sam3, qwen, run_id, inference_target,
                             "target", sample.image_id, seed=deployment.seed,
                             experiment_name=f"FSCD-147:{variant.name}",
                         )
-                        count = runner.run(image, sample.target, image_id=sample.image_id)
+                        count = runner.run(image, inference_target, image_id=sample.image_id)
                         state = runner.scene_state
                         valid = _run_validator_and_replay(paths, state)
                         stop = state.stop_reason.value if state.stop_reason else None
@@ -90,7 +110,7 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                     else:
                         count, state = _run_sam3_baseline(
                             paths=paths, config=config, sensor=sam3, run_id=run_id,
-                            prompt=sample.target, image_id=sample.image_id, image=image,
+                            prompt=inference_target, image_id=sample.image_id, image=image,
                             seed=deployment.seed, experiment_name=f"FSCD-147:{variant.name}",
                         )
                         stop = "SAM3_BASELINE_COMPLETE"
@@ -101,11 +121,19 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                         nodes.append({"box": list(node.geometry.bbox().as_tuple()), "score": score})
                     row.update(success=True, predicted_count=count, nodes=nodes, stop_reason=stop,
                                budget=asdict(state.budget), adaptive_tiling=state.discovery_state.adaptive_tiling)
+                    if audit:
+                        from sam3_vlm.experiments.mask_audit import audit_masks
+                        row["mask_audit"] = audit_masks(state.graph.active_nodes(),
+                            iou_threshold=config.association.new_node_iou_threshold,
+                            iom_threshold=config.association.new_node_iom_threshold)
+                        (paths.base_dir / "mask_audit.json").write_text(json.dumps(row["mask_audit"], indent=2) + "\n")
                 except Exception as exc:
-                    row["error"] = str(exc)
+                    row.update(success=False, predicted_count=None, nodes=[], error=str(exc))
                 row["runtime_seconds"] = time.perf_counter() - started
                 stream.write(json.dumps(row, allow_nan=False) + "\n")
                 stream.flush()
+                if progress is not None:
+                    progress(row)
     return prediction_path
 
 

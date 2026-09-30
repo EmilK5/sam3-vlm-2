@@ -75,3 +75,52 @@ Evaluation validates frozen split/arm metadata, rejects duplicate/unknown predic
 Every complete arm exports COCO boxes for all active candidates: A/B use their maximum sensor score; C/D/E use the target posterior. No extra score threshold alters their count rule. Coordinates are scaled to the COCO annotation image dimensions when they differ from inference dimensions. Optional `--ap` uses `pycocotools` to report COCO bbox AP/AP50 with an explicit 1000-detection cap per image; install `pip install -e '.[evaluation]'`. These AP settings are recorded separately from count metrics and may differ from a paper's custom evaluator.
 
 Tune on validation and freeze the config for test. Unit and mocked integration tests verify behavior; they do not establish real-model accuracy or performance gains.
+
+## Optional FSCD-147 policy experiments
+
+The approved policy suite is separate from the normal A–E deployment. New flags
+default off: `planner.validate_confounders=False`,
+`belief.neutral_appearance_misses=False`, and
+`replanning.adaptive_e_zero_gain_patience=None`.
+
+With confounder validation, Qwen returns `confounder_assessments` containing each
+label, relationship and reason. Relationships include `distinct_object`,
+`target_synonym`, `target_subtype`, `target_part`, `target_container`, and
+`uncertain`. Each generated negative must match exactly one assessment. Only
+`distinct_object` with a reason can pass; labels containing the singular target
+head noun are also rejected. This is an auditable semantic gate, not an independent
+semantic oracle. Accepted actions alone freeze negative slot labels. Rejections
+use `UNSAFE_CONFOUNDER` and participate in normal correction feedback. Historical
+planning schema remains compatible when the flag is off.
+
+With neutral appearance misses, Qwen discovery prompts that differ from the
+singularized canonical target are marked `is_appearance_query`. `NOT_RETRIEVED`
+on these actions has identity likelihoods. Matched positive evidence, canonical
+queries, bootstrap, verification and negative evidence retain their existing
+rules. Neutral observation refs serialize `neutral_evidence=True` and do not
+count toward repeat-evidence discounting. No posterior ontology changes.
+
+Adaptive E checks only executed Qwen discovery actions, excluding bootstrap and
+negatives, after the action bank drains. Three consecutive searches adding zero
+active nodes stop further planning with `LOW_MARGINAL_UTILITY`; any new active
+candidate resets the streak. Hard budgets retain precedence. The policy applies
+only to `continue_until_saturation` runs; C/D are unaffected. Confidence traces
+and replayed action metadata expose its inputs. Candidate gains can include false
+positives, so this is an experimental search heuristic.
+
+`experiments.fscd147_ablation` executes seven profiles on the same ten split
+images: plural control, singular control, safe negatives (C–E), neutral appearance
+misses (C–E), adaptive E (E), counting unit (A–E), and combined (A–E). The suite
+contains 270 image/arm runs and rejects another split size without an explicit
+override. Counting-unit profiles map the class label `donuts tray` to inference
+target `donut`; original labels and annotations remain unchanged. Both targets
+and the override map are recorded. No image-ID or ground-truth tuning enters
+inference.
+
+All profiles collect observational mask diagnostics: mask IoU/IoM overlap pair
+counts, area ratios, crop provenance, and bounded examples. Diagnostics do not
+change association, counts or masks and never fall back to boxes. They are not
+proof of duplicate detections. Reports include paired accuracy/runtime changes
+only for complete matching image/arm pairs, frozen configuration checks, and one
+portable text/JSON archive. Model clients are shared across runs; the existing
+controller seed is reset per run. Qwen sampling can vary despite that seed.

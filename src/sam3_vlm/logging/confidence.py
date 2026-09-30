@@ -29,6 +29,7 @@ def confidence_step(graph, previous, target_class="target", action=None, observa
         "action_id": action.action_id if action else None,
         "prompt": action.prompt if action else None,
         "family": action.family.value if action else None,
+        "is_appearance_query": action.is_appearance_query if action else False,
         "threshold": action.threshold if action else None,
         "positive_exemplar_count": len(action.positive_exemplar_ids) if action else None,
         "raw_detections": len(observation.detections) if observation else None,

@@ -240,6 +240,17 @@ class RealQwenPlanner:
                 "object in plural form, such as scissors or sunglasses. The controller normalizes "
                 "executable prompt morphology and never changes the target category."
             )
+        if config.planner.validate_confounders:
+            system_prompt += (
+                " Assess every likely_confounders label relative to the target counting unit. "
+                "Use confounder_assessments with label, relationship and reason. Relationships: "
+                "distinct_object, target_synonym, target_subtype, target_part, target_container, uncertain. "
+                "Only distinct_object may become a negative query. Paperback and hardcover are target_subtype "
+                "when counting books. Cap rim is target_part when counting bottle caps. A tray containing "
+                "donuts is target_container when counting donuts. Reject target colors or appearances as "
+                "negatives. Choose visible non-target objects and explain why they are outside the target "
+                "category. If uncertain, say uncertain; do not manufacture safe negatives."
+            )
         if config.planner.execute_confounder_prompts:
             system_prompt = system_prompt.replace(
                 "Every executable action must search for the user's target:",
@@ -376,6 +387,14 @@ class RealQwenPlanner:
                  f"the controller runs these as negative SAM3 queries at fixed threshold {confounder_threshold}. ") +
                 "Name visible basic non-target objects using 1–3 words. Do not write 'not target'. "
                 "Keep frozen slot meanings unchanged; do not rename existing labels.",
+            )
+        if config.planner.validate_confounders:
+            text += (
+                '\nAdditional JSON field REQUIRED: "confounder_assessments": '
+                '[{"label": "exact confounder label", "relationship": "distinct_object | target_synonym | '
+                'target_subtype | target_part | target_container | uncertain", "reason": "why this relationship holds"}]. '
+                "Assess each listed and frozen confounder. An absent, duplicated or mismatched assessment "
+                "will cause the controller to reject its negative query.\n"
             )
         text_bytes = len((system_prompt + text).encode("utf-8"))
         content = [{"type": "text", "text": text}]

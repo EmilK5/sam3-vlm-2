@@ -10,7 +10,8 @@ from sam3_vlm.core.types import ActionSource, SpatialMode
 from sam3_vlm.planning.qwen_planner import PlannerOutput, ProposedAction
 from sam3_vlm.scene.belief import SemanticMemory, canonical_belief_classes
 from sam3_vlm.sensing.action import SensingAction, validate_sam3_prompt_contract
-from sam3_vlm.sensing.prompts import sensor_prompt
+from sam3_vlm.sensing.prompts import sensor_prompt, singularize_prompt
+from sam3_vlm.planning.semantic_guard import confounder_rejection
 
 
 def canonicalize_semantic_key(key: str) -> str:
@@ -33,6 +34,7 @@ class ActionRejectionReason(str, Enum):
     INVALID_GROUNDING_PROMPT = "INVALID_GROUNDING_PROMPT"
     UNKNOWN_CLASS_PRIOR = "UNKNOWN_CLASS_PRIOR"
     NON_TARGET_ACTION = "NON_TARGET_ACTION"
+    UNSAFE_CONFOUNDER = "UNSAFE_CONFOUNDER"
 
 
 @dataclass
@@ -136,6 +138,7 @@ class ActionBankGenerator:
         search_region: Optional[Any] = None,
         enforce_qwen_contract: bool = False,
         allowed_belief_classes: Optional[Sequence[str]] = None,
+        target_prompt: Optional[str] = None,
     ) -> List[ActionBankEntry]:
         self.last_rejections = []
         added_entries: List[ActionBankEntry] = []
@@ -214,6 +217,13 @@ class ActionBankGenerator:
             # Preserve the backend's raw proposal for audit; the executable
             # prompt and duplicate/history checks share one normalized form.
             executable_prompt = sensor_prompt(proposal.prompt, config) if config else proposal.prompt
+            if (config and config.planner.validate_confounders and
+                    getattr(proposal.family, "value", proposal.family) == "CONFOUNDER"):
+                reason = confounder_rejection(executable_prompt, target_prompt,
+                    proposal.confounder_relation, proposal.confounder_reason)
+                if reason:
+                    self._reject(proposal, ActionRejectionReason.UNSAFE_CONFOUNDER, reason)
+                    continue
 
             if enforce_qwen_contract:
                 try:
@@ -391,6 +401,10 @@ class ActionBankGenerator:
                 positive_exemplar_ids=tuple(proposal.positive_exemplar_ids),
                 negative_exemplar_ids=tuple(proposal.negative_exemplar_ids),
                 tiling=tiling_cfg,
+                is_appearance_query=(bool(config and config.belief.neutral_appearance_misses and target_prompt)
+                    and getattr(proposal.family, "value", proposal.family) == "DISCOVERY"
+                    and singularize_prompt(executable_prompt).lower()
+                    != singularize_prompt(target_prompt).lower()),
             )
             try:
                 action.validate()

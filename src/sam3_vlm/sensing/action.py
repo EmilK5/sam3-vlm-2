@@ -69,6 +69,7 @@ class SensingAction:
     search_region: Optional[Geometry] = None
     # A single adaptive crop is an independently budgeted SAM3 request.
     tile_id: Optional[str] = None
+    is_appearance_query: bool = False
 
     def validate(self) -> None:
         """Validate executable action invariants before SAM3."""

@@ -82,6 +82,7 @@ class PlannerConfig:
 
     # M8: convert Qwen confounder labels to separate negative sensing queries.
     execute_confounder_prompts: bool = False
+    validate_confounders: bool = False
     prompt_version: str = "old"
     enable_rejection_correction: bool = False
     # Historical recovery studies corrected only completely empty banks.
@@ -94,6 +95,8 @@ class PlannerConfig:
     reasoning_effort: Optional[str] = "none"
 
     def __post_init__(self) -> None:
+        if type(self.validate_confounders) is not bool:
+            raise ValueError("validate_confounders must be boolean")
         if self.prompt_version not in {"old", "v3", "v4"}:
             raise ValueError("prompt_version must be old, v3 or v4")
         if self.max_output_tokens < 1:
@@ -184,6 +187,7 @@ class BeliefConfig:
     num_confounders: int = 2
     # Ablation: an unreturned confounder is not positive evidence for fruit.
     neutral_confounder_misses: bool = False
+    neutral_appearance_misses: bool = False
     # Optional reporting-only commitment rule.  A target posterior at or above
     # this threshold contributes 1.0 to the count without mutating the node's
     # posterior.  ``None`` preserves a purely soft posterior sum.
@@ -192,6 +196,8 @@ class BeliefConfig:
     target_count_hard_threshold: Optional[float] = None
 
     def __post_init__(self) -> None:
+        if type(self.neutral_appearance_misses) is not bool:
+            raise ValueError("neutral_appearance_misses must be boolean")
         hard = self.target_count_hard_threshold
         if hard is not None and not (0.0 <= hard <= 1.0):
             raise ValueError("target_count_hard_threshold must be in [0, 1] or None")
@@ -218,6 +224,9 @@ class ReplanningConfig:
     # A target experiment is materially useful when it finds a new node or
     # reduces count variance by at least this fraction.
     min_relative_count_variance_reduction: float = 0.02
+    # E-only experiment: stop requesting plans after consecutive zero-gain
+    # Qwen target searches. None preserves extended exploration.
+    adaptive_e_zero_gain_patience: Optional[int] = None
 
     def __post_init__(self) -> None:
         threshold = self.min_relative_count_variance_reduction
@@ -225,6 +234,9 @@ class ReplanningConfig:
             raise ValueError(
                 "min_relative_count_variance_reduction must be in [0, 1]"
             )
+        patience = self.adaptive_e_zero_gain_patience
+        if patience is not None and (type(patience) is not int or patience < 1):
+            raise ValueError("adaptive_e_zero_gain_patience must be a positive integer or None")
 
 
 @dataclass(frozen=True)

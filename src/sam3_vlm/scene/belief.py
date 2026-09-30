@@ -135,9 +135,14 @@ class ProxyEvidenceModel:
         target_class: Optional[str] = None,
         confounder_class: Optional[str] = None,
         neutral_confounder_misses: bool = False,
+        neutral_appearance_misses: bool = False,
     ) -> Dict[str, float]:
         """Compute bounded likelihood multipliers without inventing classes."""
         likelihoods = {cls: 1.0 for cls in vocabulary}
+        if (neutral_appearance_misses and action.is_appearance_query
+                and action.family == ActionFamily.DISCOVERY
+                and relation == ObservationRelation.NOT_RETRIEVED):
+            return likelihoods
         if (neutral_confounder_misses and action.family == ActionFamily.CONFOUNDER
                 and relation == ObservationRelation.NOT_RETRIEVED):
             return likelihoods
@@ -248,6 +253,9 @@ class BeliefUpdater:
                 if total > 0.0:
                     probs = {k: v / total for k, v in probs.items()}
 
+        obs_ref.neutral_evidence = bool(config.neutral_appearance_misses
+            and action.is_appearance_query and action.family == ActionFamily.DISCOVERY
+            and obs_ref.relation == ObservationRelation.NOT_RETRIEVED)
         score = obs_ref.score if obs_ref.score is not None else 0.5
         corr_group = action.correlation_group or action.semantic_key
         same_key_count = sum(
@@ -257,6 +265,7 @@ class BeliefUpdater:
             == corr_group
             and old_obs.observation_id != obs_ref.observation_id
             and old_obs.relation != ObservationRelation.NOT_OBSERVABLE
+            and not old_obs.neutral_evidence
         )
         weight = config.discount_repeat_weight ** same_key_count
         likelihoods = self.evidence_model.compute_likelihoods(
@@ -268,6 +277,7 @@ class BeliefUpdater:
             target_class=target_class,
             confounder_class=confounder_class,
             neutral_confounder_misses=config.neutral_confounder_misses,
+            neutral_appearance_misses=config.neutral_appearance_misses,
         )
         unnormalized = {
             cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0)
@@ -352,6 +362,9 @@ class BeliefUpdater:
         else:
             probs = {cls_name: node.class_belief.probabilities[cls_name] for cls_name in vocabulary}
 
+        obs_ref.neutral_evidence = bool(config.neutral_appearance_misses
+            and action.is_appearance_query and action.family == ActionFamily.DISCOVERY
+            and obs_ref.relation == ObservationRelation.NOT_RETRIEVED)
         score = obs_ref.score if obs_ref.score is not None else 0.5
         corr_group = action.correlation_group or action.semantic_key
         same_key_count = sum(
@@ -360,6 +373,7 @@ class BeliefUpdater:
             if (getattr(o, "correlation_group", None) or o.semantic_key) == corr_group
             and o.observation_id != obs_ref.observation_id
             and o.relation != ObservationRelation.NOT_OBSERVABLE
+            and not o.neutral_evidence
         )
         weight = config.discount_repeat_weight ** same_key_count
 
@@ -372,6 +386,7 @@ class BeliefUpdater:
             target_class=canonical_target,
             confounder_class=confounder_class,
             neutral_confounder_misses=config.neutral_confounder_misses,
+            neutral_appearance_misses=config.neutral_appearance_misses,
         )
         unnormalized = {
             cls_name: probs[cls_name] * likelihoods.get(cls_name, 1.0)

@@ -151,6 +151,7 @@ class NodeObservationRef:
     relation: ObservationRelation = ObservationRelation.STRONG_MATCH
     score: Optional[float] = None
     association_score: Optional[float] = None
+    neutral_evidence: bool = False
 
 
 @dataclass

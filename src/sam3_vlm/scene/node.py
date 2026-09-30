@@ -82,6 +82,7 @@ class Node:
                     "relation": obs.relation.value,
                     "score": obs.score,
                     "association_score": obs.association_score,
+                    **({"neutral_evidence": True} if obs.neutral_evidence else {}),
                 }
                 for obs in self.observations
             ],
@@ -141,6 +142,7 @@ class Node:
                     relation=ObservationRelation(o_data["relation"]),
                     score=o_data.get("score"),
                     association_score=o_data.get("association_score"),
+                    neutral_evidence=o_data.get("neutral_evidence", False),
                 )
             )
 

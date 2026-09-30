@@ -50,6 +50,9 @@ def _artifact_diagnostics(prediction_path, row):
             return None
 
     summary_path = run_dir / "summary.json"
+    audit_path = run_dir / "mask_audit.json"
+    if audit_path.exists():
+        result["mask_audit"] = read_json(audit_path)
     if summary_path.exists():
         summary = read_json(summary_path)
         if summary is not None:
@@ -151,6 +154,15 @@ def _artifact_diagnostics(prediction_path, row):
         example = {"prompts": [_text(action.get("sam3_prompt", action.get("prompt", "")), 150)
                                for action in actions[:3]],
                    "accepted_actions": metadata.get("accepted_action_count")}
+        assessments = artifact.get("output", {}).get("confounder_assessments", [])
+        if assessments:
+            example["confounder_assessments"] = [
+                {key: _text(item.get(key, ""), 200) for key in ("label", "relationship", "reason")}
+                for item in assessments[:4] if isinstance(item, dict)]
+        unsafe = [item for item in metadata.get("rejections", []) if item.get("reason") == "UNSAFE_CONFOUNDER"]
+        if unsafe:
+            example["unsafe_confounders"] = [{key: _text(item.get(key, ""), 200)
+                for key in ("sam3_prompt", "detail")} for item in unsafe[:4]]
         if not examples:
             examples.append(example)
         elif len(examples) == 1:
@@ -213,11 +225,14 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
             if row["success"] and (not _number(row["predicted_count"]) or row["predicted_count"] < 0):
                 raise ValueError("Successful prediction has an invalid count")
             diagnostic = _artifact_diagnostics(prediction_path, row) if include_artifacts else {}
+            if row.get("mask_audit") is not None:
+                diagnostic["mask_audit"] = row["mask_audit"]
             budget = dict(diagnostic.get("budget", {}))
             budget.update(row.get("budget", {}))
             tiling = row.get("adaptive_tiling") or diagnostic.get("adaptive_tiling")
             signed_error = row["predicted_count"] - truth[image_id].count if row["success"] else None
             record = {"image_id": image_id, "target": row.get("target"), "gt_count": truth[image_id].count,
+                      "inference_target": row.get("inference_target", row.get("target")),
                       "success": row["success"], "predicted_count": row["predicted_count"] if row["success"] else None,
                       "signed_error": signed_error, "absolute_error": abs(signed_error) if signed_error is not None else None,
                       "candidate_count": len(row.get("nodes", [])) if row["success"] else None,
@@ -323,7 +338,7 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
                           for key in selected],
             "omitted_image_details": len(truth)-len(selected),
             "configurations": {variant: {key: config.get(key) for key in
-                                ("budget", "bootstrap", "tiling", "association", "belief", "sam3", "planner")}
+                                ("budget", "bootstrap", "tiling", "association", "belief", "sam3", "planner", "replanning")}
                                for variant, config in configs.items()},
             "notes": ["Ground-truth counts come from FSCD bounding-box annotations.",
                       "A/B count candidates; C/D/E sum target probabilities.",
@@ -401,6 +416,10 @@ def render_summary(report):
                              f"nodes below 0.5={diag['nodes_below_half']}, mask nodes={diag['mask_nodes']}/{diag['active_nodes']}.")
             if "candidate_to_soft_count_gap" in diag:
                 lines.append(f"  Candidates minus soft count={num(diag['candidate_to_soft_count_gap'])}.")
+            if diag.get("mask_audit"):
+                audit = diag["mask_audit"]
+                lines.append(f"  Mask audit: complete={audit['complete']}, high-IoU pairs={audit['high_iou_pairs']}, "
+                             f"high-IoM pairs={audit['high_iom_pairs']}, large-ratio containment pairs={audit['large_area_ratio_containment_pairs']}.")
             for family, mass in diag.get("confidence_by_family", {}).items():
                 lines.append(f"  {family}: new candidates={mass['new_nodes']}, new target mass={num(mass['new_target_mass'])}, "
                              f"existing mass change={num(mass['existing_target_mass_change'])}, "
@@ -409,6 +428,10 @@ def render_summary(report):
             for example in diag.get("qwen_first_last", []):
                 if example["prompts"]:
                     lines.append(f"  Qwen proposals: {'; '.join(example['prompts'])}; accepted actions={example['accepted_actions']}.")
+                for assessment in example.get("confounder_assessments", []):
+                    lines.append(f"  Negative assessment: {assessment['label']} / {assessment['relationship']}: {assessment['reason']}.")
+                for rejection in example.get("unsafe_confounders", []):
+                    lines.append(f"  Rejected negative: {rejection['sam3_prompt']}: {rejection['detail']}.")
             if diag.get("executed_sam3_prompts"):
                 lines.append("  Executed SAM3 queries: " + "; ".join(
                     f"{item['prompt']} ({item['calls']} calls)" for item in diag['executed_sam3_prompts']) + ".")

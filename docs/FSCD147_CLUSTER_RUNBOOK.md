@@ -328,7 +328,122 @@ makes the experiment clear. For a fresh matched plural control, repeat with
 Every other policy remains the same. Count agreement alone cannot establish
 better mask quality, so inspect the gallery as well as the metrics.
 
-## 8. Run the complete validation split only after reviewing the gallery
+## 8. Test the new policies on the same ten images
+
+Copy the updated source using step 1. Reuse your existing environment, sample,
+and Ollama model/endpoint. In the Python terminal on your GPU machine:
+
+```bash
+cd ~/sam3-vlm-2-fscd
+source .venv/bin/activate
+python -m pip install -e .
+mkdir -p logs
+export FSCD_SAMPLE="$PWD/data/fscd_val10_seed42"
+export FSCD_SUITE="$PWD/outputs/fscd_val10_policy_suite_v1"
+python -m sam3_vlm.experiments.fscd147_ablation run \
+  "$FSCD_SAMPLE" "$FSCD_SUITE" --split val \
+  --config configs/fscd147.json --dry-run
+```
+
+The dry run should report 10 images, seven profiles, and **270 runs**. It checks
+image paths without loading models or annotations. The suite refuses other split
+sizes unless you explicitly supply `--allow-full-split`.
+
+| Profile | Arms | Change relative to singular control |
+|---|---|---|
+| `plural_control` | A–E | Original plural prompt policy |
+| `singular_control` | A–E | Singular noun phrases only |
+| `safe_negatives` | C–E | Require a distinct-object semantic assessment before negative sensing |
+| `neutral_appearance_misses` | C–E | No negative evidence from misses on Qwen appearance variants |
+| `adaptive_e` | E | Stop requesting plans after three consecutive zero-gain target searches |
+| `counting_unit` | A–E | Override dataset label `donuts tray` with inference target `donut` |
+| `combined` | A–E | All four additional policies together |
+
+The plural/singular pair isolates inflection. Each subsequent isolated profile
+is compared with singular control. A/B are omitted from experiments that cannot
+affect their execution. All profiles retain their arm's thresholds and hard
+budgets, the same models, and controller seed. Qwen sampling may still vary;
+repeat promising comparisons before drawing conclusions from ten images.
+
+Launch from the normal GPU shell, with Ollama still running in terminal 1:
+
+```bash
+python -u -m sam3_vlm.experiments.fscd147_ablation run \
+  "$FSCD_SAMPLE" "$FSCD_SUITE" --split val \
+  --config configs/fscd147.json > logs/fscd_val10_policy_suite_v1.log 2>&1
+```
+
+The suite loads SAM3 and the Qwen client once and runs profiles serially. A/B
+remain SAM3-only. Every completed image/arm is flushed to its profile's
+`predictions.jsonl`; the log prints its success, count and runtime. In another
+terminal, follow progress with:
+
+```bash
+tail -f ~/sam3-vlm-2-fscd/logs/fscd_val10_policy_suite_v1.log
+```
+
+The E policy checks its streak after all queued actions finish. Bootstrap and
+negative queries do not count toward the streak; recovering a new active
+candidate resets it. The original 100-Qwen/1000-SAM3 ceilings remain. A newly
+recovered false positive can also reset this heuristic, so inspect candidate
+quality along with runtime. C/D retain their existing stopping behavior.
+
+Negative validation requires Qwen to assess every negative label as a distinct
+object, target synonym, subtype, part, container, or uncertain relation, with a
+reason. Only distinct objects are eligible. Missing, mismatched, and duplicate
+assessments are rejected. A lexical guard also rejects negative labels containing
+the target noun. This gate still depends on Qwen's judgment; an incorrect
+distinct-object assessment can pass. Assessments and rejections are logged.
+
+Neutral appearance misses apply when a Qwen discovery phrase differs from the
+canonical target after singularization. Positive matches still update belief;
+neutral misses do not discount later positive evidence. Canonical target queries,
+bootstrap, verification and negative-query evidence retain their existing rules.
+
+Each profile saves a `mask_audit.json` per image/arm. It reports mask IoU/IoM
+overlap counts and up to twenty pairs with areas, target probabilities and crop
+provenance. It does not modify the graph or merge anything. High overlap and
+candidate excess are review signals, not proof of duplicates. Missing mask pixels
+make the audit incomplete; boxes never substitute for masks.
+
+On completion, inspect `$FSCD_SUITE/comparison.md`. Positive paired error
+reduction means better count accuracy; negative runtime change means faster.
+Failures and missing images leave complete metrics unavailable. Official
+annotations stay unchanged, including in the counting-unit experiment.
+The single `$FSCD_SUITE/summary.zip` contains all seven compact summaries,
+comparison metrics, per-profile visual-notes templates, and the frozen suite
+manifest. It contains no pictures or mask arrays.
+
+Create a gallery for the combined profile, or substitute any other profile name:
+
+```bash
+python -m sam3_vlm.experiments.fscd147_smoke review \
+  "$FSCD_SAMPLE" "$FSCD_SUITE/combined/predictions.jsonl" --split val
+```
+
+Add your observations to each profile's `report/visual_notes.md`, then rebuild
+the final bundle without running inference again:
+
+```bash
+python -m sam3_vlm.experiments.fscd147_ablation report \
+  "$FSCD_SAMPLE" "$FSCD_SUITE" --split val
+```
+
+From your Mac, download the bundle (replace `USER@LOGIN`):
+
+```bash
+scp USER@LOGIN:~/sam3-vlm-2-fscd/outputs/fscd_val10_policy_suite_v1/summary.zip \
+  ~/Downloads/fscd_policy_suite_summary.zip
+```
+
+For a smaller run, `--profiles plural_control singular_control combined` runs
+150 image/arm combinations. Include the relevant control if you want a paired
+comparison. Use a fresh output directory for each suite; there is no resume
+support. An interrupted suite can still be reported, with missing runs explicit.
+Normal `fscd147 run` keeps the new policy flags disabled; singularization remains
+enabled in the deployment config as before.
+
+## 9. Run the complete validation split only after reviewing the gallery
 
 Use the **original dataset root**, a fresh output directory, and the same config:
 

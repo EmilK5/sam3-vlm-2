@@ -872,6 +872,7 @@ class Runner:
                 if strict_m8
                 else None
             ),
+            target_prompt=self.user_prompt,
         )
         
         accepted_target_count = sum(
@@ -922,7 +923,7 @@ class Runner:
             action_ids = [e.action.action_id for e in new_entries]
             self.recorder.record_qwen_plan_completed(path, action_ids)
             
-        self._freeze_confounder_labels(planner_output)
+        self._freeze_confounder_labels(planner_output, new_entries)
         self.scene_state.last_plan_accepted_actions = len(new_entries)
         self.scene_state.last_plan_action_ids = [
             entry.action.action_id for entry in new_entries
@@ -990,6 +991,18 @@ class Runner:
                 else:
                     self.state = RunnerState.CLEANUP
             return
+
+        patience = self.config.replanning.adaptive_e_zero_gain_patience
+        if strict_m8 and self.config.replanning.continue_until_saturation and patience is not None:
+            from sam3_vlm.planning.adaptive_search import zero_gain_streak
+            ids = {entry.action.action_id for entry in self.scene_state.action_bank.executed_entries()
+                   if entry.action.family == ActionFamily.DISCOVERY
+                   and entry.action.source == ActionSource.QWEN}
+            if (not self.scene_state.action_bank.unexecuted_entries()
+                    and zero_gain_streak(self.confidence_trace, ids) >= patience):
+                self.scene_state.set_stop_reason(StopReason.LOW_MARGINAL_UTILITY)
+                self.state = RunnerState.CLEANUP
+                return
 
         if strict_m8 and (
             self.scene_state.replans_executed > 0
@@ -1111,11 +1124,19 @@ class Runner:
             budget.model_runtime_ms,
         )
 
-    def _freeze_confounder_labels(self, planner_output) -> None:
+    def _freeze_confounder_labels(self, planner_output, accepted_entries=None) -> None:
         """Bind generic confounder slots once; replans may not rename them."""
         if not self._uses_canonical_m8_policy():
             return
         slots = [c for c in self.scene_state.belief_classes if c != "target"]
+        if self.config.planner.validate_confounders:
+            for entry in accepted_entries or []:
+                action = entry.action
+                if action.family == ActionFamily.CONFOUNDER and action.semantic_key in slots:
+                    self.scene_state.confounder_labels.setdefault(action.semantic_key, action.prompt)
+            if hasattr(self, "evidence_pack"):
+                self.evidence_pack.confounder_labels = dict(self.scene_state.confounder_labels)
+            return
         for slot, label in zip(slots, planner_output.likely_confounders):
             if slot not in self.scene_state.confounder_labels and label:
                 if self.config.planner.execute_confounder_prompts:
