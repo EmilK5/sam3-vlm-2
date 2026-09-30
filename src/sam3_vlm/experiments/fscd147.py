@@ -83,6 +83,7 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                 if overrides:
                     row["inference_target"] = inference_target
                 started = time.perf_counter()
+                runner = None
                 try:
                     random.seed(deployment.seed)
                     np.random.seed(deployment.seed)
@@ -129,6 +130,8 @@ def run_dataset(dataset, deployment, sam3, qwen, output_dir, *, arm=None, max_im
                         (paths.base_dir / "mask_audit.json").write_text(json.dumps(row["mask_audit"], indent=2) + "\n")
                 except Exception as exc:
                     row.update(success=False, predicted_count=None, nodes=[], error=str(exc))
+                    if runner is not None and runner.scene_state is not None:
+                        row["budget"] = asdict(runner.scene_state.budget)
                 row["runtime_seconds"] = time.perf_counter() - started
                 stream.write(json.dumps(row, allow_nan=False) + "\n")
                 stream.flush()

@@ -398,6 +398,8 @@ class Runner:
             budget.sam3_runtime_ms += observation.runtime_ms
             budget.model_runtime_ms += observation.runtime_ms
             budget.total_runtime_ms += observation.runtime_ms
+            from sam3_vlm.sensing.mask_validation import prepare_mask_observation
+            prepare_mask_observation(observation, mask_only=self.config.association.mask_only)
             
             if self.recorder:
                 self.recorder.record_sam3_observation(action, observation)
@@ -603,6 +605,8 @@ class Runner:
             self.scene_state.budget.sam3_runtime_ms += observation.runtime_ms
             self.scene_state.budget.model_runtime_ms += observation.runtime_ms
             self.scene_state.budget.total_runtime_ms += observation.runtime_ms
+            from sam3_vlm.sensing.mask_validation import prepare_mask_observation
+            prepare_mask_observation(observation, mask_only=self.config.association.mask_only)
             self._record_controller_state()
             
             if self.recorder:
@@ -854,7 +858,22 @@ class Runner:
                 self.config.budget, max_qwen_calls=self.scene_state.budget.qwen_calls + 1,
             ))
         call_id = self.id_gen.next_qwen_call_id()
-        planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, call_config)
+        try:
+            planner_output = self.planner_service.plan_scene(self.evidence_pack, self.scene_state.budget, call_config)
+        except Exception as exc:
+            if self.recorder:
+                self.recorder.save_qwen_artifact(call_id, {
+                    "qwen_call_id": call_id, "qwen_round": self.scene_state.qwen_round,
+                    "input": {"evidence_pack": self.evidence_pack.to_dict(),
+                              "request_text": getattr(self.planner_service.planner_backend, "last_request_text", None)},
+                    "output": {}, "metadata": {
+                        "status": "FAILED", "error": str(exc), "correction_of": correction_of,
+                        "call_attempts": self.planner_service.last_call_attempts,
+                        "qwen_runtime_ms": self.planner_service.last_call_runtime_ms,
+                    },
+                })
+                self.recorder.record_budget_updated(dataclasses.asdict(self.scene_state.budget))
+            raise
 
         strict_m8 = self._uses_canonical_m8_policy()
         valid_node_ids = {n.node_id for n in self.scene_state.graph.active_nodes()}
@@ -908,6 +927,8 @@ class Runner:
                 },
                 "output": planner_output.to_dict(),
                 "metadata": {
+                    "status": "COMPLETE",
+                    "call_attempts": self.planner_service.last_call_attempts,
                     "prompt_version": self.config.planner.prompt_version,
                     "correction_of": correction_of,
                     "accepted_action_count": len(new_entries),

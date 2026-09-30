@@ -42,6 +42,14 @@ to check the suite, then omit `--dry-run` on the GPU machine. It produces one
 remain experimental and disabled in normal runs; see step 8 of the cluster
 runbook for complete commands.
 
+
+The final focused suite runs D, E and adaptive E on the same ten images (30
+runs): `python -m sam3_vlm.experiments.fscd147_ablation run data/fscd_val10_seed42 outputs/fscd_val10_policy_suite_v3 --suite final --config configs/fscd147_final.json --dry-run`.
+Both profiles use singular prompts, the donut counting unit and shared compact,
+seeded Qwen settings. Valid empty masks are logged and skipped; malformed Qwen
+responses retain raw/usage diagnostics even on failure. See step 9 of the
+cluster runbook for transfer, inference, galleries and the single summary ZIP.
+
 ---
 
 **Zero-shot object counting through active semantic perception with SAM3 and Qwen**

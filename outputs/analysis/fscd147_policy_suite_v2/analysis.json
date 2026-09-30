@@ -1,0 +1,313 @@
+{
+  "source_zip_sha256": "2dd381ccdddcef0079ae10b36f20223ad527427029ba6000bf6f97ac0bc719a7",
+  "expected_runs": 270,
+  "successful_runs": 265,
+  "failures": [
+    {
+      "profile": "singular_control",
+      "arm": "B_SAM3_Bootstrap",
+      "image_id": "873.jpg",
+      "error": "SAM3 supplied an empty mask"
+    },
+    {
+      "profile": "neutral_appearance_misses",
+      "arm": "E_Qwen_UntilSaturation",
+      "image_id": "7314.jpg",
+      "error": "SAM3 supplied an empty mask"
+    },
+    {
+      "profile": "counting_unit",
+      "arm": "B_SAM3_Bootstrap",
+      "image_id": "873.jpg",
+      "error": "SAM3 supplied an empty mask"
+    },
+    {
+      "profile": "combined",
+      "arm": "B_SAM3_Bootstrap",
+      "image_id": "873.jpg",
+      "error": "SAM3 supplied an empty mask"
+    },
+    {
+      "profile": "combined",
+      "arm": "E_Qwen_UntilSaturation",
+      "image_id": "3485.jpg",
+      "error": "Strict Qwen execution failed: malformed response: ```json {   \"scene_summary\": \"A large indoor atrium with tall columns and a tiled floor features multiple pink spherical balloons decorated with black polka dots.\",   \"missing_appearance_modes\": [     \"smaller dot\",     \"larger dot\"   ],   \"likely_confounders\": [     \"column base\",     \"floor tile\"   ],   \"proposed_actions\": [     {       \"semantic_key\": \"target\",       \"sam3_prompt\": \"polka dot\",       \"family\": \"DISCOVERY\",       \"priority\": 0.\u2026"
+    }
+  ],
+  "matched_subset_E": {
+    "neutral_appearance_misses": {
+      "images": [
+        "558.jpg",
+        "833.jpg",
+        "873.jpg",
+        "934.jpg",
+        "1919.jpg",
+        "3485.jpg",
+        "3560.jpg",
+        "3775.jpg",
+        "7619.jpg"
+      ],
+      "experiment": {
+        "mae": 10.718401860005208,
+        "mean_runtime_seconds": 39.243840981947464
+      },
+      "singular_reference": {
+        "mae": 14.053027730994517,
+        "mean_runtime_seconds": 42.465360715209194
+      }
+    },
+    "combined": {
+      "images": [
+        "558.jpg",
+        "833.jpg",
+        "873.jpg",
+        "934.jpg",
+        "1919.jpg",
+        "3560.jpg",
+        "3775.jpg",
+        "7619.jpg",
+        "7314.jpg"
+      ],
+      "experiment": {
+        "mae": 12.076409453129367,
+        "mean_runtime_seconds": 27.773145383482593
+      },
+      "singular_reference": {
+        "mae": 15.986000322607696,
+        "mean_runtime_seconds": 53.53225872753602
+      }
+    }
+  },
+  "metrics": {
+    "plural_control": {
+      "A_SAM3_Global": {
+        "complete": true,
+        "mae": 50.3,
+        "rmse": 114.23703427522968,
+        "mean_runtime_seconds": 0.3122717971913517,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "B_SAM3_Bootstrap": {
+        "complete": true,
+        "mae": 41.1,
+        "rmse": 70.56840652870093,
+        "mean_runtime_seconds": 4.147333660628647,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "C_Qwen_OneRound": {
+        "complete": true,
+        "mae": 21.24182618352924,
+        "rmse": 34.63296182082531,
+        "mean_runtime_seconds": 8.878643855731934,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "D_Qwen_TwoRound": {
+        "complete": true,
+        "mae": 18.615511421967295,
+        "rmse": 27.15098699714887,
+        "mean_runtime_seconds": 10.687118280865253,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "E_Qwen_UntilSaturation": {
+        "complete": true,
+        "mae": 14.769116213068378,
+        "rmse": 21.000785360126628,
+        "mean_runtime_seconds": 46.98358955099248,
+        "failed_runs": 0,
+        "missing_runs": 0
+      }
+    },
+    "singular_control": {
+      "A_SAM3_Global": {
+        "complete": true,
+        "mae": 48.0,
+        "rmse": 110.29324548674774,
+        "mean_runtime_seconds": 0.33942341143265364,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "B_SAM3_Bootstrap": {
+        "complete": false,
+        "mae": null,
+        "rmse": null,
+        "mean_runtime_seconds": 4.211445703962818,
+        "failed_runs": 1,
+        "missing_runs": 0
+      },
+      "C_Qwen_OneRound": {
+        "complete": true,
+        "mae": 12.881960829498713,
+        "rmse": 22.0776633972709,
+        "mean_runtime_seconds": 8.880401598243044,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "D_Qwen_TwoRound": {
+        "complete": true,
+        "mae": 12.690182233679371,
+        "rmse": 24.29206651988191,
+        "mean_runtime_seconds": 11.48172756023705,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "E_Qwen_UntilSaturation": {
+        "complete": true,
+        "mae": 15.799407241905348,
+        "rmse": 27.28923169147977,
+        "mean_runtime_seconds": 51.839117492968214,
+        "failed_runs": 0,
+        "missing_runs": 0
+      }
+    },
+    "safe_negatives": {
+      "C_Qwen_OneRound": {
+        "complete": true,
+        "mae": 16.43043190657291,
+        "rmse": 32.70791206400256,
+        "mean_runtime_seconds": 8.993705482967197,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "D_Qwen_TwoRound": {
+        "complete": true,
+        "mae": 15.096513358368787,
+        "rmse": 29.802160935412203,
+        "mean_runtime_seconds": 12.323540259432047,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "E_Qwen_UntilSaturation": {
+        "complete": true,
+        "mae": 15.893830413769356,
+        "rmse": 32.13163314054676,
+        "mean_runtime_seconds": 47.26888873577118,
+        "failed_runs": 0,
+        "missing_runs": 0
+      }
+    },
+    "neutral_appearance_misses": {
+      "C_Qwen_OneRound": {
+        "complete": true,
+        "mae": 13.910007189844166,
+        "rmse": 25.289219044480184,
+        "mean_runtime_seconds": 8.717032513022422,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "D_Qwen_TwoRound": {
+        "complete": true,
+        "mae": 12.55519606504578,
+        "rmse": 22.896435797908815,
+        "mean_runtime_seconds": 11.606546676857397,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "E_Qwen_UntilSaturation": {
+        "complete": false,
+        "mae": null,
+        "rmse": null,
+        "mean_runtime_seconds": 43.775026079593225,
+        "failed_runs": 1,
+        "missing_runs": 0
+      }
+    },
+    "adaptive_e": {
+      "E_Qwen_UntilSaturation": {
+        "complete": true,
+        "mae": 14.664614880618482,
+        "rmse": 25.896812447719785,
+        "mean_runtime_seconds": 32.467282676324245,
+        "failed_runs": 0,
+        "missing_runs": 0
+      }
+    },
+    "counting_unit": {
+      "A_SAM3_Global": {
+        "complete": true,
+        "mae": 47.1,
+        "rmse": 110.24835599681295,
+        "mean_runtime_seconds": 0.276844426849857,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "B_SAM3_Bootstrap": {
+        "complete": false,
+        "mae": null,
+        "rmse": null,
+        "mean_runtime_seconds": 4.204670822387561,
+        "failed_runs": 1,
+        "missing_runs": 0
+      },
+      "C_Qwen_OneRound": {
+        "complete": true,
+        "mae": 14.156992441876065,
+        "rmse": 29.519307144619393,
+        "mean_runtime_seconds": 9.010446850024163,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "D_Qwen_TwoRound": {
+        "complete": true,
+        "mae": 11.094339111105652,
+        "rmse": 19.41293644631818,
+        "mean_runtime_seconds": 11.846556910779327,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "E_Qwen_UntilSaturation": {
+        "complete": true,
+        "mae": 12.50344423593083,
+        "rmse": 20.393943435745705,
+        "mean_runtime_seconds": 50.84283598745242,
+        "failed_runs": 0,
+        "missing_runs": 0
+      }
+    },
+    "combined": {
+      "A_SAM3_Global": {
+        "complete": true,
+        "mae": 47.1,
+        "rmse": 110.24835599681295,
+        "mean_runtime_seconds": 0.28177141831256447,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "B_SAM3_Bootstrap": {
+        "complete": false,
+        "mae": null,
+        "rmse": null,
+        "mean_runtime_seconds": 4.200569946831092,
+        "failed_runs": 1,
+        "missing_runs": 0
+      },
+      "C_Qwen_OneRound": {
+        "complete": true,
+        "mae": 14.186553185350633,
+        "rmse": 29.003844481814927,
+        "mean_runtime_seconds": 8.991987342620268,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "D_Qwen_TwoRound": {
+        "complete": true,
+        "mae": 15.172699293521266,
+        "rmse": 29.260457772336235,
+        "mean_runtime_seconds": 12.049637062381953,
+        "failed_runs": 0,
+        "missing_runs": 0
+      },
+      "E_Qwen_UntilSaturation": {
+        "complete": false,
+        "mae": null,
+        "rmse": null,
+        "mean_runtime_seconds": 26.86162657975219,
+        "failed_runs": 1,
+        "missing_runs": 0
+      }
+    }
+  }
+}

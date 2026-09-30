@@ -1,0 +1,71 @@
+{
+  "sam3_model": "facebook/sam3",
+  "qwen_model": "qwen3.5-9b-sam3-final",
+  "require_cuda": true,
+  "compile_sam3": false,
+  "budget": {
+    "max_qwen_calls": 2,
+    "max_sam3_calls": 128,
+    "max_sam3_tiles": 128,
+    "max_cleanup_calls": 0,
+    "max_runtime_seconds": 300
+  },
+  "tiling": {
+    "grid_rows": 2,
+    "grid_cols": 2,
+    "overlap_ratio": 0.15,
+    "tile_min_size": 256,
+    "enable_adaptive": true,
+    "adaptive_enable_fallback": true
+  },
+  "bootstrap": {
+    "enable_pseudoexemplar_refinement": true,
+    "pseudoexemplar_max_count": 5,
+    "pseudoexemplar_min_score": 0.6
+  },
+  "association": {
+    "enable_iom_dedup": true,
+    "iom_match_threshold": 0.9,
+    "new_node_iom_threshold": 0.9,
+    "tiled_nms_iom_threshold": 0.9,
+    "mask_only": true
+  },
+  "belief": {
+    "num_confounders": 2,
+    "neutral_confounder_misses": false,
+    "target_count_commit_threshold": null,
+    "target_count_hard_threshold": null
+  },
+  "planner": {
+    "prompt_version": "old",
+    "enable_rejection_correction": true,
+    "correct_missing_target": true,
+    "target_scope": "Count all visible instances of the supplied dataset target anywhere in the image, including partially occluded instances. Do not assume a fruit, tree, or foreground-only task.",
+    "max_actions_per_prompt": 1,
+    "temperature": 0.0,
+    "max_output_tokens": 1024,
+    "request_timeout_seconds": 45.0,
+    "reasoning_effort": "none",
+    "execute_confounder_prompts": true,
+    "sampling_seed": 42,
+    "compact_json": true
+  },
+  "cleanup": {
+    "cleanup_min_utility": 0.05
+  },
+  "replanning": {
+    "max_replans": 1,
+    "min_actions_between_replans": 1,
+    "min_relative_count_variance_reduction": 0.02
+  },
+  "seed": 42,
+  "output_root": "runs/fscd147",
+  "pilot_sample_limit": 0,
+  "sam3": {
+    "singularize_prompts": true,
+    "qwen_discovery_threshold": 0.2,
+    "qwen_confounder_threshold": 0.5,
+    "qwen_discovery_use_exemplars": false,
+    "qwen_prompt_threshold": 0.5
+  }
+}

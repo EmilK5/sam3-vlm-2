@@ -26,13 +26,25 @@ class Trial:
     reference: str | None
 
 
-def build_trials(deployment):
+def build_trials(deployment, suite="policies"):
     base = deployment.v4_config
     # Freeze a common control, including disabling every new experimental switch.
     base = replace(base, sam3=replace(base.sam3, singularize_prompts=True),
         planner=replace(base.planner, validate_confounders=False),
         belief=replace(base.belief, neutral_appearance_misses=False),
         replanning=replace(base.replanning, adaptive_e_zero_gain_patience=None))
+    if suite == "final":
+        base = replace(base, planner=replace(base.planner, temperature=0.0,
+            sampling_seed=deployment.seed, compact_json=True, max_output_tokens=1024))
+        return [
+            Trial("final_reference", replace(deployment, v4_config=base), "DE",
+                  {"donuts tray": "donut"}, None),
+            Trial("final_adaptive", replace(deployment, v4_config=replace(base,
+                replanning=replace(base.replanning, adaptive_e_zero_gain_patience=3))),
+                "E", {"donuts tray": "donut"}, "final_reference"),
+        ]
+    if suite != "policies":
+        raise ValueError("suite must be policies or final")
     configs = [
         ("plural_control", replace(base, sam3=replace(base.sam3, singularize_prompts=False)), "ABCDE", {}, None),
         ("singular_control", base, "ABCDE", {}, "plural_control"),
@@ -121,11 +133,21 @@ def report_suite(dataset_root, output_dir, *, split="val"):
             reference_rows = {image["image_id"]: image["variants"][arm] for image in reference["per_image"]}
             arms[arm] = paired_result(current_rows, reference_rows, dataset.image_ids)
         comparisons[name] = {"reference": reference_name, "available": True, "arms": arms}
+    cross_arm = {}
+    if "final_reference" in reports:
+        reference = reports["final_reference"]
+        d = next((arm for arm in reference["aggregates"] if arm.startswith("D_")), None)
+        e = next((arm for arm in reference["aggregates"] if arm.startswith("E_")), None)
+        if d and e:
+            cross_arm["reference_D_to_E"] = paired_result(
+                {image["image_id"]: image["variants"][e] for image in reference["per_image"]},
+                {image["image_id"]: image["variants"][d] for image in reference["per_image"]}, dataset.image_ids)
     result = {"schema_version": 1, "image_ids": list(dataset.image_ids), "expected_runs": manifest["expected_runs"],
         "complete": not missing and all(arm["complete"] for report in reports.values() for arm in report["aggregates"].values()),
         "missing_profiles": missing,
         "aggregates": {name: report["aggregates"] for name, report in reports.items()},
         "paired_comparisons": comparisons,
+        "cross_arm_comparisons": cross_arm,
         "note": "Positive error reduction means improved accuracy; negative runtime change means faster. Ten images are a smoke test."}
     json_path = output_dir / "comparison.json"
     json_path.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
@@ -144,6 +166,14 @@ def report_suite(dataset_root, output_dir, *, split="val"):
                          f"{paired['mean_runtime_change_seconds']} | {paired['improved_images']} / {paired['worsened_images']} |")
     if missing:
         lines += ["", f"Missing profiles: {missing}"]
+    if cross_arm:
+        paired = cross_arm["reference_D_to_E"]
+        lines += ["", "Reference D → E on the same images:",
+                  f"Mean error reduction: {paired['mean_absolute_error_reduction']}; "
+                  f"mean runtime change: {paired['mean_runtime_change_seconds']} seconds; "
+                  f"improved / worse: {paired['improved_images']} / {paired['worsened_images']}.",
+                  "Both final profiles use compact JSON, 1024 output tokens, temperature 0 and an API sampling seed. "
+                  "Compare these fresh controls within this suite; older sampling settings differ."]
     lines += ["", "Mask overlap flags in profile summaries identify pairs for visual review; counts alone do not establish dedup quality.",
               "Negative semantic assessments rely on Qwen and can be wrong. Check the book, cap and donut examples.", ""]
     markdown = output_dir / "comparison.md"
@@ -180,7 +210,9 @@ def main(argv=None):
     run.add_argument("output_dir", type=Path)
     run.add_argument("--config", type=Path, default=Path("configs/fscd147.json"))
     run.add_argument("--dry-run", action="store_true")
-    run.add_argument("--profiles", nargs="+", help="Selected profile names; default all seven")
+    run.add_argument("--suite", choices=["policies", "final"], default="policies",
+                     help="policies: original seven profiles; final: D, E and adaptive E (30 runs)")
+    run.add_argument("--profiles", nargs="+", help="Selected names within the chosen suite")
     run.add_argument("--allow-full-split", action="store_true", help="Explicitly allow a split size other than ten")
     run.add_argument("--sam3-model")
     run.add_argument("--qwen-model")
@@ -201,7 +233,7 @@ def main(argv=None):
             parser.error(f"Missing configuration: {args.config}")
         deployment = load_m8_config(SimpleNamespace(**{**vars(args), "output_dir": str(args.output_dir)}),
                                     config_path=args.config)
-        trials = build_trials(deployment)
+        trials = build_trials(deployment, args.suite)
         if args.profiles:
             if set(args.profiles) - {trial.name for trial in trials}:
                 parser.error("Unknown experiment profile")

@@ -443,9 +443,203 @@ support. An interrupted suite can still be reported, with missing runs explicit.
 Normal `fscd147 run` keeps the new policy flags disabled; singularization remains
 enabled in the deployment config as before.
 
-## 9. Run the complete validation split only after reviewing the gallery
+## 9. Final focused ablation: v3, ten images and 30 runs
 
-Use the **original dataset root**, a fresh output directory, and the same config:
+After reviewing the v2 results, use `--suite final` for one focused round before
+full validation. Reuse **the existing** `data/fscd_val10_seed42` subset so all
+three choices see the same ten images. This selects two profiles:
+
+| Output folder | Arms | Policy |
+|---|---|---|
+| `final_reference` | D, E | Singular prompts and `donuts tray` → `donut` |
+| `final_adaptive` | E | Same settings, stop after three consecutive zero-gain Qwen target searches |
+
+Both profiles leave semantic negative validation and neutral appearance misses
+disabled. Bootstrap remains full-image, uses the first dataset prompt, and
+retains adaptive tiling. Association uses only mask IoU/IoM. Empty **valid binary**
+masks are skipped and counted in event logs and summaries; missing or malformed
+masks still fail. Empty proposals create no nodes, and their sensing calls,
+runtime and searched regions remain accounted for.
+
+Both profiles now request compact JSON, with a 1024-token output limit,
+temperature 0 and API sampling seed 42. The context stays at 65536. A seed does
+not guarantee identical GPU/model outputs. Compare the fresh D/E controls in
+this suite, rather than attributing changes against v2 entirely to stopping.
+Malformed JSON retains the existing single budgeted repair attempt. Raw initial
+and repair responses, finish reasons, token usage, errors and runtime are saved,
+even when the run fails. The compact ZIP includes bounded failure-response
+examples; full raw responses stay in the run artifacts.
+
+### Step 1: update the existing cluster checkout from your Mac
+
+The current changes are local. Replace `USER@LOGIN` with the same SSH destination
+you used previously. The transfer below preserves cluster datasets, models,
+environment and previous outputs.
+
+```bash
+rsync -av \
+  --exclude='.git/' --exclude='.venv/' --exclude='__pycache__/' \
+  --exclude='.pytest_cache/' --exclude='data/' --exclude='outputs/' \
+  --exclude='runs/' --exclude='logs/' \
+  /Users/emilkielar/Projects/sam3-vlm-2/v4/ \
+  USER@LOGIN:~/sam3-vlm-2-fscd/
+```
+
+### Step 2: use your normal GPU shell
+
+Connect to the same GPU machine as previous runs, with the project directory
+visible there. No scheduler command is needed in this runbook. In terminal 2:
+
+```bash
+cd ~/sam3-vlm-2-fscd
+source .venv/bin/activate
+python -m pip install -e .
+mkdir -p logs
+nvidia-smi
+python -c 'import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))'
+```
+
+Keep your existing Hugging Face authentication/cache and GPU visibility settings.
+
+### Step 3: start or reuse Ollama on that same GPU machine
+
+If it is already serving port 11434, leave it running. Otherwise, in terminal 1:
+
+```bash
+cd ~/sam3-vlm-2-fscd
+export PATH="$HOME/.local/ollama/bin:$PATH"
+export OLLAMA_HOST=127.0.0.1:11434
+export OLLAMA_NUM_PARALLEL=1
+export OLLAMA_MAX_LOADED_MODELS=1
+export OLLAMA_FLASH_ATTENTION=1
+ollama serve
+```
+
+Leave terminal 1 open. Back in terminal 2, create the separate final-run alias
+using your existing downloaded Qwen weights:
+
+```bash
+export PATH="$HOME/.local/ollama/bin:$PATH"
+export OLLAMA_HOST=127.0.0.1:11434
+curl --fail http://127.0.0.1:11434/api/version
+ollama create qwen3.5-9b-sam3-final -f configs/ollama_qwen3_5_9b_final.Modelfile
+ollama show --modelfile qwen3.5-9b-sam3-final
+export QWEN_BASE_URL=http://127.0.0.1:11434/v1
+export QWEN_MODEL=qwen3.5-9b-sam3-final
+export QWEN_API_KEY=ollama
+```
+
+Check that the alias shows `num_ctx 65536`, `num_predict 1024`, temperature 0,
+and seed 42. Creating this alias reuses model weights; the earlier alias remains
+available for historical configurations.
+
+### Step 4: check the dataset and final suite without loading models
+
+```bash
+export FSCD_SAMPLE="$PWD/data/fscd_val10_seed42"
+export FSCD_SUITE="$PWD/outputs/fscd_val10_policy_suite_v3"
+python -m sam3_vlm.experiments.fscd147_ablation run \
+  "$FSCD_SAMPLE" "$FSCD_SUITE" --split val --suite final \
+  --config configs/fscd147_final.json --dry-run
+```
+
+Expected output:
+
+```json
+{
+  "images": 10,
+  "expected_runs": 30,
+  "profiles": {"final_reference": "DE", "final_adaptive": "E"}
+}
+```
+
+Use a fresh output folder. The suite refuses to overwrite an existing benchmark;
+it does not resume an interrupted run. Do not regenerate or replace the subset.
+
+### Step 5: run the 30 image/arm combinations
+
+In terminal 2, with Ollama running:
+
+```bash
+python -u -m sam3_vlm.experiments.fscd147_ablation run \
+  "$FSCD_SAMPLE" "$FSCD_SUITE" --split val --suite final \
+  --config configs/fscd147_final.json > logs/fscd_val10_policy_suite_v3.log 2>&1
+```
+
+The command runs in the foreground and returns when finished. In another shell
+on the same machine:
+
+```bash
+tail -f ~/sam3-vlm-2-fscd/logs/fscd_val10_policy_suite_v3.log
+```
+
+Expect 20 result rows in `final_reference/predictions.jsonl` and ten in
+`final_adaptive/predictions.jsonl`. The log prints each image, arm, success, count
+and runtime. Keep both inference and Ollama terminals open until completion.
+
+### Step 6: create/recreate the comparison and summary ZIP
+
+The runner builds it automatically on completion. Run this command explicitly
+if the archive is missing, or to refresh it after adding visual notes. It reads
+saved results and does not run the models again:
+
+```bash
+python -m sam3_vlm.experiments.fscd147_ablation report \
+  "$FSCD_SAMPLE" "$FSCD_SUITE" --split val
+cat "$FSCD_SUITE/comparison.md"
+```
+
+Expect `"complete": true` and an archive path ending in
+`fscd_val10_policy_suite_v3/summary.zip`. If it says false, the ZIP still contains
+available results and failure diagnostics; send it rather than rerunning blind.
+The comparison includes reference D → E accuracy/runtime and reference E →
+adaptive E paired changes. Positive error reduction is better; negative runtime
+change is faster.
+
+### Step 7: inspect predictions and add visual notes
+
+```bash
+python -m sam3_vlm.experiments.fscd147_smoke review \
+  "$FSCD_SAMPLE" "$FSCD_SUITE/final_reference/predictions.jsonl" --split val
+python -m sam3_vlm.experiments.fscd147_smoke review \
+  "$FSCD_SAMPLE" "$FSCD_SUITE/final_adaptive/predictions.jsonl" --split val
+```
+
+From your Mac, optionally download the two galleries:
+
+```bash
+scp -r USER@LOGIN:~/sam3-vlm-2-fscd/outputs/fscd_val10_policy_suite_v3/final_reference/review \
+  ~/Downloads/fscd_v3_reference_review
+scp -r USER@LOGIN:~/sam3-vlm-2-fscd/outputs/fscd_val10_policy_suite_v3/final_adaptive/review \
+  ~/Downloads/fscd_v3_adaptive_review
+open ~/Downloads/fscd_v3_reference_review/index.html
+open ~/Downloads/fscd_v3_adaptive_review/index.html
+```
+
+Record misses, noisy detections, duplicates/fragments, dense-scene recovery and
+where adaptive E stops too early. On the cluster, edit
+`$FSCD_SUITE/final_reference/report/visual_notes.md` and
+`$FSCD_SUITE/final_adaptive/report/visual_notes.md`; these files survive report
+regeneration. Then repeat step 6 to include your notes in the ZIP.
+
+### Step 8: download the single bundle from your Mac
+
+```bash
+scp USER@LOGIN:~/sam3-vlm-2-fscd/outputs/fscd_val10_policy_suite_v3/summary.zip \
+  ~/Downloads/fscd_policy_suite_v3_summary.zip
+```
+
+Upload `fscd_policy_suite_v3_summary.zip`, with your visual notes in the reports
+or chat. It contains nine small Markdown/JSON files, with no images or mask
+arrays. If the runs complete without failures and the chosen policy has no
+major per-image regressions, proceed to full validation with that policy.
+
+## 10. Run the complete validation split only after reviewing the gallery
+
+After the focused v3 experiment, select and freeze the winning policy before
+running full validation. The command below is the earlier A–E baseline workflow;
+it does not select a v3 winner or apply the suite's donut override. Use the
+**original dataset root** and a fresh output directory for full runs.
 
 ```bash
 export FSCD_FULL_RUN="$PWD/outputs/fscd_val_ae_v1"

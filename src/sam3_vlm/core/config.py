@@ -90,11 +90,17 @@ class PlannerConfig:
     target_scope: Optional[str] = None
     max_actions_per_prompt: int = 5
     temperature: float = 0.2
+    sampling_seed: Optional[int] = None
+    compact_json: bool = False
     max_output_tokens: int = 512
     request_timeout_seconds: float = 45.0
     reasoning_effort: Optional[str] = "none"
 
     def __post_init__(self) -> None:
+        if self.sampling_seed is not None and (type(self.sampling_seed) is not int or self.sampling_seed < 0):
+            raise ValueError("sampling_seed must be a nonnegative integer or None")
+        if type(self.compact_json) is not bool:
+            raise ValueError("compact_json must be boolean")
         if type(self.validate_confounders) is not bool:
             raise ValueError("validate_confounders must be boolean")
         if self.prompt_version not in {"old", "v3", "v4"}:

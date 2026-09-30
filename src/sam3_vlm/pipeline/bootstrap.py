@@ -98,6 +98,8 @@ class BootstrapPipeline:
         state.budget.sam3_runtime_ms += observation.runtime_ms
         state.budget.model_runtime_ms += observation.runtime_ms
         state.budget.total_runtime_ms += observation.runtime_ms
+        from sam3_vlm.sensing.mask_validation import prepare_mask_observation
+        prepare_mask_observation(observation, mask_only=self.config.association.mask_only)
         if self.recorder:
             self.recorder.record_sam3_observation(action, observation)
             self.recorder.record_budget_updated(state.budget.__dict__)

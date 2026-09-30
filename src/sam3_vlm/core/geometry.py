@@ -196,26 +196,30 @@ def mask_overlap(a: Geometry, b: Geometry) -> Tuple[float, float]:
             intersection / minimum if minimum else 0.0)
 
 
+class EmptyMaskError(ValueError):
+    """A valid binary sensor proposal with no foreground pixels."""
+
+
 def detection_mask_geometry(detection) -> MaskGeometry:
     """Read, validate and trim a sensor mask while preserving global offsets."""
     raw = detection.raw_metadata
     if "mask" not in raw:
         raise ValueError(f"Detection {detection.detection_id} has no mask; box fallback is disabled")
     mask = np.asarray(raw["mask"])
-    if mask.ndim != 2 or not np.all(np.isfinite(mask)) or not np.all((mask == 0) | (mask == 1)):
+    if mask.ndim != 2 or min(mask.shape, default=0) == 0 or not np.all(np.isfinite(mask)) or not np.all((mask == 0) | (mask == 1)):
         raise ValueError("SAM3 must supply a finite 2D binary mask")
-    ys, xs = np.nonzero(mask)
-    if not len(xs):
-        raise ValueError("SAM3 supplied an empty mask")
     ox, oy = raw.get("mask_offset_x", 0), raw.get("mask_offset_y", 0)
     if any(not np.isfinite(v) or int(v) != v or v < 0 for v in (ox, oy)):
         raise ValueError("Mask offsets must be nonnegative integer image coordinates")
-    left, top, right, bottom = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
-    ox, oy = int(ox) + left, int(oy) + top
-    pixels = np.array(mask[top:bottom, left:right], dtype=bool, copy=True)
     clipped = raw.get("crop_boundary_clipped", False)
     if type(clipped) is not bool:
         raise ValueError("Mask crop-boundary provenance must be boolean")
+    ys, xs = np.nonzero(mask)
+    if not len(xs):
+        raise EmptyMaskError("SAM3 supplied an empty mask")
+    left, top, right, bottom = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
+    ox, oy = int(ox) + left, int(oy) + top
+    pixels = np.array(mask[top:bottom, left:right], dtype=bool, copy=True)
     return MaskGeometry(Box(ox, oy, ox + pixels.shape[1], oy + pixels.shape[0]),
                         pixels, (ox, oy), int(pixels.sum()), detection.mask_artifact, clipped)
 

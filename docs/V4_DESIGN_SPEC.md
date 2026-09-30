@@ -40,7 +40,7 @@ Each adaptive tile is a separate LOCAL sensing action tagged with a `tile_id`. I
 
 ## Mask association
 
-Every supported A–E configuration enables `association.mask_only` and mask IoM. Within-call suppression, cross-pass matching, containment, and duplicate-risk diagnostics use binary mask IoU and mask IoM only. There is no bounding-box fallback, tile-box association, or box NMS in these runs. Missing, malformed, or empty masks fail explicitly instead of silently changing the association rule. The old box policies remain for historical synthetic fixtures only.
+Every supported A–E configuration enables `association.mask_only` and mask IoM. Within-call suppression, cross-pass matching, containment, and duplicate-risk diagnostics use binary mask IoU and mask IoM only. There is no bounding-box fallback, tile-box association, or box NMS in these runs. Missing or malformed masks fail explicitly. Valid binary proposals with no foreground pixels are skipped before persistence and association; event metadata records raw/accepted proposal counts and bounded skipped examples. Calls, searched regions and runtime remain accounted for, including all-empty observations. Direct mask geometry/association still rejects empty masks. The old box policies remain for historical synthetic fixtures only.
 
 Masks are trimmed to their nonzero bounds and carry integer original-image offsets. Overlap uses aligned pixels across those offsets. Boxes still serve density estimation, display, crops, pseudoexemplars, and COCO box exports. Identical or overlapping boxes do not merge disjoint masks. Within-call suppression uses the lower of its configured threshold and the cross-call registration threshold, independently for IoU and IoM, so duplicates cannot survive simply because they arrived in one call.
 
@@ -124,3 +124,33 @@ proof of duplicate detections. Reports include paired accuracy/runtime changes
 only for complete matching image/arm pairs, frozen configuration checks, and one
 portable text/JSON archive. Model clients are shared across runs; the existing
 controller seed is reset per run. Qwen sampling can vary despite that seed.
+
+
+### Final focused FSCD ablation
+
+`fscd147_ablation run --suite final` selects `final_reference` (D/E) and
+`final_adaptive` (E), totaling 30 runs on the same ten-image subset. Both use
+singular prompts and the label-based `donuts tray` → `donut` counting-unit
+override. Semantic negative validation and neutral appearance misses stay off.
+The adaptive profile differs only in `adaptive_e_zero_gain_patience=3`; arm
+presets retain existing budgets, thresholds, full-image bootstrap and mask-only
+association. These experiments do not read ground truth during inference.
+
+Both final profiles use compact JSON instructions, 1024 output tokens,
+temperature 0 and `planner.sampling_seed` set to the deployment seed. The API
+seed is sent only when configured. `compact_json=False`, sampling seed None
+and historical token/temperature defaults remain for other configurations. The
+final Ollama alias keeps 65536 context tokens and reuses the same quantized
+weights. Seeded sampling does not guarantee identical GPU results; comparisons
+use freshly rerun controls in this suite.
+
+The planner logs every initial/repair attempt with its raw output, parse status,
+finish reason and token usage when supplied, sampling settings, runtime and
+transport error. The existing one-repair call/budget limit remains. Strict
+failures persist diagnostic artifacts and paid budgets before propagating;
+failed prediction rows retain their budgets and have no predicted count.
+Summary exports include skipped-empty totals and bounded first/last failed
+responses (up to 8000 characters each, with truncation explicitly marked). Full
+raw responses stay in run artifacts. The portable suite archive includes two
+profile reports/notes, frozen manifest and paired comparisons, including D → E
+and reference E → adaptive E. Reporting requires no model execution.

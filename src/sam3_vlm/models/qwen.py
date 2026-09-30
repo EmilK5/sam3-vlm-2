@@ -208,6 +208,7 @@ class RealQwenPlanner:
 
     def plan_scene(self, evidence_pack: QwenEvidencePack, budget: BudgetState, config: V4Config) -> str:
         self.call_count += 1
+        self.last_response_metadata = {}
         belief_classes = canonical_belief_classes(config.belief.num_confounders)
         confounder_slots = [c for c in belief_classes if c != "target"]
         existing_mapping = evidence_pack.confounder_labels or {}
@@ -396,6 +397,11 @@ class RealQwenPlanner:
                 "Assess each listed and frozen confounder. An absent, duplicated or mismatched assessment "
                 "will cause the controller to reject its negative query.\n"
             )
+        if config.planner.compact_json:
+            text += ("\nKeep the response compact: scene_summary at most 20 words; "
+                     "each rationale and assessment reason at most 12 words. "
+                     "Include only necessary visible appearance modes and confounders. "
+                     "Preserve the required JSON fields and action limit. Output complete JSON only, without code fences.")
         text_bytes = len((system_prompt + text).encode("utf-8"))
         content = [{"type": "text", "text": text}]
 
@@ -455,9 +461,19 @@ class RealQwenPlanner:
                 response_format={"type": "json_object"},
                 timeout=config.planner.request_timeout_seconds,
                 extra_body=extra_body or None,
+                **({"seed": config.planner.sampling_seed} if config.planner.sampling_seed is not None else {}),
             )
+            choice = response.choices[0]
+            usage = getattr(response, "usage", None)
+            finish_reason = getattr(choice, "finish_reason", None)
+            self.last_response_metadata = {
+                "finish_reason": finish_reason if isinstance(finish_reason, str) else None,
+                "usage": {key: value for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                          if type(value := getattr(usage, key, None)) is int},
+            }
             return response.choices[0].message.content
         except Exception as exc:
+            self.last_response_metadata["error"] = str(exc)
             if self.strict_model_errors:
                 raise RuntimeError(f"Strict Qwen execution failed: {exc}") from exc
             raise

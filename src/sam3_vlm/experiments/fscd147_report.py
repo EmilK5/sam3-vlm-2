@@ -87,6 +87,7 @@ def _artifact_diagnostics(prediction_path, row):
 
     events_path = run_dir / "events.jsonl"
     event_count = matched = new = raw_detections = 0
+    empty_masks_skipped = empty_mask_calls = 0
     executed_prompts = Counter()
     if events_path.exists():
         with events_path.open() as stream:
@@ -110,13 +111,17 @@ def _artifact_diagnostics(prediction_path, row):
                         result["adaptive_tiling"] = data["adaptive_tiling"]
                 elif kind == "SAM3_ACTION_COMPLETED":
                     observation = data.get("observation", {})
-                    raw_detections += observation.get("num_detections", 0)
+                    validation = observation.get("model_metadata", {}).get("mask_validation", {})
+                    raw_detections += validation.get("raw_detections", observation.get("num_detections", 0))
+                    empty_masks_skipped += validation.get("empty_masks_skipped", 0)
+                    empty_mask_calls += validation.get("empty_masks_skipped", 0) > 0
                     if isinstance(observation.get("prompt"), str):
                         executed_prompts[observation["prompt"]] += 1
                 elif kind == "ASSOCIATION_COMPLETED":
                     matched += data.get("matched_nodes", 0)
                     new += data.get("new_nodes", 0)
         result.update(event_count=event_count, raw_detections=raw_detections,
+                      empty_masks_skipped=empty_masks_skipped, empty_mask_calls=empty_mask_calls,
                       association_matches=matched, association_new_nodes=new)
         result["executed_sam3_prompts"] = [{"prompt": _text(prompt, 150), "calls": calls}
                                            for prompt, calls in list(executed_prompts.items())[:12]]
@@ -139,6 +144,9 @@ def _artifact_diagnostics(prediction_path, row):
 
     rejections, contracts = Counter(), Counter()
     correction_calls = 0
+    finish_reasons = Counter()
+    malformed_attempts = failed_qwen_calls = 0
+    response_failures = []
     examples = []
     for path in sorted((run_dir / "artifacts" / "qwen").glob("*.json")):
         artifact = read_json(path)
@@ -146,6 +154,21 @@ def _artifact_diagnostics(prediction_path, row):
             continue
         result["qwen_artifacts"] += 1
         metadata = artifact.get("metadata", {})
+        failed_qwen_calls += metadata.get("status") == "FAILED"
+        for attempt in metadata.get("call_attempts", []):
+            finish_reasons[str(attempt.get("finish_reason") or "unavailable")] += 1
+            malformed_attempts += attempt.get("parse_valid") is False and not attempt.get("error")
+            if attempt.get("parse_valid") is False:
+                raw = attempt.get("raw_output")
+                text = raw if isinstance(raw, str) else json.dumps(raw)
+                failure = {key: attempt.get(key) for key in (
+                    "phase", "finish_reason", "usage", "error", "max_output_tokens", "temperature", "sampling_seed")}
+                failure.update(qwen_call_id=artifact.get("qwen_call_id"), raw_output=text[:8000],
+                               raw_output_chars=len(text), raw_output_truncated=len(text) > 8000)
+                if len(response_failures) < 2:
+                    response_failures.append(failure)
+                else:
+                    response_failures[-1] = failure
         rejections.update(str(item.get("reason", "UNKNOWN")) for item in metadata.get("rejections", []))
         if metadata.get("contract_diagnostic"):
             contracts[str(metadata["contract_diagnostic"])] += 1
@@ -170,6 +193,8 @@ def _artifact_diagnostics(prediction_path, row):
         else:
             examples[-1] = example
     result.update(qwen_rejections=dict(rejections), qwen_contract_diagnostics=dict(contracts),
+                  qwen_finish_reasons=dict(finish_reasons), qwen_malformed_attempts=malformed_attempts,
+                  qwen_failed_calls=failed_qwen_calls, qwen_response_failures=response_failures,
                   qwen_correction_calls=correction_calls, qwen_first_last=examples)
     if not summary_path.exists() and not events_path.exists() and not graph_path.exists() and not result["qwen_artifacts"]:
         result["available"] = False
@@ -283,6 +308,9 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
                                for row in records if row["diagnostics"].get("warnings")][:max_images],
             stop_reasons=dict(Counter(row["stop_reason"] or ("UNKNOWN" if row["success"] else "FAILED") for row in records)),
             qwen_rejections=dict(rejections), qwen_contract_diagnostics=dict(contracts),
+            empty_masks_skipped=sum(row["diagnostics"].get("empty_masks_skipped", 0) for row in records),
+            qwen_malformed_attempts=sum(row["diagnostics"].get("qwen_malformed_attempts", 0) for row in records),
+            qwen_failed_calls=sum(row["diagnostics"].get("qwen_failed_calls", 0) for row in records),
             failures=[{"image_id": row["image_id"], "error": row["error"]}
                       for row in records if not row["success"]][:max_images],
             worst_images=sorted(valid, key=lambda row: (-row["absolute_error"], row["image_id"]))[:top_k])
@@ -425,6 +453,14 @@ def render_summary(report):
                              f"existing mass change={num(mass['existing_target_mass_change'])}, "
                              f"existing mass lost={num(mass['existing_target_mass_lost'])}, "
                              f"removed mass={num(mass['removed_target_mass'])}.")
+            if diag.get("empty_masks_skipped"):
+                lines.append(f"  Empty masks skipped={diag['empty_masks_skipped']} across {diag['empty_mask_calls']} sensor calls.")
+            if diag.get("qwen_finish_reasons"):
+                lines.append(f"  Qwen finish reasons={json.dumps(diag['qwen_finish_reasons'])}; "
+                             f"malformed attempts={diag['qwen_malformed_attempts']}; failed calls={diag['qwen_failed_calls']}.")
+            for failure in diag.get("qwen_response_failures", []):
+                lines.append(f"  Qwen {failure['phase']} response failure: finish_reason={failure['finish_reason']}, "
+                             f"usage={failure['usage']}, error={_text(failure['error'])}. Raw response is in summary.json.")
             for example in diag.get("qwen_first_last", []):
                 if example["prompts"]:
                     lines.append(f"  Qwen proposals: {'; '.join(example['prompts'])}; accepted actions={example['accepted_actions']}.")

@@ -163,21 +163,44 @@ class QwenPlannerService:
         self.last_fallback_used = False
         self.last_call_runtime_ms = 0.0
         self.last_contract_diagnostic: Optional[str] = None
+        self.last_call_attempts = []
 
     def _invoke_backend(self, evidence: QwenEvidencePack, budget: BudgetState, config: V4Config) -> Any:
         start = time.perf_counter()
+        raw, error = None, None
         try:
             if hasattr(self.planner_backend, "plan_scene"):
-                return self.planner_backend.plan_scene(evidence, budget, config)
-            if hasattr(self.planner_backend, "plan_actions"):
-                return self.planner_backend.plan_actions(evidence)
-            return None
+                raw = self.planner_backend.plan_scene(evidence, budget, config)
+            elif hasattr(self.planner_backend, "plan_actions"):
+                raw = self.planner_backend.plan_actions(evidence)
+            return raw
+        except Exception as exc:
+            error = str(exc)
+            raise
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             self.last_call_runtime_ms += elapsed_ms
             budget.qwen_runtime_ms += elapsed_ms
             budget.model_runtime_ms += elapsed_ms
             budget.total_runtime_ms += elapsed_ms
+            metadata = getattr(self.planner_backend, "last_response_metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+            parsed = self._coerce_to_planner_output(raw)
+            # Historical in-process planners can return partially normalized
+            # dataclasses. Audit serialization must never change execution.
+            try:
+                recorded_raw = raw.to_dict() if isinstance(raw, PlannerOutput) else raw
+            except (TypeError, ValueError):
+                recorded_raw = repr(raw)
+            self.last_call_attempts.append({
+                "phase": "repair" if self.last_call_attempts else "initial",
+                "raw_output": recorded_raw if isinstance(recorded_raw, (str, dict, list)) else None,
+                "parse_valid": error is None and parsed.scene_summary != "Raw output unparseable.",
+                "error": error, "runtime_ms": elapsed_ms,
+                "temperature": config.planner.temperature, "sampling_seed": config.planner.sampling_seed,
+                "max_output_tokens": config.planner.max_output_tokens, **metadata,
+            })
 
     def plan_scene(
         self,
@@ -194,6 +217,7 @@ class QwenPlannerService:
         self.last_fallback_used = False
         self.last_call_runtime_ms = 0.0
         self.last_contract_diagnostic = None
+        self.last_call_attempts = []
         strict_m8 = evidence.uses_canonical_m8_policy or bool(
             getattr(self.planner_backend, "strict_model_errors", False)
         )
