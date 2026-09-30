@@ -10,6 +10,7 @@ def confidence_step(graph, previous, target_class="target", action=None, observa
     retained = current.keys() & previous.keys()
     removed = previous.keys() - current.keys()
     relations = Counter()
+    relation_mass = Counter()
     changes = []
     for key in sorted(retained):
         node = nodes[key]
@@ -17,6 +18,7 @@ def confidence_step(graph, previous, target_class="target", action=None, observa
         latest = refs[-1] if refs else None
         relation = latest.relation.value if latest else "NO_OBSERVATION"
         relations[relation] += 1
+        relation_mass[relation] += current[key] - previous[key]
         changes.append({
             "node_id": key, "before": previous[key], "after": current[key],
             "delta": current[key] - previous[key], "relation": relation,
@@ -37,6 +39,10 @@ def confidence_step(graph, previous, target_class="target", action=None, observa
         "existing_node_target_mass_change": sum(current[key] - previous[key] for key in retained),
         "removed_node_target_mass": sum(previous[key] for key in removed),
         "nodes_below_half": sum(p < 0.5 for p in current.values()),
+        "candidate_to_soft_count_gap": len(current) - sum(current.values()),
+        "existing_target_mass_change_by_relation": dict(relation_mass),
+        "existing_target_mass_gained": sum(max(r["delta"], 0) for r in changes),
+        "existing_target_mass_lost": sum(max(-r["delta"], 0) for r in changes),
         "existing_node_observation_relations": dict(relations),
         "largest_gains": sorted((r for r in changes if r["delta"] > 0), key=lambda r: (-r["delta"], r["node_id"]))[:5],
         "largest_losses": sorted((r for r in changes if r["delta"] < 0), key=lambda r: (r["delta"], r["node_id"]))[:5],

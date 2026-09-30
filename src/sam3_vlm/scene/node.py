@@ -93,6 +93,7 @@ class Node:
             result["mask_geometry"] = {
                 "offset": list(self.geometry.offset), "pixel_area": self.geometry.pixel_area,
                 "mask_artifact": self.geometry.mask_artifact,
+                "crop_boundary_clipped": self.geometry.crop_boundary_clipped,
             }
         return result
 
@@ -105,7 +106,8 @@ class Node:
         geometry = BoxGeometry(box=box)
         if "mask_geometry" in data:
             mask = data["mask_geometry"]
-            geometry = MaskGeometry(box, None, tuple(mask["offset"]), mask["pixel_area"], mask["mask_artifact"])
+            geometry = MaskGeometry(box, None, tuple(mask["offset"]), mask["pixel_area"], mask["mask_artifact"],
+                                    mask.get("crop_boundary_clipped", False))
 
         cb_data = data.get("class_belief", {})
         class_belief = ClassBelief(

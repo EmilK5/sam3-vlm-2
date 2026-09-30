@@ -58,6 +58,30 @@ def test_real_sam3_global(sensor_patched):
     assert det.geometry.box.x2 == 900
     assert det.geometry.box.y2 == 720
 
+
+@pytest.mark.parametrize('region,clipped', [(Box(0, 0, 1000, 800), False),
+                                          (Box(100, 100, 500, 500), True)])
+def test_mask_crop_boundary_provenance_and_adaptive_tile_id(sensor_patched, region, clipped):
+    def inference(image, *args, **kwargs):
+        w, h = image.size
+        return np.array([[0, 0, w, h]]), np.array([.9]), [np.ones((h, w), dtype=bool)]
+    action = SensingAction('a', 'target', 'caps', ActionFamily.DISCOVERY,
+                          spatial_mode=SpatialMode.LOCAL, roi=region, tile_id='adaptive_0')
+    with patch.object(sensor_patched, '_run_inference', new=inference):
+        observation = sensor_patched.observe(Image.new('RGB', (1000, 800)), action)
+    detection = observation.detections[0]
+    assert detection.source_tile_id == 'adaptive_0'
+    assert detection.raw_metadata['crop_boundary_clipped'] is clipped
+
+
+def test_mask_away_from_crop_edges_is_not_marked_clipped(sensor_patched):
+    mask = np.zeros((400, 400), dtype=bool)
+    mask[20:40, 20:40] = True
+    detections = []
+    sensor_patched._append_crop_detections(detections, np.array([[20, 20, 40, 40]]),
+        np.array([.9]), [mask], Box(100, 100, 500, 500), 'local', image_size=(1000, 800))
+    assert not detections[0].raw_metadata['crop_boundary_clipped']
+
 def test_real_sam3_tiled(sensor_patched):
     img = Image.new("RGB", (1000, 1000), color="blue")
     

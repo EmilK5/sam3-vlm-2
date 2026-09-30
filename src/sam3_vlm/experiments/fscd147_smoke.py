@@ -148,6 +148,7 @@ def main(argv=None):
     summary.add_argument("--max-images", type=int, default=10, help="Maximum per-image detail rows")
     summary.add_argument("--no-artifacts", action="store_true", help="Read predictions/ground truth only")
     summary.add_argument("--ap", action="store_true", help="Compute fresh bbox AP; requires evaluation extra")
+    summary.add_argument("--annotation-audit", type=Path, help="Separate JSON notes and optional manual counts; official metrics stay unchanged")
     args = parser.parse_args(argv)
     if args.command == "prepare":
         result = prepare_subset(args.source, args.destination, split=args.split, count=args.count, seed=args.seed)
@@ -157,7 +158,8 @@ def main(argv=None):
         from sam3_vlm.experiments.fscd147_report import write_summary
         result = write_summary(args.dataset_root, args.prediction_path, split=args.split, output_dir=args.output_dir,
                                top_k=args.top_k, max_images=args.max_images,
-                               include_artifacts=not args.no_artifacts, compute_ap=args.ap)
+                               include_artifacts=not args.no_artifacts, compute_ap=args.ap,
+                               annotation_audit=args.annotation_audit)
     print(json.dumps(result, indent=2))
     return 0
 

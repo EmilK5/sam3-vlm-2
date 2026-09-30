@@ -335,6 +335,7 @@ class RealSAM3Sensor:
         crop_region: Box,
         coordinate_space: str,
         source_tile_id: Optional[str] = None,
+        image_size: Optional[tuple[int, int]] = None,
     ) -> None:
         for i in range(len(boxes)):
             b = boxes[i]
@@ -353,6 +354,14 @@ class RealSAM3Sensor:
                 raw_meta["mask"] = masks[i]
                 raw_meta["mask_offset_x"] = crop_region.x1
                 raw_meta["mask_offset_y"] = crop_region.y1
+                mask = np.asarray(masks[i])
+                if image_size is not None:
+                    width, height = image_size
+                    raw_meta["crop_boundary_clipped"] = bool(
+                        (crop_region.x1 > 0 and mask[:, 0].any()) or
+                        (crop_region.y1 > 0 and mask[0, :].any()) or
+                        (crop_region.x2 < width and mask[:, -1].any()) or
+                        (crop_region.y2 < height and mask[-1, :].any()))
             detections.append(
                 Detection(
                     detection_id=self.id_gen.next_detection_id(),
@@ -409,6 +418,7 @@ class RealSAM3Sensor:
                     tile_box,
                     coordinate_space="tile",
                     source_tile_id=f"tile_{tile_idx:02d}",
+                    image_size=(img_w, img_h),
                 )
         else:
             # GLOBAL with roi means the whole locked search domain; LOCAL and
@@ -432,6 +442,8 @@ class RealSAM3Sensor:
                 masks,
                 domain,
                 coordinate_space=coordinate_space,
+                source_tile_id=action.tile_id,
+                image_size=(img_w, img_h),
             )
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0

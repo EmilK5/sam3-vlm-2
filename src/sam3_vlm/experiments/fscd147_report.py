@@ -62,6 +62,25 @@ def _artifact_diagnostics(prediction_path, row):
             if trace:
                 result["bootstrap_target_mass"] = trace[0].get("raw_soft_count")
                 result["final_target_mass"] = trace[-1].get("raw_soft_count")
+                by_family = {}
+                for step in trace:
+                    family = step.get("family") or "BOOTSTRAP"
+                    totals = by_family.setdefault(family, {"steps": 0, "new_nodes": 0,
+                        "new_target_mass": 0.0, "existing_target_mass_change": 0.0,
+                        "existing_target_mass_lost": None, "removed_target_mass": 0.0,
+                        "mass_change_by_relation": {}})
+                    totals["steps"] += 1
+                    for dest, source in (("new_nodes", "new_nodes"),
+                            ("new_target_mass", "new_node_target_mass"),
+                            ("existing_target_mass_change", "existing_node_target_mass_change"),
+                            ("existing_target_mass_lost", "existing_target_mass_lost"),
+                            ("removed_target_mass", "removed_node_target_mass")):
+                        if _number(step.get(source)):
+                            totals[dest] = (totals[dest] or 0) + step[source]
+                    for relation, mass in step.get("existing_target_mass_change_by_relation", {}).items():
+                        if _number(mass):
+                            totals["mass_change_by_relation"][relation] = totals["mass_change_by_relation"].get(relation, 0.0) + mass
+                result["confidence_by_family"] = by_family
 
     events_path = run_dir / "events.jsonl"
     event_count = matched = new = raw_detections = 0
@@ -103,6 +122,10 @@ def _artifact_diagnostics(prediction_path, row):
                           target_probability_mean=_mean(probabilities),
                           nodes_below_half=sum(_number(p) and p < .5 for p in probabilities),
                           mean_duplicate_risk=_mean([node.get("diagnostics", {}).get("duplicate_risk") for node in active]))
+            if all(_number(p) for p in probabilities):
+                result["candidate_to_soft_count_gap"] = len(active) - sum(probabilities)
+            result["rejected_mask_nodes"] = sum(node.get("status") == "REJECTED" and
+                "mask_geometry" in node for node in graph.get("nodes", {}).values())
 
     rejections, contracts = Counter(), Counter()
     correction_calls = 0
@@ -139,7 +162,7 @@ def _artifact_diagnostics(prediction_path, row):
 
 
 def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_images=10,
-                  include_artifacts=True, compute_ap=False):
+                  include_artifacts=True, compute_ap=False, annotation_audit=None):
     """Count failures and missing rows explicitly; never infer visual quality from counts."""
     if top_k < 1 or max_images < 1:
         raise ValueError("top_k and max_images must be positive")
@@ -154,6 +177,18 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
     if not variants:
         raise ValueError("Prediction metadata has no variants")
     truth = dataset.ground_truth()
+    audit = {}
+    if annotation_audit is not None:
+        audit = json.loads(Path(annotation_audit).read_text())
+        if not isinstance(audit, dict):
+            raise ValueError("Annotation audit must map image IDs to notes and optional audited_count")
+        for image_id, item in audit.items():
+            if image_id not in truth or not isinstance(item, dict):
+                raise ValueError("Unknown image or invalid annotation audit entry")
+            if set(item) - {"note", "audited_count"} or not isinstance(item.get("note", ""), str):
+                raise ValueError("Audit entries accept a note and optional audited_count only")
+            if "audited_count" in item and (type(item["audited_count"]) is not int or item["audited_count"] < 0):
+                raise ValueError("audited_count must be a nonnegative integer")
     rows = {variant: {} for variant in variants}
     with prediction_path.open() as stream:
         for line_number, line in enumerate(stream, 1):
@@ -188,6 +223,9 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
                       "qwen_seconds": budget.get("qwen_runtime_ms", 0) / 1000 if _number(budget.get("qwen_runtime_ms")) else None,
                       "tiling": ({"trigger": tiling.get("trigger"), "density_score": tiling.get("density_score"),
                                   "seed_count": tiling.get("object_count"), "tile_size": tiling.get("tile_size"),
+                                  "trigger_reason": tiling.get("trigger_reason"),
+                                  "candidate_count": tiling.get("candidate_count"),
+                                  "small_candidate_count": tiling.get("small_candidate_count"),
                                   "planned_tiles": len(tiling.get("tiles", []))} if tiling else None),
                       "diagnostics": {key: value for key, value in diagnostic.items()
                                       if key not in {"budget", "adaptive_tiling", "stop_reason"}}}
@@ -255,6 +293,15 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
     config_hash = hashlib.sha256(json.dumps(configs, sort_keys=True).encode()).hexdigest()
     sample_path = dataset.root / "sample_manifest.json"
     sample = json.loads(sample_path.read_text()) if sample_path.exists() else None
+    audit_metrics = {}
+    audited_ids = [key for key, item in audit.items() if "audited_count" in item]
+    for variant in variants:
+        errors = [rows[variant][key][0]["predicted_count"] - audit[key]["audited_count"]
+                  for key in audited_ids if key in rows[variant] and rows[variant][key][0]["success"]]
+        complete = bool(audited_ids) and len(errors) == len(audited_ids)
+        audit_metrics[variant] = {"expected_images": len(audited_ids), "successful_images": len(errors),
+            "complete": complete, "mae": _mean([abs(error) for error in errors]) if complete else None,
+            "rmse": math.sqrt(mean(error**2 for error in errors)) if complete else None}
     return {"schema_version": 1, "dataset": "FSCD-147", "split": split, "images_per_arm": len(truth),
             "predictions_sha256": hashlib.sha256(prediction_path.read_bytes()).hexdigest(),
             "config_sha256": config_hash, "models": {key: value for key, value in metadata.get("model_settings", {}).items()
@@ -262,6 +309,8 @@ def build_summary(dataset_root, prediction_path, *, split="val", top_k=3, max_im
             "sample": {key: value for key, value in sample.items()
                        if key in {"seed", "split", "count", "image_ids"}} if sample is not None else None,
             "aggregates": aggregates, "paired_comparisons": comparisons,
+            "annotation_audit": {"entries": audit, "count_metrics": audit_metrics,
+                "note": "User-audited counts are separate from official metrics; inference and official annotations are unchanged."},
             "per_image": [{"image_id": key, "gt_count": truth[key].count,
                            "variants": {variant: rows[variant].get(key, (None, None))[0] for variant in variants}}
                           for key in selected],
@@ -338,11 +387,18 @@ def render_summary(report):
                          f"candidates {row['candidate_count']}, {num(row['runtime_seconds'])}s, "
                          f"SAM/Qwen {num(row['sam3_calls'])}/{num(row['qwen_calls'])}.")
             if tile:
-                lines.append(f"  Tiling: trigger={tile['trigger']}, density={num(tile['density_score'])}, "
+                lines.append(f"  Tiling: trigger={tile['trigger']}, reason={tile.get('trigger_reason') or 'unrecorded'}, density={num(tile['density_score'])}, "
                              f"seeds={tile['seed_count']}, planned tiles={tile['planned_tiles']}.")
             if "target_probability_mean" in diag:
                 lines.append(f"  Mean target probability={num(diag['target_probability_mean'])}, "
                              f"nodes below 0.5={diag['nodes_below_half']}, mask nodes={diag['mask_nodes']}/{diag['active_nodes']}.")
+            if "candidate_to_soft_count_gap" in diag:
+                lines.append(f"  Candidates minus soft count={num(diag['candidate_to_soft_count_gap'])}.")
+            for family, mass in diag.get("confidence_by_family", {}).items():
+                lines.append(f"  {family}: new candidates={mass['new_nodes']}, new target mass={num(mass['new_target_mass'])}, "
+                             f"existing mass change={num(mass['existing_target_mass_change'])}, "
+                             f"existing mass lost={num(mass['existing_target_mass_lost'])}, "
+                             f"removed mass={num(mass['removed_target_mass'])}.")
             for example in diag.get("qwen_first_last", []):
                 if example["prompts"]:
                     lines.append(f"  Qwen proposals: {'; '.join(example['prompts'])}; accepted actions={example['accepted_actions']}.")
@@ -350,6 +406,16 @@ def render_summary(report):
             lines += ["", f"Artifact warnings in {a['artifact_warning_runs']} runs:", ""]
             for warning in a["artifact_warnings"]:
                 lines.append(f"- {_text(warning['image_id'])}: " + "; ".join(warning["warnings"][:5]))
+    audit = report.get("annotation_audit", {})
+    if audit.get("entries"):
+        lines += ["", "## Separate annotation audit", "", audit["note"], ""]
+        for image_id, item in audit["entries"].items():
+            lines.append(f"- {_text(image_id)}: {_text(item.get('note', ''))}; audited count={item.get('audited_count', 'not supplied')}.")
+        if any("audited_count" in item for item in audit["entries"].values()):
+            lines += ["", "| Arm | Successful / audited images | Audited MAE | Audited RMSE |", "|---|---:|---:|---:|"]
+            for variant, metrics in audit["count_metrics"].items():
+                lines.append(f"| {_text(variant)} | {metrics['successful_images']}/{metrics['expected_images']} | "
+                             f"{num(metrics['mae'])} | {num(metrics['rmse'])} |")
     lines += ["", "Count agreement and association matches do not prove correct masks or deduplication. "
               "Add visual observations about misses, false positives, duplicates, fragments, and slow behavior."]
     return "\n".join(lines) + "\n"

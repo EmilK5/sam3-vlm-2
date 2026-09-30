@@ -15,7 +15,8 @@
     "grid_cols": 2,
     "overlap_ratio": 0.15,
     "tile_min_size": 256,
-    "enable_adaptive": true
+    "enable_adaptive": true,
+    "adaptive_enable_fallback": true
   },
   "bootstrap": {
     "enable_pseudoexemplar_refinement": true,

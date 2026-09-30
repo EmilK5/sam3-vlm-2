@@ -11,6 +11,7 @@ from sam3_vlm.core.types import (
     ActionFamily,
     ActionSource,
     ClassBelief,
+    NodeStatus,
     SpatialMode,
 )
 from sam3_vlm.models.sam3 import MockSAM3Adapter
@@ -179,6 +180,7 @@ def test_non_discovery_unmatched_detections_do_not_expand_graph(
     assoc_result = SimpleNamespace(
         matched_observations=[],
         new_nodes=[provisional],
+        rejected_group_nodes=[],
     )
     observation = SimpleNamespace(
         call_id="sam3_test",
@@ -222,3 +224,17 @@ def test_discovery_action_keeps_provisional_unmatched_nodes():
     assert admitted == [provisional]
     assert runner.scene_state.graph.get_node("node_discovered") is provisional
 
+
+def test_verification_cannot_replace_parent_with_unadmitted_children():
+    from sam3_vlm.scene.association import AssociationResult
+    runner = _runner_with_empty_state()
+    parent = _node('parent')
+    parent.status = NodeStatus.REJECTED
+    child = _node('child')
+    runner.scene_state.graph.add_node(parent)
+    runner.scene_state.graph.add_node(child)
+    action = SensingAction('a', 'target', 'fruit', ActionFamily.VERIFICATION)
+    result = AssociationResult(new_nodes=[child], rejected_group_nodes=[parent])
+    runner._project_observations(action, SimpleNamespace(call_id='s', searched_regions=[]), result)
+    assert runner.scene_state.graph.get_node('child') is None
+    assert parent.status == NodeStatus.ACTIVE and not result.rejected_group_nodes

@@ -191,6 +191,24 @@ def test_probability_trace_accounts_for_new_existing_and_removed_nodes():
     assert trace['largest_losses'][0]['node_id'] == '0'
     assert trace['largest_gains'][0]['node_id'] == '1'
     assert len(current) == 3
+    assert trace['candidate_to_soft_count_gap'] == pytest.approx(1.7)
+    assert trace['existing_target_mass_gained'] == pytest.approx(.4)
+    assert trace['existing_target_mass_lost'] == pytest.approx(.5)
+    assert trace['existing_target_mass_change_by_relation'] == pytest.approx({'NOT_RETRIEVED': -.1})
+
+
+@pytest.mark.parametrize('version', ['old', 'v3', 'v4'])
+def test_qwen_receives_counting_unit_guidance_for_parts(mock_openai_client, version):
+    cfg = production()
+    cfg = replace(cfg, planner=replace(cfg.planner, prompt_version=version))
+    pack = QwenEvidencePack('i', 'polka dots', 'target', ContactSheet(),
+                            belief_classes=['target', 'confounder1', 'confounder2'])
+    RealQwenPlanner(base_url='http://fake', model='fake').plan_scene(pack, BudgetState(), cfg)
+    messages = mock_openai_client.chat.completions.create.call_args.kwargs['messages']
+    assert 'The supplied target fixes the counting unit' in messages[0]['content']
+    assert 'search for individual dots' in messages[0]['content']
+    assert 'Do not use an enclosing surface or parent object as a negative query' in messages[0]['content']
+    assert "User Target Concept: 'polka dots'" in messages[1]['content'][0]['text']
 
 
 def test_discovery_pilot_exports_compact_confidence_and_comparisons(tmp_path, monkeypatch):

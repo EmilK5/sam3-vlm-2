@@ -2,6 +2,8 @@
 
 The supported workflow is the A–E scene-graph pipeline. Bootstrap starts with the dataset target prompt over the full image. Optional refinement and density-based adaptive tiles reuse that prompt; there is no bootstrap ROI selection. All A–E deduplication uses mask IoU/IoM. See the [authoritative specification](docs/V4_DESIGN_SPEC.md).
 
+Adaptive tiles also activate for small candidates missed by the strong-seed density gate, with a coarse fallback when scale is uncertain. Mask containment now checks instance scale and crop clipping, and coarse group masks cannot swallow separate instances. Qwen preserves the dataset counting unit, including targets that are parts or dots.
+
 The single-image interface is the [Gradio app](docs/GUI.md). The fruit benchmark remains `python -m sam3_vlm.experiments.m8_smoke --stage pilot --pilot-suite final-ae`. The F controller and `final-af` suite have been removed.
 
 FSCD-147 now runs the same A–E models, with dataset-neutral Qwen scope and ground truth isolated to evaluation:
@@ -23,6 +25,8 @@ Place `images_384_VarV2/`, `Train_Test_Val_FSC_147.json`, and `ImageClasses_FSC1
 For a reproducible ten-image smoke test, a visual A–E gallery, and step-by-step GPU cluster setup, follow [the FSCD-147 cluster runbook](docs/FSCD147_CLUSTER_RUNBOOK.md).
 
 To share results without the images, run `python -m sam3_vlm.experiments.fscd147_smoke summary DATASET_ROOT OUTPUT_DIR/predictions.jsonl --split val`. It writes a compact Markdown/JSON report, a visual-notes template, and a text-only ZIP under `OUTPUT_DIR/report/`, using saved results without rerunning models.
+
+The report separates candidate recovery from changes in soft target mass. Optional `--annotation-audit audit.json` adds annotation-gap notes and separately scored manual counts without changing official scores; see the cluster runbook for the format.
 
 These changes have synthetic behavioral coverage; a real FSCD-147 benchmark requires the dataset and GPU models. The remaining research notes below describe the original architecture; the current specification supersedes their bootstrap/tiling/association details.
 

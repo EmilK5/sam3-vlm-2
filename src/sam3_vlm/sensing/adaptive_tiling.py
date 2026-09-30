@@ -24,6 +24,9 @@ class TilingPlan:
     tile_size: int | None
     overlap: int | None
     tiles: tuple[Region, ...]
+    trigger_reason: str = "none"
+    candidate_count: int = 0
+    small_candidate_count: int = 0
 
 
 def _box_area(box: Region) -> int:
@@ -40,6 +43,10 @@ def plan_adaptive_tiles(
     density_threshold: float = 0.69,
     min_tile_size: int = 97,
     max_tile_size: int = 1024,
+    enable_fallback: bool = False,
+    candidate_boxes: list[Region] | None = None,
+    small_object_area_ratio: float = 0.003,
+    small_object_min_count: int = 8,
 ) -> TilingPlan:
     """Use the density score and SMALL (6 by 4, 25% overlap) tile regime.
 
@@ -50,23 +57,33 @@ def plan_adaptive_tiles(
         raise ValueError("image dimensions must be positive")
     if not 0 <= density_threshold <= 1 or not 1 <= min_tile_size <= max_tile_size:
         raise ValueError("invalid adaptive tiling parameters")
+    if not 0 < small_object_area_ratio <= 1 or small_object_min_count < 1:
+        raise ValueError("invalid small-object tiling parameters")
     image_region = (0, 0, width, height)
-    if any(not (0 <= b[0] < b[2] <= width and 0 <= b[1] < b[3] <= height) for b in boxes):
+    candidates = boxes if candidate_boxes is None else candidate_boxes
+    if any(not (0 <= b[0] < b[2] <= width and 0 <= b[1] < b[3] <= height) for b in [*boxes, *candidates]):
         raise ValueError("seed boxes must be positive and inside the image")
-    if not boxes:
-        return TilingPlan(0.0, 0.0, 0, 0.0, 0.0, False, image_region, None, None, ())
     image_area = width * height
     total_box_area = sum(_box_area(box) for box in boxes)
     count = len(boxes)
     coverage = total_box_area / image_area
-    mean_area_ratio = total_box_area / count / image_area
-    size_score = 1.0 - min(mean_area_ratio / 0.1, 1.0)
+    mean_area_ratio = total_box_area / count / image_area if count else 0.0
+    size_score = 1.0 - min(mean_area_ratio / 0.1, 1.0) if count else 0.0
     density_score = 0.3 * coverage + 0.5 * min(count / 50.0, 1.0) + 0.2 * size_score
     trigger = density_score > density_threshold
+    reason = "density" if trigger else "none"
+    small_count = sum(_box_area(b) / image_area <= small_object_area_ratio for b in candidates)
+    coarse = False
+    if not trigger and enable_fallback:
+        if small_count >= small_object_min_count:
+            trigger, reason = True, "small_objects"
+        elif not boxes:
+            trigger, reason, coarse = True, "uncertain_scale", True
     if not trigger:
         return TilingPlan(density_score, coverage, count, mean_area_ratio,
-                          size_score, False, image_region, None, None, ())
-    tile_size = max(min_tile_size, min(int(max(width / 6, height / 4)), max_tile_size))
+                          size_score, False, image_region, None, None, (), reason, len(candidates), small_count)
+    requested_size = math.ceil(max(width, height) * 0.6) if coarse else int(max(width / 6, height / 4))
+    tile_size = max(min_tile_size, min(requested_size, max_tile_size))
     overlap = int(tile_size * 0.25)
     stride = max(1, tile_size - overlap)
     tiles = tuple(
@@ -74,4 +91,4 @@ def plan_adaptive_tiles(
         for y in _positions(height, tile_size, stride)
         for x in _positions(width, tile_size, stride))
     return TilingPlan(density_score, coverage, count, mean_area_ratio,
-                      size_score, True, image_region, tile_size, overlap, tiles)
+                      size_score, True, image_region, tile_size, overlap, tiles, reason, len(candidates), small_count)

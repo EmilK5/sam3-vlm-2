@@ -21,6 +21,7 @@ class AssociationResult:
     matched_observations: List[Tuple[str, NodeObservationRef]] = field(default_factory=list)
     new_nodes: List[Node] = field(default_factory=list)
     unmatched_detections: List[Detection] = field(default_factory=list)
+    rejected_group_nodes: List[Node] = field(default_factory=list)
 
 
 class AssociationPolicy(Protocol):

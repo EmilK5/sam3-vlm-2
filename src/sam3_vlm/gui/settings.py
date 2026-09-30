@@ -72,6 +72,9 @@ CONTROL_GROUPS = {
         Control("tiling.enable_adaptive", "Density-based adaptive tiles", "bool"),
         Control("tiling.adaptive_density_threshold", "Adaptive density threshold", maximum=1),
         Control("tiling.adaptive_seed_min_score", "Adaptive seed score", maximum=1),
+        Control("tiling.adaptive_enable_fallback", "Fallback tiles for small or uncertain objects", "bool"),
+        Control("tiling.adaptive_small_object_area_ratio", "Small-object image area fraction", minimum=.000001, maximum=1),
+        Control("tiling.adaptive_small_object_min_count", "Small candidates to trigger tiles", "int", 1),
         Control("tiling.adaptive_min_tile_size", "Adaptive minimum tile size", "int", 1),
         Control("tiling.adaptive_max_tile_size", "Adaptive maximum tile size", "int", 1),
         Control("tiling.grid_rows", "Tile rows", "int", 1, 16),
@@ -97,6 +100,8 @@ CONTROL_GROUPS = {
         Control("association.new_node_iom_threshold", "Existing-node overlap IoM", maximum=1),
         Control("association.tiled_nms_threshold", "Within-observation suppression IoU", maximum=1),
         Control("association.tiled_nms_iom_threshold", "Within-observation suppression IoM", maximum=1),
+        Control("association.iom_max_area_ratio", "Maximum IoM mask area ratio", minimum=1,
+                info="Larger ratios require evidence that the smaller mask was clipped by a crop edge."),
     ),
     "Budgets and stopping": (
         Control("budget.max_sam3_tiles", "Maximum SAM3 tiles (blank = no separate cap)", "int", nullable=True),

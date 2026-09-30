@@ -40,6 +40,46 @@ def _same_detection(
     return iou >= iou_threshold or iom >= iom_threshold
 
 
+def _guarded_mask_overlap(a: MaskGeometry, b: MaskGeometry, config: AssociationConfig):
+    """Containment is evidence of duplication only at compatible instance scale.
+
+    A smaller mask cut by an interior crop edge is the explicit exception.
+    Pixel areas and crop provenance are used; boxes never decide identity.
+    """
+    iou, iom = mask_overlap(a, b)
+    smaller, larger = sorted((a, b), key=lambda geometry: geometry.area())
+    if (not config.enable_iom_dedup or
+            (larger.area() / smaller.area() > config.iom_max_area_ratio
+             and not smaller.crop_boundary_clipped)):
+        iom = 0.0
+    return iou, iom
+
+
+def _is_group_mask(parent, others, config):
+    """Reject a coarse mask containing at least two separate small instances.
+
+    Clipped fragments are excluded from child evidence. This conservative
+    geometric heuristic needs two comparable, nearly disjoint child masks.
+    """
+    if not config.enable_iom_dedup:
+        return False
+    children = []
+    for child in others:
+        if child is parent or child.crop_boundary_clipped:
+            continue
+        if parent.area() <= config.iom_max_area_ratio * child.area():
+            continue
+        _, iom = mask_overlap(parent, child)
+        if iom >= config.new_node_iom_threshold:
+            children.append(child)
+    for index, child in enumerate(children):
+        for other in children[index + 1:]:
+            _, iom = mask_overlap(child, other)
+            if iom < 0.1 and max(child.area(), other.area()) / min(child.area(), other.area()) <= config.iom_max_area_ratio:
+                return True
+    return False
+
+
 def deduplicate_observation_detections(
     detections: List[Detection],
     config: AssociationConfig,
@@ -60,12 +100,16 @@ def deduplicate_observation_detections(
     geometries = {id(det): detection_mask_geometry(det) for det in detections} if config.mask_only else {}
     for index, detection in ranked:
         candidate = geometries.get(id(detection), detection.geometry.bbox())
+        if config.mask_only and _is_group_mask(candidate, geometries.values(), config):
+            continue
         duplicate = False
         for survivor in kept_ranked:
             if config.mask_only:
-                iou, iom = mask_overlap(candidate, geometries[id(survivor)])
-                duplicate = (iou >= config.tiled_nms_threshold or
-                             (config.enable_iom_dedup and iom >= config.tiled_nms_iom_threshold))
+                iou, iom = _guarded_mask_overlap(candidate, geometries[id(survivor)], config)
+                # A pair that cannot create two nodes across calls must also
+                # not create two nodes in the first call.
+                duplicate = (iou >= min(config.tiled_nms_threshold, config.new_node_iou_threshold) or
+                             (config.enable_iom_dedup and iom >= min(config.tiled_nms_iom_threshold, config.new_node_iom_threshold)))
             else:
                 duplicate = _same_detection(candidate, survivor.geometry.bbox(),
                     iou_threshold=config.tiled_nms_threshold,
@@ -98,9 +142,19 @@ class IoUIoMAssociationPolicy:
         del correlation_group  # semantic correlation is handled by belief fusion
         result = AssociationResult()
         active_nodes = graph.active_nodes()
+        survivors = deduplicate_observation_detections(detections, config)
+        geometries = {id(det): detection_mask_geometry(det) for det in survivors} if config.mask_only else {}
+        if config.mask_only and semantic_key == "target":
+            for node in active_nodes:
+                if _is_group_mask(node.geometry, geometries.values(), config):
+                    graph.reject_node(node.node_id, "COARSE_GROUP_MASK")
+                    result.rejected_group_nodes.append(node)
+            active_nodes = graph.active_nodes()
 
-        for det in deduplicate_observation_detections(detections, config):
-            det_geometry = detection_mask_geometry(det) if config.mask_only else BoxGeometry(det.geometry.bbox())
+        for det in survivors:
+            det_geometry = geometries[id(det)] if config.mask_only else BoxGeometry(det.geometry.bbox())
+            if config.mask_only and _is_group_mask(det_geometry, [n.geometry for n in active_nodes], config):
+                continue
             det_box = det_geometry.bbox()
             best_node: Optional[Node] = None
             best_iou = 0.0
@@ -110,9 +164,7 @@ class IoUIoMAssociationPolicy:
 
             for node in active_nodes:
                 node_box = node.geometry.bbox()
-                iou, iom = mask_overlap(det_geometry, node.geometry) if config.mask_only else dual_overlap(det_box, node_box)
-                if config.mask_only and not config.enable_iom_dedup:
-                    iom = 0.0
+                iou, iom = _guarded_mask_overlap(det_geometry, node.geometry, config) if config.mask_only else dual_overlap(det_box, node_box)
                 iom_candidate = iom >= config.new_node_iom_threshold
                 if iou >= config.new_node_iou_threshold or iom_candidate:
                     overlapping_nodes.append((node, iou, iom))
@@ -148,7 +200,8 @@ class IoUIoMAssociationPolicy:
                 association_score=max(best_iou, best_iom),
             )
             # Keep the complete mask when later tiles return clipped fragments.
-            if config.mask_only and det_geometry.area() > best_node.geometry.area() and len(overlapping_nodes) == 1:
+            if (config.mask_only and det_geometry.area() > best_node.geometry.area()
+                    and len(overlapping_nodes) == 1 and relation == ObservationRelation.STRONG_MATCH):
                 best_node.geometry = det_geometry
             best_node.observations.append(obs_ref)
             best_node.diagnostics.support_count += 1
@@ -195,7 +248,7 @@ class IoUIoMAssociationPolicy:
             for other in active_after:
                 if other.node_id == node.node_id:
                     continue
-                iou, iom = (mask_overlap(node.geometry, other.geometry) if config.mask_only
+                iou, iom = (_guarded_mask_overlap(node.geometry, other.geometry, config) if config.mask_only
                             else dual_overlap(node_box, other.geometry.bbox()))
                 if config.mask_only and not config.enable_iom_dedup:
                     iom = 0.0

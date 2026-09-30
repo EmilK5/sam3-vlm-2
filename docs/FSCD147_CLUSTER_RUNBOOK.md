@@ -249,6 +249,57 @@ files are left intact. Default detail limits are ten images and three worst
 images per arm; use `--max-images` and `--top-k` to change report detail limits.
 For this command these flags limit report content, not inference.
 
+### Rerun the same ten images after the deduplication fixes
+
+Copy the updated source and config to the cluster using the setup steps above,
+and keep the existing Ollama server and prepared sample. Activate the same
+Python environment. Choose a fresh output directory so the earlier results
+remain available for comparison:
+
+```bash
+export FSCD_SAMPLE="$PWD/data/fscd_val10_seed42"
+export FSCD_RUN="$PWD/outputs/fscd_val10_seed42_ae_dedup_v2"
+python -u -m sam3_vlm.experiments.fscd147 run \
+  "$FSCD_SAMPLE" "$FSCD_RUN" --split val \
+  --config configs/fscd147.json > logs/fscd_val10_dedup_v2.log 2>&1
+python -m sam3_vlm.experiments.fscd147_smoke review \
+  "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val
+python -m sam3_vlm.experiments.fscd147_smoke summary \
+  "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val
+```
+
+The new summary records each tiling trigger reason and separates new candidate
+target mass from changes to existing candidates, grouped by positive and negative
+action families. Candidate counts can improve while soft counts remain low;
+compare both. The posterior formula is unchanged. The small-object fallback adds
+tile calls to scenes that previously skipped them, so runtime may increase.
+
+### Record suspected annotation gaps separately
+
+Create an optional `annotation_audit.json` mapping image filenames from the
+sample manifest to notes. For example, if `7314.jpg` belongs to this sample:
+
+```json
+{
+  "7314.jpg": {"note": "Visible skateboard side stacks appear to lack annotations."}
+}
+```
+
+After manually counting the intended target instances, add an integer
+`"audited_count"` to that entry. Do not estimate a replacement count from model
+predictions. Entries without a manual count are notes only.
+
+```bash
+python -m sam3_vlm.experiments.fscd147_smoke summary \
+  "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val \
+  --annotation-audit annotation_audit.json
+```
+
+Official MAE/RMSE and AP continue to use the original annotations. The report
+adds a separately labelled count evaluation only for manually audited images,
+and leaves metrics unavailable if any of those predictions failed or are missing.
+The audit never enters inference and does not modify dataset annotations.
+
 ## 8. Run the complete validation split only after reviewing the gallery
 
 Use the **original dataset root**, a fresh output directory, and the same config:

@@ -33,7 +33,8 @@ class DenseSensor(DummySAM3Sensor):
             observation.detections.append(Detection(
                 f'det_{self.call_count}_{i}', GeometryRef(Box(x1, y1, x2, y2)), self.seed_score,
                 raw_metadata={'mask': np.ones((y2-y1, x2-x1), dtype=bool),
-                              'mask_offset_x': x1, 'mask_offset_y': y1}))
+                              'mask_offset_x': x1, 'mask_offset_y': y1,
+                              'crop_boundary_clipped': (x1, y1, x2, y2) != (x, y, x+6, y+6)}))
         return observation
 
 
@@ -98,6 +99,19 @@ def test_low_score_seeds_do_not_trigger_density_tiles(tmp_path):
     assert not state.discovery_state.adaptive_tiling['trigger']
 
 
+def test_low_confidence_small_objects_trigger_fallback_without_gt(tmp_path):
+    cfg = config(tmp_path)
+    cfg = replace(cfg, tiling=replace(cfg.tiling, adaptive_enable_fallback=True))
+    sensor = DenseSensor(seed_score=.4)
+    state = BootstrapPipeline(sensor, config=cfg).execute_bootstrap('caps', (384, 384), 'bottle caps').state
+    plan = state.discovery_state.adaptive_tiling
+    assert plan['object_count'] == 0 and plan['candidate_count'] == 60
+    assert plan['trigger_reason'] == 'small_objects'
+    assert sensor.call_count == 26  # First pass + 25 tiles, no pseudoexemplars.
+    assert state.budget.sam3_tiles == 25
+    assert len(state.graph.active_nodes()) == 60
+
+
 def test_dense_baseline_saves_masks_and_tiling_plan(tmp_path):
     paths = RunArtifactPaths(tmp_path / 'run')
     count, state = _run_sam3_baseline(
@@ -123,4 +137,26 @@ def test_dense_adaptive_runner_passes_replay_with_mask_geometry(tmp_path):
     runner, _ = assemble_e2e_runner(paths, config(tmp_path), DenseSensor(), Planner(),
                                    'dense', 'bottle caps', 'target', 'caps')
     runner.run(Image.new('RGB', (384, 384)), 'bottle caps', image_id='caps')
+    assert _run_validator_and_replay(paths, runner.scene_state)
+
+
+def test_recovered_children_retire_coarse_parent_and_replay(tmp_path):
+    class GroupSensor(DummySAM3Sensor):
+        def observe(self, image, action):
+            obs = super().observe(image, action)
+            masks = [(20, 20, 20)] if self.call_count == 1 else [(22, 22, 3), (32, 32, 3)]
+            for i, (x, y, size) in enumerate(masks):
+                obs.detections.append(Detection(f'd{self.call_count}_{i}', GeometryRef(Box(x, y, x+size, y+size)), .9,
+                    raw_metadata={'mask': np.ones((size, size), dtype=bool), 'mask_offset_x': x, 'mask_offset_y': y}))
+            return obs
+    class Planner:
+        model = 'none'
+        def plan_scene(self, *args):
+            return PlannerOutput(proposed_actions=[])
+    paths = RunArtifactPaths(tmp_path / 'groups')
+    runner, _ = assemble_e2e_runner(paths, config(tmp_path), GroupSensor(), Planner(),
+                                   'groups', 'bottle caps', 'target', 'caps')
+    runner.run(Image.new('RGB', (384, 384)), 'bottle caps', image_id='caps')
+    assert len(runner.scene_state.graph.active_nodes()) == 2
+    assert any(node.status.value == 'REJECTED' for node in runner.scene_state.graph.nodes.values())
     assert _run_validator_and_replay(paths, runner.scene_state)

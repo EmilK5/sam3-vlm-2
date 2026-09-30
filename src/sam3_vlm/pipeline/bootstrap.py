@@ -103,6 +103,11 @@ class BootstrapPipeline:
         return observation
 
     def _update_beliefs(self, state: SceneState, action: SensingAction, observation, assoc_result) -> None:
+        if self.recorder:
+            for node in assoc_result.rejected_group_nodes:
+                self.recorder.record_node_updated(node.node_id, node.to_dict(), {
+                    "action_id": action.action_id, "sam3_call_id": observation.call_id,
+                    "semantic_key": action.semantic_key, "reason": "COARSE_GROUP_MASK"})
         for node_id, obs_ref in assoc_result.matched_observations:
             node = state.graph.get_node(node_id)
             if node:
@@ -262,6 +267,11 @@ class BootstrapPipeline:
                 density_threshold=self.config.tiling.adaptive_density_threshold,
                 min_tile_size=self.config.tiling.adaptive_min_tile_size,
                 max_tile_size=self.config.tiling.adaptive_max_tile_size,
+                enable_fallback=self.config.tiling.adaptive_enable_fallback,
+                candidate_boxes=[tuple(int(v) for v in node.geometry.bbox().as_tuple())
+                                 for node in state.graph.active_nodes()],
+                small_object_area_ratio=self.config.tiling.adaptive_small_object_area_ratio,
+                small_object_min_count=self.config.tiling.adaptive_small_object_min_count,
             )
             state.discovery_state.adaptive_tiling = asdict(adaptive_plan)
             if self.recorder:

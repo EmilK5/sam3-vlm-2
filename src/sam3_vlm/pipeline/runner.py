@@ -10,6 +10,7 @@ from sam3_vlm.core.types import (
     ActionSource,
     NodeObservationRef,
     ObservationRelation,
+    NodeStatus,
     SpatialMode,
     StopReason,
 )
@@ -716,7 +717,18 @@ class Runner:
         nodes.  All other action families can still strongly update matched
         nodes and contribute NOT_RETRIEVED/NOT_OBSERVABLE evidence.
         """
+        # Coarse parents may be replaced only by admitted target discovery
+        # instances, never by verification or negative-query parts.
+        if action.family != ActionFamily.DISCOVERY:
+            for node in assoc_result.rejected_group_nodes:
+                node.status = NodeStatus.ACTIVE
+            assoc_result.rejected_group_nodes.clear()
         admitted_new_nodes = self._admitted_new_nodes_for_action(action, assoc_result)
+        if self.recorder:
+            for node in assoc_result.rejected_group_nodes:
+                self.recorder.record_node_updated(node.node_id, node.to_dict(), {
+                    "action_id": action.action_id, "sam3_call_id": observation.call_id,
+                    "semantic_key": action.semantic_key, "reason": "COARSE_GROUP_MASK"})
         new_nodes_count = len(admitted_new_nodes)
         matched_node_ids = {nid for nid, _ in assoc_result.matched_observations}
         new_node_ids = {n.node_id for n in admitted_new_nodes}

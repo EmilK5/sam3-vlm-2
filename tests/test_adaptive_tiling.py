@@ -52,3 +52,34 @@ def test_invalid_parameters_fail(kwargs):
     params.update(kwargs)
     with pytest.raises(ValueError):
         plan_adaptive_tiles([], **params)
+
+
+def test_missed_dense_scene_triggers_on_small_candidates_below_density_cutoff():
+    boxes = dense_boxes()[:14]
+    plan = plan_adaptive_tiles(boxes, 1000, 1000, enable_fallback=True)
+    assert plan.density_score < .69 and plan.trigger
+    assert plan.trigger_reason == 'small_objects' and plan.small_candidate_count == 14
+    assert plan.tile_size == 250
+
+
+def test_no_seeds_get_coarse_full_image_fallback():
+    plan = plan_adaptive_tiles([], 1000, 1000, enable_fallback=True)
+    assert plan.trigger and plan.trigger_reason == 'uncertain_scale'
+    assert plan.tile_size == 600 and len(plan.tiles) == 4
+    covered = np.zeros((1000, 1000), dtype=bool)
+    for x1, y1, x2, y2 in plan.tiles:
+        covered[y1:y2, x1:x2] = True
+    assert covered.all()
+
+
+def test_fallback_does_not_tile_confident_large_sparse_scene():
+    plan = plan_adaptive_tiles([(100, 100, 500, 500)], 1000, 1000, enable_fallback=True)
+    assert not plan.trigger
+
+
+@pytest.mark.parametrize('kwargs', [{'small_object_area_ratio': 0},
+                                   {'small_object_min_count': 0},
+                                   {'candidate_boxes': [(0, 0, 1001, 2)]}])
+def test_invalid_fallback_settings_fail(kwargs):
+    with pytest.raises(ValueError):
+        plan_adaptive_tiles([], 1000, 1000, enable_fallback=True, **kwargs)

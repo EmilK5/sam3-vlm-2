@@ -136,6 +136,30 @@ def test_artifact_diagnostics_find_moved_runs_and_omit_full_evidence(saved):
     assert record["sam3_calls"] == 3
 
 
+def test_soft_count_summary_separates_discovery_and_negative_mass(saved):
+    dataset, path, rows = saved
+    root = artifacts(path, rows[-1])
+    (root / 'summary.json').write_text(json.dumps({'discovery_statistics': {'confidence_trace': [
+        {'raw_soft_count': 2, 'new_nodes': 4, 'new_node_target_mass': 2},
+        {'family': 'DISCOVERY', 'raw_soft_count': 2.5, 'new_nodes': 2, 'new_node_target_mass': .7,
+         'existing_node_target_mass_change': -.2, 'existing_target_mass_lost': .3,
+         'existing_target_mass_change_by_relation': {'NOT_RETRIEVED': -.2}},
+        {'family': 'CONFOUNDER', 'raw_soft_count': .25, 'existing_node_target_mass_change': -2.25,
+         'existing_target_mass_lost': 2.25,
+         'existing_target_mass_change_by_relation': {'STRONG_MATCH': -2.25}}]}}))
+    report = build_summary(dataset, path)
+    diag = report['per_image'][1]['variants']['C_Qwen']['diagnostics']
+    assert diag['candidate_to_soft_count_gap'] == .75
+    positive = diag['confidence_by_family']['DISCOVERY']
+    assert positive['new_nodes'] == 2 and positive['new_target_mass'] == .7
+    assert positive['existing_target_mass_change'] == -.2
+    assert positive['mass_change_by_relation'] == {'NOT_RETRIEVED': -.2}
+    assert diag['confidence_by_family']['CONFOUNDER']['existing_target_mass_lost'] == 2.25
+    rendered = render_summary(report)
+    assert 'Candidates minus soft count=0.75' in rendered
+    assert 'CONFOUNDER: new candidates=0' in rendered
+
+
 def test_corrupt_artifacts_are_warned_without_losing_valid_predictions(saved):
     dataset, path, rows = saved
     root = artifacts(path, rows[-1])
@@ -205,6 +229,45 @@ def test_summary_cli(saved, capsys):
     assert main(["summary", str(dataset), str(path), "--no-artifacts"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert Path(result["summary"]).exists() and Path(result["archive"]).exists()
+
+
+def test_annotation_audit_is_separate_and_never_changes_official_scores(saved, tmp_path):
+    dataset, path, _ = saved
+    original = build_summary(dataset, path, include_artifacts=False)
+    audit_path = tmp_path / 'audit.json'
+    audit_path.write_text(json.dumps({'b.jpg': {'note': 'Some visible objects lack boxes', 'audited_count': 3}}))
+    gt_before = (dataset / 'instances_val.json').read_bytes()
+    predictions_before = path.read_bytes()
+    audited = build_summary(dataset, path, include_artifacts=False, annotation_audit=audit_path)
+    assert audited['aggregates'] == original['aggregates']
+    assert audited['per_image'] == original['per_image']
+    assert audited['annotation_audit']['count_metrics']['B_Adaptive']['mae'] == 1
+    assert audited['annotation_audit']['count_metrics']['B_Adaptive']['complete']
+    assert (dataset / 'instances_val.json').read_bytes() == gt_before
+    assert path.read_bytes() == predictions_before
+    assert 'Separate annotation audit' in render_summary(audited)
+
+
+@pytest.mark.parametrize('content', [[], {'unknown.jpg': {'note': 'gap'}},
+    {'b.jpg': {'audited_count': True}}, {'b.jpg': {'audited_count': -1}},
+    {'b.jpg': {'audited_count': 1.5}}, {'b.jpg': {'note': 4}}, {'b.jpg': {'count': 3}}])
+def test_invalid_annotation_audit_fails(saved, tmp_path, content):
+    dataset, path, _ = saved
+    audit_path = tmp_path / 'audit.json'
+    audit_path.write_text(json.dumps(content))
+    with pytest.raises(ValueError):
+        build_summary(dataset, path, annotation_audit=audit_path)
+
+
+def test_audited_metrics_require_all_audited_images_to_succeed(saved, tmp_path):
+    dataset, path, rows = saved
+    rows[-1].update(success=False, predicted_count=None)
+    save_rows(path, rows)
+    audit_path = tmp_path / 'audit.json'
+    audit_path.write_text(json.dumps({'b.jpg': {'audited_count': 3}}))
+    audited = build_summary(dataset, path, annotation_audit=audit_path)
+    metrics = audited['annotation_audit']['count_metrics']['C_Qwen']
+    assert not metrics['complete'] and metrics['mae'] is None and metrics['rmse'] is None
 
 
 def test_optional_ap_uses_only_complete_arms_and_fresh_predictions(saved, monkeypatch):

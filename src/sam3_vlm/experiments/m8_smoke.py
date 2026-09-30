@@ -560,7 +560,7 @@ def _pilot_variants(base: V4Config, suite: str = "standard") -> list[PilotVarian
         base,
         bootstrap=dataclasses.replace(base.bootstrap, locked_context_prompt=None),
         association=dataclasses.replace(base.association, mask_only=True, enable_iom_dedup=True),
-        tiling=dataclasses.replace(base.tiling, enable_adaptive=True),
+        tiling=dataclasses.replace(base.tiling, enable_adaptive=True, adaptive_enable_fallback=True),
         belief=dataclasses.replace(
             base.belief, target_count_hard_threshold=None,
             target_count_commit_threshold=None,

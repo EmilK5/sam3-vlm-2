@@ -162,6 +162,7 @@ class MaskGeometry:
     offset: Tuple[int, int]
     pixel_area: int
     mask_artifact: str | None = None
+    crop_boundary_clipped: bool = False
 
     def bbox(self) -> Box:
         return self.box
@@ -212,8 +213,11 @@ def detection_mask_geometry(detection) -> MaskGeometry:
     left, top, right, bottom = int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
     ox, oy = int(ox) + left, int(oy) + top
     pixels = np.array(mask[top:bottom, left:right], dtype=bool, copy=True)
+    clipped = raw.get("crop_boundary_clipped", False)
+    if type(clipped) is not bool:
+        raise ValueError("Mask crop-boundary provenance must be boolean")
     return MaskGeometry(Box(ox, oy, ox + pixels.shape[1], oy + pixels.shape[0]),
-                        pixels, (ox, oy), int(pixels.sum()), detection.mask_artifact)
+                        pixels, (ox, oy), int(pixels.sum()), detection.mask_artifact, clipped)
 
 def deserialize_geometry(data: dict) -> Geometry:
     if "box" in data:

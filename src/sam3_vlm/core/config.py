@@ -17,6 +17,9 @@ class TilingConfig:
     adaptive_seed_min_score: float = 0.50
     adaptive_min_tile_size: int = 97
     adaptive_max_tile_size: int = 1024
+    adaptive_enable_fallback: bool = False
+    adaptive_small_object_area_ratio: float = 0.003
+    adaptive_small_object_min_count: int = 8
 
     def __post_init__(self) -> None:
         if self.grid_rows < 1 or self.grid_cols < 1 or self.tile_min_size < 1:
@@ -27,6 +30,8 @@ class TilingConfig:
             raise ValueError("adaptive density and seed thresholds must be in [0, 1]")
         if not 1 <= self.adaptive_min_tile_size <= self.adaptive_max_tile_size:
             raise ValueError("invalid adaptive tile size bounds")
+        if not 0 < self.adaptive_small_object_area_ratio <= 1 or self.adaptive_small_object_min_count < 1:
+            raise ValueError("invalid small-object tiling parameters")
 
 
 @dataclass(frozen=True)
@@ -154,6 +159,12 @@ class AssociationConfig:
     tiled_nms_iom_threshold: float = 0.90
     # Historical box-only fixtures may opt out; all supported A–E runs enable this.
     mask_only: bool = False
+    # IoM alone must not collapse small instances into a large region mask.
+    iom_max_area_ratio: float = 4.0
+
+    def __post_init__(self) -> None:
+        if not self.iom_max_area_ratio >= 1 or not self.iom_max_area_ratio < float('inf'):
+            raise ValueError("IoM area ratio must be finite and at least one")
 
 
 @dataclass(frozen=True)
