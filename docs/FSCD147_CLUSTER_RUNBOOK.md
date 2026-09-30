@@ -1,8 +1,10 @@
 # FSCD-147 on a GPU cluster: ten images first
 
-Assumptions: Slurm, Linux x86-64, an NVIDIA GPU node, shared storage, and
-Python 3.11 or newer. Substitute your cluster's login hostname, account,
-partition, and dataset path. All five arms use the same ten sampled validation
+Use the same direct shell workflow as the previous runbooks: connect to your
+GPU machine, keep Ollama running in one terminal, and run Python in another.
+Assumptions: Linux x86-64, an NVIDIA GPU available to your shell, and Python
+3.11 or newer. Substitute your GPU hostname and dataset path.
+All five arms use the same ten sampled validation
 images: 50 image/arm runs. Sampling uses seed 42 and never ranks by ground truth.
 
 ## 1. Transfer the current code from your Mac
@@ -65,17 +67,12 @@ export PATH="$HOME/.local/ollama/bin:$PATH"
 ollama --version
 ```
 
-## 3. Allocate a GPU
+## 3. Open your normal GPU shell
 
-Run from the login node. The partition name should select a GPU with room for
-both SAM3 and Qwen. An 80 GB GPU is a conservative starting allocation if
-available; this is not a measured minimum. `--mem=64G` is host RAM, not GPU RAM.
-The four-hour time request is a starting allowance, not a runtime estimate.
+Connect to the GPU machine as you did for the previous runbooks. If your current
+shell already has GPU access, continue there. Run the commands below in that shell:
 
 ```bash
-srun --partition=GPU_PARTITION --account=YOUR_ACCOUNT \
-  --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=04:00:00 \
-  --pty bash
 cd ~/sam3-vlm-2-fscd
 source .venv/bin/activate
 export PATH="$HOME/.local/ollama/bin:$PATH"
@@ -83,41 +80,45 @@ nvidia-smi
 python - <<'PY'
 import torch
 from transformers import Sam3Model, Sam3Processor
-assert torch.cuda.is_available(), "Install a CUDA-enabled PyTorch build or check GPU allocation"
+assert torch.cuda.is_available(), "Check GPU access and your CUDA-enabled PyTorch build"
 print("PyTorch:", torch.__version__, "CUDA:", torch.version.cuda)
 print("GPU:", torch.cuda.get_device_name(0))
 PY
 ```
 
-Keep Slurm's `CUDA_VISIBLE_DEVICES` setting. Start both the Ollama server and
-inference inside this allocation. Slurm's allocation options are documented
-in [srun](https://slurm.schedmd.com/srun.html).
+Both terminals should connect to the same GPU machine so that the localhost
+Ollama endpoint is reachable from Python. Keep any existing GPU visibility
+settings used by your cluster.
 
 ## 4. Start Qwen on that GPU node
 
-Use a private localhost port. If 11435 is occupied, choose another unused port
-and update both `OLLAMA_HOST` and `QWEN_BASE_URL`.
+In terminal 1, start Ollama in the foreground as in the earlier runbooks. If
+your existing Ollama server is already running on this GPU machine, keep it
+and skip this startup block. The examples use the usual port 11434.
 
 ```bash
 mkdir -p logs
-export OLLAMA_HOST=127.0.0.1:11435
+export OLLAMA_HOST=127.0.0.1:11434
 export OLLAMA_NUM_PARALLEL=1
 export OLLAMA_MAX_LOADED_MODELS=1
 export OLLAMA_FLASH_ATTENTION=1
-ollama serve > logs/ollama.log 2>&1 &
-FSCD_OLLAMA_PID=$!
-trap 'kill "$FSCD_OLLAMA_PID" 2>/dev/null || true' EXIT
+ollama serve
 ```
 
-Check the log and readiness; continue once curl succeeds:
+Leave terminal 1 running. In terminal 2 on the same GPU machine, activate the
+environment and check readiness; continue once curl succeeds:
 
 ```bash
-tail -n 20 logs/ollama.log
-curl --fail http://127.0.0.1:11435/api/version
+cd ~/sam3-vlm-2-fscd
+source .venv/bin/activate
+export PATH="$HOME/.local/ollama/bin:$PATH"
+export OLLAMA_HOST=127.0.0.1:11434
+mkdir -p logs
+curl --fail http://127.0.0.1:11434/api/version
 ollama pull qwen3.5:9b-q4_K_M
 ollama create qwen3.5-9b-sam3 -f configs/ollama_qwen3_5_9b_fast.Modelfile
 ollama show --modelfile qwen3.5-9b-sam3
-export QWEN_BASE_URL=http://127.0.0.1:11435/v1
+export QWEN_BASE_URL=http://127.0.0.1:11434/v1
 export QWEN_MODEL=qwen3.5-9b-sam3
 export QWEN_API_KEY=ollama
 ```
@@ -125,7 +126,7 @@ export QWEN_API_KEY=ollama
 The current checked-in profile uses **65536 context tokens** and a **512-token
 output limit**. Recreate the alias even if it already exists so it uses this
 profile. Do not silently reduce the context during a comparison. If GPU memory
-is exhausted, use a larger allocation or a separately allocated Qwen endpoint.
+is exhausted, use a GPU with more memory or a separate Qwen endpoint.
 To pre-download Qwen where compute nodes have no network, run `ollama pull`
 against your own Ollama server on a permitted node and use the same shared
 `OLLAMA_MODELS` directory for both servers.
@@ -220,6 +221,34 @@ counts: the count is the sum of target probabilities and can differ from the
 number of red candidate boxes. Ground truth is accessed only during preparation
 of evaluation files and post-inference scoring/review, never by the controller.
 
+### Share results without uploading the gallery
+
+Generate a compact report directly from the saved predictions; this never
+reruns SAM3/Qwen and does not open image or mask files:
+
+```bash
+python -m sam3_vlm.experiments.fscd147_smoke summary \
+  "$FSCD_SAMPLE" "$FSCD_RUN/predictions.jsonl" --split val
+```
+
+The command writes `report/summary.md`, `report/summary.json`,
+`report/visual_notes.md`, and `report/summary.zip` below the run directory.
+The ZIP contains only the three small text files. Share it, or paste
+`summary.md`, along with your visual observations. It includes per-arm count
+metrics, paired error changes, per-image counts, worst errors, failures,
+runtime/calls, tiling decisions, and available Qwen rejection diagnostics.
+Full configs and extra numeric diagnostics are in the JSON. Failed and missing
+runs remain explicit; they are never counted as zero predictions.
+
+Optionally fill in `visual_notes.md` with missed objects, false positives,
+duplicates, fragments, and slow behavior, naming image IDs and affected arms.
+Rerun the same command to include those notes in the report and ZIP; your notes
+are preserved. Add `--ap` to compute fresh bbox AP, or `--no-artifacts` when
+only predictions and evaluation annotations are available. Existing evaluation
+files are left intact. Default detail limits are ten images and three worst
+images per arm; use `--max-images` and `--top-k` to change report detail limits.
+For this command these flags limit report content, not inference.
+
 ## 8. Run the complete validation split only after reviewing the gallery
 
 Use the **original dataset root**, a fresh output directory, and the same config:
@@ -233,15 +262,14 @@ python -m sam3_vlm.experiments.fscd147 evaluate \
   "$FSCD_ROOT" "$FSCD_FULL_RUN/predictions.jsonl" --split val --ap
 ```
 
-Choose a longer Slurm allocation using smoke runtimes; E has no per-image
-runtime cap. The runner is serial and has no resume support. An interrupted
-run is incomplete and must use a fresh output directory on restart. For long
-runs use your cluster's `sbatch` workflow, with the environment activation,
-Ollama start/readiness, and inference commands inside the batch job on the same
-node. An Ollama process in an expired interactive allocation cannot serve a
-later batch job. Account for model-load time and substantial mask/event storage.
+Use smoke runtimes to estimate the full run duration; E has no per-image
+runtime cap. Keep both the Ollama server and Python shell running. The runner
+is serial and has no resume support. An interrupted run is incomplete and
+must use a fresh output directory on restart. Use `tmux` if you normally use
+it to keep terminal sessions alive across SSH disconnects. Account for
+model-load time and substantial mask/event storage.
 
 Tune on validation, then freeze the config. For the final test benchmark,
 change both commands to `--split test` and choose another fresh output directory.
-When finished, `exit` the allocated shell to stop your Ollama server and release
-the GPU.
+When finished, stop your manually started Ollama server with Ctrl-C in terminal
+1. Keep an existing shared or managed Ollama service running.

@@ -22,6 +22,8 @@ Place `images_384_VarV2/`, `Train_Test_Val_FSC_147.json`, and `ImageClasses_FSC1
 
 For a reproducible ten-image smoke test, a visual A–E gallery, and step-by-step GPU cluster setup, follow [the FSCD-147 cluster runbook](docs/FSCD147_CLUSTER_RUNBOOK.md).
 
+To share results without the images, run `python -m sam3_vlm.experiments.fscd147_smoke summary DATASET_ROOT OUTPUT_DIR/predictions.jsonl --split val`. It writes a compact Markdown/JSON report, a visual-notes template, and a text-only ZIP under `OUTPUT_DIR/report/`, using saved results without rerunning models.
+
 These changes have synthetic behavioral coverage; a real FSCD-147 benchmark requires the dataset and GPU models. The remaining research notes below describe the original architecture; the current specification supersedes their bootstrap/tiling/association details.
 
 ---

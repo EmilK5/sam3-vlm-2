@@ -1,4 +1,4 @@
-"""Prepare a seeded FSCD-147 subset and review frozen predictions visually."""
+"""Prepare a seeded FSCD-147 subset, review predictions, and export compact summaries."""
 
 from __future__ import annotations
 
@@ -139,11 +139,25 @@ def main(argv=None):
     review.add_argument("prediction_path", type=Path)
     review.add_argument("--split", choices=["val", "test"], default="val")
     review.add_argument("--output-dir", type=Path)
+    summary = commands.add_parser("summary", help="Export a small text/JSON report without images or masks")
+    summary.add_argument("dataset_root", type=Path)
+    summary.add_argument("prediction_path", type=Path)
+    summary.add_argument("--split", choices=["val", "test"], default="val")
+    summary.add_argument("--output-dir", type=Path)
+    summary.add_argument("--top-k", type=int, default=3, help="Largest errors per arm")
+    summary.add_argument("--max-images", type=int, default=10, help="Maximum per-image detail rows")
+    summary.add_argument("--no-artifacts", action="store_true", help="Read predictions/ground truth only")
+    summary.add_argument("--ap", action="store_true", help="Compute fresh bbox AP; requires evaluation extra")
     args = parser.parse_args(argv)
     if args.command == "prepare":
         result = prepare_subset(args.source, args.destination, split=args.split, count=args.count, seed=args.seed)
-    else:
+    elif args.command == "review":
         result = review_predictions(args.dataset_root, args.prediction_path, split=args.split, output_dir=args.output_dir)
+    else:
+        from sam3_vlm.experiments.fscd147_report import write_summary
+        result = write_summary(args.dataset_root, args.prediction_path, split=args.split, output_dir=args.output_dir,
+                               top_k=args.top_k, max_images=args.max_images,
+                               include_artifacts=not args.no_artifacts, compute_ap=args.ap)
     print(json.dumps(result, indent=2))
     return 0
 

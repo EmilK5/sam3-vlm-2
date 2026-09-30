@@ -97,6 +97,20 @@ def test_a_does_not_require_qwen_or_annotations_and_partial_split_has_no_metrics
     assert 'coco_output' not in metrics
 
 
+def test_compact_summary_reads_actual_ae_pipeline_artifacts(dataset, deployment, tmp_path):
+    from sam3_vlm.experiments.fscd147_report import write_summary
+    path = run_dataset(dataset, deployment, TraceSensor(), NoopPlanner(), tmp_path / 'report_run')
+    result = write_summary(dataset.root, path)
+    report = json.loads(Path(result['json']).read_text())
+    assert len(report['aggregates']) == 5
+    for arm in report['aggregates'].values():
+        assert arm['complete'] and arm['artifact_rows'] == 2
+        assert arm['artifact_warning_runs'] == 0
+        assert arm['budget_rows'] == 2
+    assert all(row['diagnostics']['mask_nodes'] == row['diagnostics']['active_nodes']
+               for image in report['per_image'] for row in image['variants'].values())
+
+
 def test_model_failure_is_saved_and_next_image_still_runs(dataset, deployment, tmp_path):
     class FailFirst(TraceSensor):
         failed = False
